@@ -112,8 +112,37 @@ LayerNorm
 
 ### 5. `dataset.py` — 데이터 (encoder 무관)
 
-- `LibriSpeechDataset` — 16kHz 모노, 10초 truncate
+**클래스**
+- `LibriSpeechDataset` — 16kHz 모노, 10초 truncate, 단일 split 래퍼
+- `MLSDataset` — Multilingual LibriSpeech English, 지정 샘플 수만큼 랜덤 샘플링 (seed 고정)
 - `collate_fn_factory(tokenizer)` — 오디오 패딩 + 텍스트 토크나이징 + EOS 추가
+
+**학습 데이터 구성 (`build_datasets`)**
+
+| 데이터셋 | Split | 규모 |
+|---|---|---|
+| LibriSpeech | train-clean-100 | ~100h |
+| LibriSpeech | train-clean-360 | ~360h |
+| LibriSpeech | train-other-500 | ~500h |
+| MLS English | train (샘플링) | ~9000h |
+| **합계** | | **~10,000h** |
+
+검증은 LibriSpeech `dev-clean` 사용. 데이터는 첫 실행 시 자동 다운로드 (`download=True`).
+
+**MLS 샘플 수 추정 기준**
+- MLS English train 전체 ≈ 44,500시간 / 평균 발화 ~8초
+- 9,000시간 = 32,400,000초 → `num_samples ≈ 4,050,000`
+- config의 `mls_num_samples` 키로 조정 (기본값 900,000)
+
+**config 키**
+```python
+cfg = {
+    "data_path":      "/path/to/librispeech",   # LibriSpeech 루트
+    "mls_data_path":  "/path/to/mls",            # MLS 루트 (없으면 data_path 사용)
+    "max_audio_len":  160000,                    # 최대 샘플 수 (10초 @ 16kHz)
+    "mls_num_samples": 4_050_000,               # MLS에서 샘플링할 발화 수
+}
+```
 
 encoder가 바뀌어도 dataset은 변경 없음. 항상 16kHz 출력.
 

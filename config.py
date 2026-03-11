@@ -26,6 +26,8 @@ TRAIN_CONFIG = {
     "max_text_len": 256,
 
     "data_path": "/mnt/tmp/cache",
+    "mls_data_path": "/mnt/tmp/cache",
+    "mls_num_samples": 4_050_000,
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
@@ -68,6 +70,20 @@ ENCODER_REGISTRY = {
         "hop":         512,
         "proj_strides": [2, 2],
         "stage2_epochs": 8,   # 원본 q_dac_enc.py 기준
+    },
+    "dac_vae": {
+        # descript-audio-codec 44kHz + trainable VAE bottleneck
+        # DAC encoder (frozen, 1024-dim) → Linear → (mu, logvar) → z (256-dim)
+        # 학습 중 reparameterization, 평가 중 mu 사용
+        # out: (B, T_enc, 256) @ ~86fps (hop=512 @ 44kHz)
+        # projector: ~86fps → ~21.5fps (~215 tokens/10sec)
+        "model_type":  "44khz",
+        "out_dim":     256,      # latent_dim (after VAE bottleneck)
+        "latent_dim":  256,
+        "tgt_sr":      44100,
+        "hop":         512,
+        "proj_strides": [2, 2],
+        "stage2_epochs": 8,
     },
     "mimi_acoustic": {
         # kyutai/mimi — acoustic encoder만 (encoder_transformer 없음)
