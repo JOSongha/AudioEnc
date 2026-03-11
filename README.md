@@ -1,6 +1,6 @@
 # AudioEnc — Encoder-Swappable ASR Training Framework
 
-Qwen2.5-7B + 교체 가능한 Audio Encoder로 LibriSpeech ASR을 학습하는 프레임워크.
+Qwen3.5-4B + 교체 가능한 Audio Encoder로 LibriSpeech, MLS ASR을 학습하는 프레임워크.
 `--encoder encodec|dac|mimi` 인자 하나로 encoder를 바꿔 동일한 학습 파이프라인을 실행한다.
 
 ---
@@ -16,7 +16,7 @@ AudioEnc/
 │   ├── dac.py            # descript-audio-codec 44kHz
 │   └── mimi.py           # kyutai/mimi
 ├── config.py             # TRAIN_CONFIG + ENCODER_REGISTRY
-├── dataset.py            # LibriSpeechDataset, collate_fn_factory
+├── dataset.py            # LibriSpeechDataset, MLSDataset, collate_fn_factory
 ├── model.py              # AudioQwen (encoder-agnostic)
 ├── train.py              # 2-Stage 학습 루프 (argparse)
 └── run.sh                # 실행 예시

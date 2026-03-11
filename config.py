@@ -4,7 +4,9 @@ import os
 # 학습 하이퍼파라미터 (encoder 무관)
 # ==========================================
 TRAIN_CONFIG = {
-    "llm_model": "Qwen/Qwen2.5-7B-Instruct",
+    # llm_type: "instruct" → ChatML 프롬프트, "base" → 단순 prefix
+    "llm_type":  "base",
+    "llm_model": "Qwen/Qwen3.5-4B",
 
     "batch_size": 2,
     "stage2_batch_size": 1,

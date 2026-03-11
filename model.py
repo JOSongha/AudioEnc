@@ -16,8 +16,13 @@ class AudioQwen(nn.Module):
       [2, 2] → 2×Conv1d(stride-2), total ×4 다운샘플 (encodec, dac, mimi_acoustic)
       [2]    → 1×Conv1d(stride-2), total ×2 다운샘플 (mimi_semantic — q_ming.py 원본)
 
+    cfg["llm_type"] 으로 프롬프트 포맷 결정:
+      "instruct" → ChatML (<|im_start|>system ... <|im_end|>)
+      "base"     → 단순 prefix ("Audio:\n" ... "\nTranscript:\n")
+
     입력 sequence 구조:
-        [system+user prompt] + [audio embeds] + ["Transcribe the audio to text."] + [transcript]
+      instruct: [ChatML system+user] + [audio embeds] + [ChatML suffix] + [transcript]
+      base:     ["Audio:\n"] + [audio embeds] + ["\nTranscript:\n"] + [transcript]
     Loss: transcript 토큰에 대한 cross-entropy만 계산.
     """
 
@@ -88,9 +93,14 @@ class AudioQwen(nn.Module):
             if isinstance(m, nn.Conv1d):
                 self._proj_stride *= m.stride[0]
 
-        # ChatML 프롬프트 토큰 버퍼 (forward마다 tokenize 반복 방지)
-        p1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        p2 = "\nTranscribe the audio to text.<|im_end|>\n<|im_start|>assistant\n"
+        # 프롬프트 토큰 버퍼 (forward마다 tokenize 반복 방지)
+        llm_type = cfg.get("llm_type", "instruct")
+        if llm_type == "instruct":
+            p1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+            p2 = "\nTranscribe the audio to text.<|im_end|>\n<|im_start|>assistant\n"
+        else:  # base
+            p1 = "Audio:\n"
+            p2 = "\nTranscript:\n"
         self.register_buffer(
             "prompt_p1_ids",
             self.tokenizer.encode(p1, add_special_tokens=False, return_tensors="pt"),
