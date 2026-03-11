@@ -1,0 +1,206 @@
+import os
+
+import torch
+import torch.nn as nn
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from encoders.base import BaseAudioEncoder
+
+
+class AudioQwen(nn.Module):
+    """
+    Encoder-agnostic Audio-LLM.
+
+    어떤 BaseAudioEncoder 구현체든 주입 가능.
+    projector 구조는 cfg["encoder"]["proj_strides"]로 결정:
+      [2, 2] → 2×Conv1d(stride-2), total ×4 다운샘플 (encodec, dac, mimi_acoustic)
+      [2]    → 1×Conv1d(stride-2), total ×2 다운샘플 (mimi_semantic — q_ming.py 원본)
+
+    입력 sequence 구조:
+        [system+user prompt] + [audio embeds] + ["Transcribe the audio to text."] + [transcript]
+    Loss: transcript 토큰에 대한 cross-entropy만 계산.
+    """
+
+    def __init__(self, encoder: BaseAudioEncoder, cfg: dict):
+        super().__init__()
+        self.encoder = encoder
+        self._cfg    = cfg  # apply_lora에서 LoRA 설정 참조
+
+        # V100: bf16은 소프트웨어 에뮬레이션만 지원, cuDNN LSTM은 거부 → fp16 고정
+        torch_dtype = torch.float16
+        cache_dir   = cfg["model_cache_dir"]
+        llm_name    = cfg["llm_model"]
+
+        print(f"Loading LLM: {llm_name} (dtype={torch_dtype})...")
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            llm_name,
+            cache_dir=cache_dir,
+            dtype=torch_dtype,
+            token=os.environ.get("HF_TOKEN"),
+            trust_remote_code=True,
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            llm_name,
+            cache_dir=cache_dir,
+            token=os.environ.get("HF_TOKEN"),
+            trust_remote_code=True,
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        self.llm.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+
+        llm_dim = self.llm.config.hidden_size
+
+        # Projector: encoder.out_dim → llm_dim
+        # proj_strides: encoder별로 다름 (config.py ENCODER_REGISTRY 참조)
+        #   [2, 2] → 2×stride-2, total ×4 (encodec/dac/mimi_acoustic)
+        #   [2]    → 1×stride-2, total ×2 (mimi_semantic — q_ming.py 원본과 동일)
+        proj_strides = cfg["encoder"].get("proj_strides", [2, 2])
+        layers = []
+        in_dim = encoder.out_dim
+        for stride in proj_strides:
+            layers.append(nn.Conv1d(in_dim, llm_dim, kernel_size=5, stride=stride, padding=2))
+            layers.append(nn.GELU())
+            in_dim = llm_dim
+        layers.append(nn.Conv1d(llm_dim, llm_dim, kernel_size=1))
+        self.projector = nn.Sequential(*layers)
+
+        self.proj_norm = nn.LayerNorm(llm_dim)
+        self.projector.to(dtype=torch_dtype)
+        self.proj_norm.to(dtype=torch_dtype)
+
+        # projector 초기화
+        for m in self.projector.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+        # 마지막 1×1 conv: small-scale init — 초기 audio embed 스케일 억제 (fp16 안정성)
+        nn.init.normal_(self.projector[-1].weight, std=0.02)
+        nn.init.zeros_(self.projector[-1].bias)
+
+        # projector 총 stride 자동 계산 (mask downsampling에 사용)
+        self._proj_stride = 1
+        for m in self.projector.modules():
+            if isinstance(m, nn.Conv1d):
+                self._proj_stride *= m.stride[0]
+
+        # ChatML 프롬프트 토큰 버퍼 (forward마다 tokenize 반복 방지)
+        p1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        p2 = "\nTranscribe the audio to text.<|im_end|>\n<|im_start|>assistant\n"
+        self.register_buffer(
+            "prompt_p1_ids",
+            self.tokenizer.encode(p1, add_special_tokens=False, return_tensors="pt"),
+        )
+        self.register_buffer(
+            "prompt_p2_ids",
+            self.tokenizer.encode(p2, add_special_tokens=False, return_tensors="pt"),
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_audio_embeds(self, audio, audio_lengths=None):
+        feats, enc_mask = self.encoder(audio, audio_lengths)  # (B, T_enc, C), (B, T_enc)
+
+        feats = feats.to(self.projector[0].weight.dtype)
+
+        proj = self.projector(feats.transpose(1, 2))          # (B, llm_dim, T_proj)
+        audio_embeds = self.proj_norm(proj.transpose(1, 2))   # (B, T_proj, llm_dim)
+        audio_embeds = audio_embeds.to(self.llm.get_input_embeddings().weight.dtype)
+
+        T_proj = audio_embeds.shape[1]
+        proj_mask = enc_mask[:, :: self._proj_stride][:, :T_proj]
+        if proj_mask.shape[1] < T_proj:
+            pad = torch.zeros(
+                proj_mask.shape[0], T_proj - proj_mask.shape[1],
+                dtype=torch.bool, device=proj_mask.device,
+            )
+            proj_mask = torch.cat([proj_mask, pad], dim=1)
+
+        return audio_embeds, proj_mask
+
+    # ------------------------------------------------------------------
+    # Stage 1 / Stage 2 설정
+    # ------------------------------------------------------------------
+
+    def freeze_llm(self):
+        """Stage 1: LLM frozen, projector만 학습."""
+        print("Freezing LLM (Stage 1)...")
+        for p in self.llm.parameters():
+            p.requires_grad = False
+        for p in self.projector.parameters():
+            p.requires_grad = True
+        for p in self.proj_norm.parameters():
+            p.requires_grad = True
+
+        self.llm.gradient_checkpointing_disable()
+        self.projector.float()
+        self.proj_norm.float()
+
+    def apply_lora(self):
+        """Stage 2: LLM에 LoRA 적용. LoRA 설정은 cfg에서 읽음."""
+        try:
+            from peft import LoraConfig, TaskType, get_peft_model
+        except ImportError:
+            raise RuntimeError("peft 미설치. pip install peft")
+
+        lora_cfg = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=self._cfg["lora_r"],
+            lora_alpha=self._cfg["lora_alpha"],
+            lora_dropout=self._cfg["lora_dropout"],
+            target_modules=self._cfg["lora_target_modules"],
+        )
+        self.llm = get_peft_model(self.llm, lora_cfg)
+
+        trainable = sum(p.numel() for p in self.llm.parameters() if p.requires_grad)
+        total     = sum(p.numel() for p in self.llm.parameters())
+        print(f"LoRA applied. Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
+
+        for p in self.projector.parameters():
+            p.requires_grad = True
+        for p in self.proj_norm.parameters():
+            p.requires_grad = True
+
+    # ------------------------------------------------------------------
+    # Forward
+    # ------------------------------------------------------------------
+
+    def forward(self, audio, audio_lengths=None, transcript_input_ids=None):
+        audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
+
+        if transcript_input_ids is None:
+            return audio_embeds, audio_mask
+
+        device = audio_embeds.device
+        B      = audio_embeds.shape[0]
+        embed  = self.llm.get_input_embeddings()
+
+        p1_embeds         = embed(self.prompt_p1_ids).expand(B, -1, -1)
+        p2_embeds         = embed(self.prompt_p2_ids).expand(B, -1, -1)
+        transcript_embeds = embed(transcript_input_ids)
+
+        inputs_embeds = torch.cat([p1_embeds, audio_embeds, p2_embeds, transcript_embeds], dim=1)
+
+        p1_mask         = torch.ones(B, p1_embeds.shape[1], device=device, dtype=torch.long)
+        p2_mask         = torch.ones(B, p2_embeds.shape[1], device=device, dtype=torch.long)
+        transcript_mask = (transcript_input_ids != self.tokenizer.pad_token_id).long()
+        attention_mask  = torch.cat([p1_mask, audio_mask.long(), p2_mask, transcript_mask], dim=1)
+
+        len_ctx    = p1_embeds.shape[1] + audio_embeds.shape[1] + p2_embeds.shape[1]
+        ctx_labels = torch.full((B, len_ctx), -100, dtype=torch.long, device=device)
+        tgt_labels = transcript_input_ids.clone()
+        tgt_labels[tgt_labels == self.tokenizer.pad_token_id] = -100
+        labels     = torch.cat([ctx_labels, tgt_labels], dim=1)
+
+        return self.llm(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            labels=labels,
+            use_cache=False,
+        )
