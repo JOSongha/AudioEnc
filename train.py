@@ -4,6 +4,7 @@
 사용법:
     torchrun --nproc_per_node=8 train.py --encoder encodec
     torchrun --nproc_per_node=8 train.py --encoder dac
+    torchrun --nproc_per_node=8 train.py --encoder dac_vae
     torchrun --nproc_per_node=8 train.py --encoder mimi_acoustic
     torchrun --nproc_per_node=8 train.py --encoder mimi_semantic
 """
@@ -335,7 +336,7 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder", required=True,
-                        choices=["encodec", "dac", "mimi_acoustic", "mimi_semantic"],
+                        choices=["encodec", "dac", "dac_vae", "mimi_acoustic", "mimi_semantic"],
                         help="사용할 audio encoder")
     parser.add_argument("--data-path",  default=None, help="데이터 루트 경로 (기본: config 값)")
     parser.add_argument("--cache-dir",  default=None, help="모델 캐시 경로 (기본: config 값)")

@@ -31,8 +31,8 @@ class AudioQwen(nn.Module):
         self.encoder = encoder
         self._cfg    = cfg  # apply_lora에서 LoRA 설정 참조
 
-        # V100: bf16은 소프트웨어 에뮬레이션만 지원, cuDNN LSTM은 거부 → fp16 고정
-        torch_dtype = torch.float16
+        # Qwen3.5-4B는 SSM 아키텍처로 fp16에서 NaN 발생 → bf16 사용
+        torch_dtype = torch.bfloat16
         cache_dir   = cfg["model_cache_dir"]
         llm_name    = cfg["llm_model"]
 

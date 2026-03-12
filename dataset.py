@@ -1,4 +1,6 @@
+import io
 import random
+import numpy as np
 import torch
 import torchaudio
 from torch.utils.data import Dataset, ConcatDataset
@@ -39,20 +41,24 @@ class LibriSpeechDataset(Dataset):
 
 class MLSDataset(Dataset):
     """
-    Multilingual LibriSpeech (MLS) English 래퍼.
+    parler-tts/mls_eng_10k — MLS English 10k시간 (HuggingFace datasets, decode=False).
+    - audio bytes를 io.BytesIO + torchaudio.load로 디코딩 (torchcodec 불필요)
     - num_samples 개만큼 랜덤 샘플링 (재현성을 위해 seed 고정)
-    - MLS English train ≈ 44,500시간; 9000시간 ≈ num_samples=900,000 정도
     - 출력: (waveform @ 16kHz mono, transcript 소문자)
     """
 
-    def __init__(self, root: str, num_samples: int = 900_000,
+    def __init__(self, cache_dir: str, num_samples: int = 4_050_000,
                  target_sr: int = 16000, max_len: int = 160000,
                  seed: int = 42):
+        from datasets import load_dataset, Audio
         self.target_sr = target_sr
         self.max_len   = max_len
-        self.dataset   = torchaudio.datasets.MULTILINGUAL_LIBRISPEECH(
-            root=root, language="english", split="train", download=True
+        ds = load_dataset(
+            "parler-tts/mls_eng_10k",
+            split="train",
+            cache_dir=cache_dir,
         )
+        self.dataset = ds.cast_column("audio", Audio(decode=False))
 
         total = len(self.dataset)
         n = min(num_samples, total)
@@ -63,14 +69,18 @@ class MLSDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        waveform, sample_rate, transcript, _, _, _ = self.dataset[self.indices[idx]]
+        item = self.dataset[self.indices[idx]]
+        audio_bytes = item["audio"]["bytes"]
+        transcript  = item["transcript"]
 
-        if sample_rate != self.target_sr:
-            waveform = torchaudio.transforms.Resample(sample_rate, self.target_sr)(waveform)
+        waveform, sample_rate = torchaudio.load(io.BytesIO(audio_bytes))  # (C, T)
 
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
         waveform = waveform.squeeze(0)  # (T,)
+
+        if sample_rate != self.target_sr:
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.target_sr)
 
         if waveform.shape[0] > self.max_len:
             waveform = waveform[: self.max_len]
@@ -93,7 +103,7 @@ def build_datasets(cfg: dict):
         LibriSpeechDataset(root=root, url="train-clean-100", max_len=max_len),
         LibriSpeechDataset(root=root, url="train-clean-360", max_len=max_len),
         LibriSpeechDataset(root=root, url="train-other-500", max_len=max_len),
-        MLSDataset(root=mls_root, num_samples=mls_samples, max_len=max_len),
+        MLSDataset(cache_dir=mls_root, num_samples=mls_samples, max_len=max_len),
     ])
     val_dataset = LibriSpeechDataset(root=root, url="dev-clean", max_len=max_len)
     return train_dataset, val_dataset
