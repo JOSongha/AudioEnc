@@ -8,8 +8,8 @@ TRAIN_CONFIG = {
     "llm_type":  "base",
     "llm_model": "Qwen/Qwen3.5-4B",
 
-    "batch_size": 2,
-    "stage2_batch_size": 1,
+    "batch_size": 6,
+    "stage2_batch_size": 4,
     "gradient_accumulation_steps": 4,
 
     "stage1_lr": 5e-5,
@@ -24,7 +24,7 @@ TRAIN_CONFIG = {
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,
 
-    "max_audio_len": 16000 * 10,
+    "max_audio_len": 16000 * 20,
     "max_text_len": 256,
 
     "data_path": "/mnt/tmp/cache",

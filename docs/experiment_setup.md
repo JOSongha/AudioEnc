@@ -3,7 +3,7 @@
 ## Overview
 
 Audio Encoder 종류에 따른 ASR 성능 비교 실험.
-공통 백본(Qwen2.5-4B Base)과 데이터를 고정하고, audio encoder만 교체하여 비교.
+공통 백본(Qwen3.5-4B Base)과 데이터를 고정하고, audio encoder만 교체하여 비교.
 
 ---
 
@@ -14,12 +14,14 @@ Audio Encoder 종류에 따른 ASR 성능 비교 실험.
 | LibriSpeech | train-clean-100 | ~100h |
 | LibriSpeech | train-clean-360 | ~360h |
 | LibriSpeech | train-other-500 | ~500h |
-| MLS English | train (랜덤 샘플링, seed=42) | ~9,000h |
-| **학습 합계** | | **~10,000h** |
+| MLS English (`parler-tts/mls_eng_10k`) | train (랜덤 샘플링, seed=42) | ~10,016h |
+| **학습 합계** | | **~10,976h** |
 | LibriSpeech | dev-clean | 검증 |
 
-- 전처리: 16kHz mono, 최대 10초 truncate
-- `mls_num_samples = 4,050,000` (평균 발화 ~8초 기준 9,000시간)
+- 전처리: 16kHz mono, 최대 **20초** truncate
+- MLS 소스: `parler-tts/mls_eng_10k` (HuggingFace datasets, decode=False + torchaudio)
+- `mls_num_samples = 4,050,000` → 실제 데이터셋 크기 ~2,420k 샘플로 min 제한 (avg ~14.9s)
+- 총 학습 샘플 수: ~2,701k / epoch (84416 steps × 32 batch)
 
 ---
 
@@ -27,14 +29,15 @@ Audio Encoder 종류에 따른 ASR 성능 비교 실험.
 
 | 항목 | 값 |
 |---|---|
-| 모델 | `Qwen/Qwen2.5-4B` (Base) |
+| 모델 | `Qwen/Qwen3.5-4B` (Base) |
 | 파라미터 | **~4.0B** |
 | hidden_size | 2,560 |
 | 학습 방식 | Stage 1: frozen / Stage 2: LoRA (r=16) |
 | LoRA 학습 파라미터 | ~12M (q/k/v/o_proj × 36 layers) |
+| dtype | bf16 |
 | 프롬프트 포맷 | `"Audio:\n"` + audio embeds + `"\nTranscript:\n"` + transcript |
 
-> Instruct 버전(`Qwen2.5-4B-Instruct`)과의 차이: config에서 `llm_type: "instruct"`로 전환 가능.
+> Instruct 버전(`Qwen3.5-4B-Instruct`)과의 차이: config에서 `llm_type: "instruct"`로 전환 가능.
 > Instruct는 ChatML 포맷(`<|im_start|>system...`) 사용.
 
 ---
@@ -160,10 +163,12 @@ LayerNorm(2560)
 Stage 1: Projector Alignment
   - LLM frozen, projector만 학습
   - AdamW, lr=5e-5, 3 epochs, cosine schedule
+  - batch_size=4 per GPU × 8 GPU × grad_accum=4 → 실효 배치=128
 
 Stage 2: LoRA Fine-tuning
   - LLM에 LoRA(r=16) 적용, projector도 계속 학습
   - AdamW8bit (bitsandbytes), lr=2e-5, 16 epochs
+  - batch_size=2 per GPU × 8 GPU × grad_accum=4 → 실효 배치=64
   - val_loss 기준 best checkpoint 저장
 ```
 
