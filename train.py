@@ -128,6 +128,7 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
     scheduler = make_scheduler(optimizer, train_loader, cfg["stage1_epochs"], cfg, accelerator)
 
     global_step = 0
+    best_val_loss = float("inf")
     for epoch in range(cfg["stage1_epochs"]):
         model.train()
         progress = tqdm(train_loader, desc=f"Stage1 Epoch {epoch+1}",
@@ -162,14 +163,15 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
             wandb.log({"stage": 1, "val/loss": val_loss, "epoch": epoch + 1},
                       step=global_step)
 
-    # projector만 저장 (cpu fp16)
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        unwrapped  = accelerator.unwrap_model(model)
-        proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
-                      if "projector" in k or "proj_norm" in k}
-        torch.save(proj_state, proj_path)
-        print(f"Projector saved → {proj_path}")
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            accelerator.wait_for_everyone()
+            if accelerator.is_main_process:
+                unwrapped  = accelerator.unwrap_model(model)
+                proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
+                              if "projector" in k or "proj_norm" in k}
+                torch.save(proj_state, proj_path)
+                print(f"  Projector saved (val_loss={val_loss:.4f}) → {proj_path}")
 
     # VRAM 해제
     accelerator.wait_for_everyone()
