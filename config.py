@@ -16,10 +16,10 @@ TRAIN_CONFIG = {
     "stage1_epochs": 3,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 16,
+    "stage2_epochs": 8,
 
     "stage2_resume_lr": 1e-5,
-    "stage2_resume_epochs": 30,
+    "stage2_resume_epochs": 8,
 
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,
