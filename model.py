@@ -172,10 +172,12 @@ class AudioQwen(nn.Module):
         total     = sum(p.numel() for p in self.llm.parameters())
         print(f"LoRA applied. Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
 
+        train_proj = self._cfg.get("stage2_train_projector", True)
         for p in self.projector.parameters():
-            p.requires_grad = True
+            p.requires_grad = train_proj
         for p in self.proj_norm.parameters():
-            p.requires_grad = True
+            p.requires_grad = train_proj
+        print(f"Projector {'trainable' if train_proj else 'frozen'} in Stage 2.")
 
     # ------------------------------------------------------------------
     # Forward

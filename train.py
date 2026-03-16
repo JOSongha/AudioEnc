@@ -406,10 +406,17 @@ def main():
             torchaudio.datasets.LIBRISPEECH(root=cfg["data_path"], url=split, download=True)
     accelerator.wait_for_everyone()
 
-    train_dataset, val_dataset = build_datasets(cfg)
+    # Stage 1: LibriSpeech ~200h, MLS ~400h로 제한
+    stage1_cfg = dict(cfg)
+    stage1_cfg["mls_num_samples"]           = cfg.get("stage1_mls_num_samples", cfg["mls_num_samples"])
+    stage1_cfg["librispeech_num_samples"]   = cfg.get("stage1_librispeech_num_samples", None)
+    stage1_train_dataset, val_dataset = build_datasets(stage1_cfg)
 
-    proj_path, step_offset = run_stage1(cfg, accelerator, train_dataset, val_dataset)
-    run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_offset)
+    # Stage 2: 전체 MLS
+    stage2_train_dataset, _ = build_datasets(cfg)
+
+    proj_path, step_offset = run_stage1(cfg, accelerator, stage1_train_dataset, val_dataset)
+    run_stage2(cfg, accelerator, stage2_train_dataset, val_dataset, proj_path, step_offset)
 
     if accelerator.is_main_process:
         wandb.finish()

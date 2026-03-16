@@ -34,6 +34,9 @@ TRAIN_CONFIG = {
     "data_path": "/mnt/tmp/cache",
     "mls_data_path": "/mnt/tmp/cache",
     "mls_num_samples": 4_050_000,
+    # Stage 1 서브샘플: LibriSpeech ~200h (~58k utterances), MLS ~400h (~160k samples)
+    "stage1_librispeech_num_samples": 58_000,
+    "stage1_mls_num_samples": 160_000,
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
@@ -41,6 +44,11 @@ TRAIN_CONFIG = {
     "lora_alpha": 32,
     "lora_dropout": 0.1,
     "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+
+    # Stage 2에서 projector도 함께 학습할지 여부
+    # True: LoRA + projector 동시 학습 (기본)
+    # False: LoRA만 학습, projector frozen
+    "stage2_train_projector": True,
 }
 
 # ==========================================
@@ -141,7 +149,8 @@ def get_config(encoder_name: str) -> dict:
     cfg["samples_per_token"] = samples_per_token
     max_audio_tokens = int(cfg["max_audio_len"] / samples_per_token)
     # 기본 예산: 6클립 × (최대 오디오 토큰 + 텍스트 토큰)
-    cfg["max_batch_tokens"] = 3 * (max_audio_tokens + cfg["max_text_len"])
+    numClips4DAC = 3.7
+    cfg["max_batch_tokens"] = int(numClips4DAC * (max_audio_tokens + cfg["max_text_len"]))
 
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg

@@ -6,7 +6,7 @@ import random
 import numpy as np
 import torch
 import torchaudio
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset, ConcatDataset, Subset
 
 
 class LibriSpeechDataset(Dataset):
@@ -93,8 +93,9 @@ class MLSDataset(Dataset):
 
 def build_datasets(cfg: dict):
     """
-    train: LibriSpeech 전체 (clean-100 + clean-360 + other-500, ~960h)
-           + MLS English 샘플링 (~9000h)
+    train: LibriSpeech (clean-100 + clean-360 + other-500)
+           + MLS English 샘플링
+           librispeech_num_samples 지정 시 LibriSpeech를 랜덤 서브샘플
     val:   LibriSpeech dev-clean
     """
     root        = cfg["data_path"]
@@ -102,10 +103,18 @@ def build_datasets(cfg: dict):
     max_len     = cfg["max_audio_len"]
     mls_samples = cfg.get("mls_num_samples", 900_000)
 
-    train_dataset = ConcatDataset([
+    librispeech = ConcatDataset([
         LibriSpeechDataset(root=root, url="train-clean-100", max_len=max_len),
         LibriSpeechDataset(root=root, url="train-clean-360", max_len=max_len),
         LibriSpeechDataset(root=root, url="train-other-500", max_len=max_len),
+    ])
+    ls_num = cfg.get("librispeech_num_samples", None)
+    if ls_num and ls_num < len(librispeech):
+        indices = random.Random(42).sample(range(len(librispeech)), ls_num)
+        librispeech = Subset(librispeech, sorted(indices))
+
+    train_dataset = ConcatDataset([
+        librispeech,
         MLSDataset(cache_dir=mls_root, num_samples=mls_samples, max_len=max_len),
     ])
     val_dataset = LibriSpeechDataset(root=root, url="dev-clean", max_len=max_len)
@@ -151,6 +160,9 @@ def _collect_lengths(dataset) -> list:
         for sub in dataset.datasets:
             lengths.extend(_collect_lengths(sub))
         return lengths
+    elif isinstance(dataset, Subset):
+        parent_lengths = _collect_lengths(dataset.dataset)
+        return [parent_lengths[i] for i in dataset.indices]
     elif isinstance(dataset, LibriSpeechDataset):
         return _librispeech_lengths(dataset)
     elif isinstance(dataset, MLSDataset):
@@ -284,7 +296,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         self.rank              = rank
         self.seed              = seed
         max_len = max(lengths) if lengths else 1
-        approx_min_bs = max(1, max_batch_tokens // max_len)
+        approx_min_bs = max(1, int(max_batch_tokens) // int(max_len))
         self.bucket_size = approx_min_bs * bucket_size_multiplier
 
     def set_epoch(self, epoch: int):
