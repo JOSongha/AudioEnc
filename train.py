@@ -24,7 +24,7 @@ from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
 from config import get_config
-from dataset import build_datasets, collate_fn_factory
+from dataset import build_datasets, collate_fn_factory, get_dataset_lengths, DynamicBatchSampler
 from encoders import build_encoder
 from model import AudioQwen
 
@@ -111,9 +111,23 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
     tokenizer = model.tokenizer
     collate  = collate_fn_factory(tokenizer, cfg["max_text_len"])
 
-    train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size"], shuffle=True,
+    num_replicas = accelerator.num_processes
+    rank         = accelerator.process_index
+    cache_dir    = cfg["model_cache_dir"]
+    if accelerator.is_main_process:
+        print("Computing dataset lengths for bucket sampler...")
+    spt  = cfg["samples_per_token"]
+    mt   = cfg["max_text_len"]
+    mbt  = cfg["max_batch_tokens"]
+    train_lengths = get_dataset_lengths(train_dataset, spt, mt, cache_dir=cache_dir)
+    val_lengths   = get_dataset_lengths(val_dataset,   spt, mt, cache_dir=cache_dir)
+
+    train_sampler = DynamicBatchSampler(train_lengths, mbt, num_replicas=num_replicas, rank=rank)
+    val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
+
+    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
                               collate_fn=collate, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=cfg["batch_size"], shuffle=False,
+    val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
                               collate_fn=collate, num_workers=2, pin_memory=True)
 
     model.freeze_llm()
@@ -122,18 +136,17 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg["stage1_lr"],
     )
-    model, optimizer, train_loader, val_loader = accelerator.prepare(
-        model, optimizer, train_loader, val_loader
-    )
+    model, optimizer = accelerator.prepare(model, optimizer)
     scheduler = make_scheduler(optimizer, train_loader, cfg["stage1_epochs"], cfg, accelerator)
 
     global_step = 0
     best_val_loss = float("inf")
     for epoch in range(cfg["stage1_epochs"]):
+        train_loader.batch_sampler.set_epoch(epoch)
         model.train()
         progress = tqdm(train_loader, desc=f"Stage1 Epoch {epoch+1}",
                         disable=not accelerator.is_main_process)
-        accum_loss, accum_count = 0.0, 0
+        accum_loss, accum_count, accum_bsz = 0.0, 0, 0
 
         for audio, audio_lengths, transcript_ids in progress:
             audio_lengths  = audio_lengths.to(accelerator.device)
@@ -142,6 +155,8 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
                 outputs = model(audio, audio_lengths=audio_lengths,
                                 transcript_input_ids=transcript_ids)
                 accelerator.backward(outputs.loss)
+                if accelerator.is_main_process:
+                    accum_bsz += audio.shape[0]
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), cfg["max_grad_norm"])
                     optimizer.step()
@@ -154,8 +169,11 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
                         accum_count += 1
                         avg_loss = accum_loss / accum_count
                         wandb.log({"stage": 1, "train/loss": avg_loss,
-                                   "train/lr": lr_now}, step=global_step)
-                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}")
+                                   "train/lr": lr_now, "train/batch_size": accum_bsz},
+                                  step=global_step)
+                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
+                                             bsz=accum_bsz)
+                        accum_bsz = 0
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:
@@ -252,15 +270,25 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     )
 
     collate  = collate_fn_factory(model.tokenizer, cfg["max_text_len"])
-    s2_bs    = cfg.get("stage2_batch_size", cfg["batch_size"])
-    train_loader = DataLoader(train_dataset, batch_size=s2_bs, shuffle=True,
+    num_replicas = accelerator.num_processes
+    rank         = accelerator.process_index
+    cache_dir    = cfg["model_cache_dir"]
+
+    spt  = cfg["samples_per_token"]
+    mt   = cfg["max_text_len"]
+    mbt  = cfg["max_batch_tokens"]
+    train_lengths = get_dataset_lengths(train_dataset, spt, mt, cache_dir=cache_dir)
+    val_lengths   = get_dataset_lengths(val_dataset,   spt, mt, cache_dir=cache_dir)
+
+    train_sampler = DynamicBatchSampler(train_lengths, mbt, num_replicas=num_replicas, rank=rank)
+    val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
+
+    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
                               collate_fn=collate, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=s2_bs, shuffle=False,
+    val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
                               collate_fn=collate, num_workers=2, pin_memory=True)
 
-    model, optimizer, train_loader, val_loader = accelerator.prepare(
-        model, optimizer, train_loader, val_loader
-    )
+    model, optimizer = accelerator.prepare(model, optimizer)
     scheduler = make_scheduler(optimizer, train_loader, s2_epochs, cfg, accelerator)
 
     # Resume 시 baseline val_loss 설정 (진짜 개선 시에만 저장)
@@ -276,10 +304,11 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     global_step  = step_offset
 
     for epoch in range(s2_epochs):
+        train_loader.batch_sampler.set_epoch(epoch)
         model.train()
         progress = tqdm(train_loader, desc=f"Stage{stage_key} Epoch {epoch+1}",
                         disable=not accelerator.is_main_process)
-        accum_loss, accum_count = 0.0, 0
+        accum_loss, accum_count, accum_bsz = 0.0, 0, 0
 
         for audio, audio_lengths, transcript_ids in progress:
             audio_lengths  = audio_lengths.to(accelerator.device)
@@ -288,6 +317,8 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
                 outputs = model(audio, audio_lengths=audio_lengths,
                                 transcript_input_ids=transcript_ids)
                 accelerator.backward(outputs.loss)
+                if accelerator.is_main_process:
+                    accum_bsz += audio.shape[0]
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), cfg["max_grad_norm"])
                     optimizer.step()
@@ -300,8 +331,11 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
                         accum_count += 1
                         avg_loss = accum_loss / accum_count
                         wandb.log({"stage": stage_key, "train/loss": avg_loss,
-                                   "train/lr": lr_now}, step=global_step)
-                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}")
+                                   "train/lr": lr_now, "train/batch_size": accum_bsz},
+                                  step=global_step)
+                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
+                                             bsz=accum_bsz)
+                        accum_bsz = 0
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:

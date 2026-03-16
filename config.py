@@ -1,3 +1,4 @@
+import math
 import os
 
 # ==========================================
@@ -8,8 +9,6 @@ TRAIN_CONFIG = {
     "llm_type":  "base",
     "llm_model": "Qwen/Qwen3.5-4B",
 
-    "batch_size": 6,
-    "stage2_batch_size": 4,
     "gradient_accumulation_steps": 4,
 
     "stage1_lr": 5e-5,
@@ -26,6 +25,11 @@ TRAIN_CONFIG = {
 
     "max_audio_len": 16000 * 20,
     "max_text_len": 256,
+
+    # DynamicBatchSampler 설정
+    # max_batch_tokens: 배치 내 총 LLM 토큰 수 상한 (오디오+텍스트 토큰 합계)
+    #   get_config()에서 encoder hop/sr/stride 기준으로 자동 계산됨
+    #   기본값 = 6 × (최대 오디오 토큰 + max_text_len)
 
     "data_path": "/mnt/tmp/cache",
     "mls_data_path": "/mnt/tmp/cache",
@@ -127,7 +131,19 @@ def get_config(encoder_name: str) -> dict:
     if "stage2_epochs" in enc_cfg:
         cfg["stage2_epochs"] = enc_cfg["stage2_epochs"]
 
+    # 16kHz 오디오 샘플 1개당 LLM 토큰 수 변환 계수
+    # samples_per_token = hop_tgt × (16000 / tgt_sr) × prod(proj_strides)
+    samples_per_token = (
+        enc_cfg["hop"]
+        * (16000 / enc_cfg["tgt_sr"])
+        * math.prod(enc_cfg["proj_strides"])
+    )
+    cfg["samples_per_token"] = samples_per_token
+    max_audio_tokens = int(cfg["max_audio_len"] / samples_per_token)
+    # 기본 예산: 6클립 × (최대 오디오 토큰 + 텍스트 토큰)
+    cfg["max_batch_tokens"] = 3 * (max_audio_tokens + cfg["max_text_len"])
+
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg
-    cfg["project_name"] = f"Qwen2.5-ASR-{encoder_name}"
+    cfg["project_name"] = f"Qwen3.5-ASR-{encoder_name}"
     return cfg
