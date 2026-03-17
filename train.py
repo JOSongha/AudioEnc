@@ -373,17 +373,21 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder", required=True,
-                        choices=["encodec", "dac", "dac_vae", "mimi_acoustic", "mimi_semantic"],
+                        choices=["encodec", "dac", "dac_vae", "fb_dacvae", "mimi_acoustic", "mimi_semantic"],
                         help="사용할 audio encoder")
+    parser.add_argument("--llm",        default=None,
+                        choices=["4b", "2b"],
+                        help="LLM 크기: 4b=Qwen3.5-4B (기본), 2b=Qwen3.5-2B")
     parser.add_argument("--data-path",  default=None, help="데이터 루트 경로 (기본: config 값)")
     parser.add_argument("--cache-dir",  default=None, help="모델 캐시 경로 (기본: config 값)")
     parser.add_argument("--wandb-mode", default=None, choices=["online", "offline", "disabled"])
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
-    if args.data_path:  cfg["data_path"]       = args.data_path
-    if args.cache_dir:  cfg["model_cache_dir"] = args.cache_dir
-    if args.wandb_mode: cfg["wandb_mode"]      = args.wandb_mode
+    if args.llm == "2b":    cfg["llm_model"] = "Qwen/Qwen3.5-2B"
+    if args.data_path:      cfg["data_path"]       = args.data_path
+    if args.cache_dir:      cfg["model_cache_dir"] = args.cache_dir
+    if args.wandb_mode:     cfg["wandb_mode"]      = args.wandb_mode
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
@@ -397,7 +401,8 @@ def main():
 
     if accelerator.is_main_process:
         import datetime
-        run_name = f"{args.encoder}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
+        llm_tag  = args.llm if args.llm else "4b"
+        run_name = f"{args.encoder}_{llm_tag}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
         wandb.init(project=cfg["project_name"], config=cfg,
                    name=run_name, mode=cfg["wandb_mode"])
 
