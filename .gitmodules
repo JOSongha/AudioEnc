@@ -1,0 +1,3 @@
+[submodule "dacvae"]
+	path = dacvae
+	url = https://github.com/facebookresearch/dacvae.git

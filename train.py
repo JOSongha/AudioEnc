@@ -5,6 +5,7 @@
     torchrun --nproc_per_node=8 train.py --encoder encodec
     torchrun --nproc_per_node=8 train.py --encoder dac
     torchrun --nproc_per_node=8 train.py --encoder dac_vae
+    torchrun --nproc_per_node=8 train.py --encoder fb_dacvae
     torchrun --nproc_per_node=8 train.py --encoder mimi_acoustic
     torchrun --nproc_per_node=8 train.py --encoder mimi_semantic
 """

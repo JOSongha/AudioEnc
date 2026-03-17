@@ -99,6 +99,17 @@ ENCODER_REGISTRY = {
         "proj_strides": [2, 2],
         "stage2_epochs": 8,
     },
+    "fb_dacvae": {
+        # facebookresearch/dacvae — pretrained DACVAE continuous latent
+        # 16kHz → 44kHz, DACVAE.encode() 호출 (encoder + VAEBottleneck 전체 frozen)
+        # out: (B, T_enc, codebook_dim) @ ~86fps (hop=512 @ 44kHz)
+        # projector: ~86fps → ~21.5fps (~215 tokens/10sec)
+        "model_id":    "facebook/dacvae-watermarked",
+        "out_dim":     8,       # default codebook_dim (실제 로드 후 model.quantizer.codebook_dim)
+        "tgt_sr":      44100,
+        "hop":         512,
+        "proj_strides": [2, 2],
+    },
     "mimi_acoustic": {
         # kyutai/mimi — acoustic encoder만 (encoder_transformer 없음)
         # 저수준 피처. 비교 실험용.

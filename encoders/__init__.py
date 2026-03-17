@@ -2,6 +2,7 @@ from .base import BaseAudioEncoder
 from .encodec import EnCodecEncoder
 from .dac import DACEncoder
 from .dac_vae import DACVAEEncoder
+from .fb_dacvae import FbDACVAEEncoder
 from .mimi_acoustic import MimiAcousticEncoder
 from .mimi_semantic import MimiSemanticEncoder
 
@@ -9,6 +10,7 @@ ENCODER_CLASSES = {
     "encodec":        EnCodecEncoder,
     "dac":            DACEncoder,
     "dac_vae":        DACVAEEncoder,         # DAC encoder + trainable VAE bottleneck
+    "fb_dacvae":      FbDACVAEEncoder,       # Facebook DACVAE — pretrained VAE continuous latent
     "mimi_acoustic":  MimiAcousticEncoder,   # encoder만 (저수준 acoustic)
     "mimi_semantic":  MimiSemanticEncoder,   # encoder + encoder_transformer (고수준 semantic)
 }
