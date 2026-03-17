@@ -295,6 +295,7 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         self.num_replicas      = num_replicas
         self.rank              = rank
         self.seed              = seed
+        self.epoch             = 0
         max_len = max(lengths) if lengths else 1
         approx_min_bs = max(1, int(max_batch_tokens) // int(max_len))
         self.bucket_size = approx_min_bs * bucket_size_multiplier
