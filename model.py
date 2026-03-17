@@ -40,15 +40,17 @@ class AudioQwen(nn.Module):
         self.llm = AutoModelForCausalLM.from_pretrained(
             llm_name,
             cache_dir=cache_dir,
-            dtype=torch_dtype,
+            torch_dtype=torch_dtype,
             token=os.environ.get("HF_TOKEN"),
             trust_remote_code=True,
+            local_files_only=True,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
             llm_name,
             cache_dir=cache_dir,
             token=os.environ.get("HF_TOKEN"),
             trust_remote_code=True,
+            local_files_only=True,
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
