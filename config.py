@@ -7,18 +7,16 @@ import os
 TRAIN_CONFIG = {
     # llm_type: "instruct" → ChatML 프롬프트, "base" → 단순 prefix
     "llm_type":  "base",
-    "llm_model": "Qwen/Qwen3.5-4B",
+    "llm_model": "Qwen/Qwen3.5-2B",
 
     "gradient_accumulation_steps": 4,
 
     "stage1_lr": 5e-5,
-    "stage1_epochs": 3,
+    "stage1_epochs": 2,
 
     "stage2_lr": 2e-5,
     "stage2_epochs": 8,
 
-    "stage2_resume_lr": 1e-5,
-    "stage2_resume_epochs": 8,
 
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,
@@ -35,10 +33,12 @@ TRAIN_CONFIG = {
     "mls_data_path": "/mnt/tmp/cache",
     "mls_num_samples": 4_050_000,
     # Stage 1 서브샘플: LibriSpeech ~200h (~58k utterances), MLS ~400h (~160k samples)
-    "stage1_librispeech_num_samples": 58_000,
-    "stage1_mls_num_samples": 160_000,
+    "stage1_librispeech_num_samples": None,
+    "stage1_mls_num_samples": 4_050_000,
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
+
+    "save_steps": 5000,
 
     "lora_r": 16,
     "lora_alpha": 32,
@@ -165,5 +165,6 @@ def get_config(encoder_name: str) -> dict:
 
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg
-    cfg["project_name"] = f"Qwen3.5-ASR-{encoder_name}"
+    llm_tag = "2b" if "2B" in cfg["llm_model"] else "4b"
+    cfg["project_name"] = f"Qwen3.5-{llm_tag}-ASR-{encoder_name}"
     return cfg

@@ -174,29 +174,47 @@ Stage 2: LoRA Fine-tuning
 
 ---
 
+## Stage 1 조기 종료
+
+학습 중 Stage 1을 예정 epoch 전에 끊고 Stage 2로 넘어가려면:
+
+```bash
+kill -USR1 $(cat /mnt/tmp/cache/hf/train.pid)
+```
+
+- 시그널을 받으면 **현재 epoch를 완료한 뒤** Stage 2로 진입 (mid-epoch 중단 없음)
+- train.pid는 Stage 1 시작 시 rank 0 프로세스가 자동 생성, Stage 1 종료 시 삭제
+- Stage 1이 이미 skip된 경우(projector 파일 존재)에는 pid 파일이 생성되지 않음
+
+---
+
 ## Checkpoint 경로
 
 기본 `model_cache_dir = /mnt/tmp/cache/hf`
 
 | 단계 | 경로 | 형식 |
 |---|---|---|
-| Stage 1 projector | `{cache_dir}/s1_projector_{enc}.pt` | `.pt` (state_dict) |
-| Stage 2 best | `{cache_dir}/best_{enc}_ckpt/` | safetensors (accelerate) |
-| Stage 2 final | `{cache_dir}/final_{enc}_ckpt/` | safetensors (accelerate) |
-| Stage 2 resume best | `{cache_dir}/best_{enc}_ckpt_r1/`, `_r2/`, ... | safetensors |
-| Stage 2 resume final | `{cache_dir}/final_{enc}_ckpt_r1/`, `_r2/`, ... | safetensors |
+| Stage 1 skip 판별용 | `{cache_dir}/s1_proj_{enc}.pt` | `.pt` (state_dict) |
+| Stage 1 best (기록용) | `{cache_dir}/s1_proj_{enc}_ep{N}_step{N}_best.pt` | `.pt` |
+| Stage 1 step 저장 | `{cache_dir}/s1_proj_{enc}_ep{N}_step{N}.pt` | `.pt` |
+| Stage 2 best | `{cache_dir}/best_{enc}_ckpt_ep{N}_step{N}/` | safetensors (accelerate) |
+| Stage 2 step 저장 | `{cache_dir}/step{N}_{enc}_ckpt/` | safetensors |
+| Stage 2 final | `{cache_dir}/final_{enc}_ckpt_ep{N}_step{N}/` | safetensors |
 
-**예시 (dac)**
+- `ep{N}`: 저장 시점의 epoch 번호, `step{N}`: 저장 시점의 global step
+- Stage 1 best는 `s1_proj_{enc}.pt`(고정 이름)와 `_ep{N}_step{N}_best.pt`(기록용) 둘 다 저장됨
+  - 고정 이름은 Stage 2 로딩 및 Stage 1 skip 판별에 사용
+  - 기록용은 어느 epoch/step에서 best였는지 확인용
+
+**예시 (dac_vae, 2번째 epoch에서 best, step=1200일 때)**
 ```
 /mnt/tmp/cache/hf/
-├── s1_projector_dac.pt          ← Stage 1 완료 시
-├── best_dac_ckpt/               ← Stage 2 val_loss 최선 시점
+├── s1_proj_dac_vae.pt                          ← Stage 1 skip 판별 / Stage 2 로딩용
+├── s1_proj_dac_vae_ep2_step1200_best.pt        ← Stage 1 best 기록용
+├── s1_proj_dac_vae_ep1_step600.pt              ← step 저장 예시
+├── best_dac_vae_ckpt_ep3_step5000/             ← Stage 2 val_loss 최선 시점
 │   └── model.safetensors
-├── final_dac_ckpt/              ← Stage 2 종료 시
-│   └── model.safetensors
-├── best_dac_ckpt_r1/            ← resume 1회차 best
-└── final_dac_ckpt_r1/           ← resume 1회차 final
+├── step4000_dac_vae_ckpt/                      ← Stage 2 step 저장 예시
+└── final_dac_vae_ckpt_ep16_step21000/          ← Stage 2 종료 시
+    └── model.safetensors
 ```
-
-> Stage 2 시작 시 `best_{enc}_ckpt` 존재 여부를 확인하여 자동 resume.
-> resume 시 lr=1e-5, 30 epochs로 재학습.

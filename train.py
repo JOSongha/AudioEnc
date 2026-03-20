@@ -13,6 +13,7 @@
 import argparse
 import gc
 import os
+import signal
 import warnings
 from datetime import timedelta
 
@@ -37,6 +38,12 @@ os.environ["TOKENIZERS_PARALLELISM"]   = "false"
 os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "1"
 os.environ["TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC"] = "600"
 os.environ["NCCL_DEBUG"] = "WARN"
+
+_stop_stage1 = False
+
+def _handle_sigusr1(signum, frame):
+    global _stop_stage1
+    _stop_stage1 = True
 
 
 # ==========================================
@@ -83,12 +90,6 @@ def build_model(cfg, accelerator):
     return model
 
 
-def ckpt_name(base: str, resume_round: int, suffix: str = "") -> str:
-    """체크포인트 디렉토리 이름 생성."""
-    r = f"_r{resume_round}" if resume_round > 0 else ""
-    s = f"_{suffix}"        if suffix         else ""
-    return f"{base}{r}{s}"
-
 
 # ==========================================
 # Stage 1: Projector Alignment
@@ -96,16 +97,21 @@ def ckpt_name(base: str, resume_round: int, suffix: str = "") -> str:
 
 def run_stage1(cfg, accelerator, train_dataset, val_dataset):
     enc_name      = cfg["encoder_name"]
-    proj_path     = os.path.join(cfg["model_cache_dir"], f"s1_projector_{enc_name}.pt")
+    proj_path     = os.path.join(cfg["model_cache_dir"], f"s1_proj_{enc_name}.pt")
 
     if os.path.exists(proj_path):
         if accelerator.is_main_process:
             print(f"\n[Stage 1 Skip] checkpoint found: {proj_path}")
         return proj_path, 0  # global_step=0 (Stage 2에서 초기화)
 
+    pid_path = os.path.join(cfg["model_cache_dir"], "train.pid")
     if accelerator.is_main_process:
+        signal.signal(signal.SIGUSR1, _handle_sigusr1)
+        with open(pid_path, "w") as f:
+            f.write(str(os.getpid()))
         print(f"\n{'='*45}")
         print(f"Stage 1: Projector Alignment  LR={cfg['stage1_lr']}")
+        print(f"  Early stop: kill -USR1 $(cat {pid_path})")
         print(f"{'='*45}\n")
 
     model    = build_model(cfg, accelerator)
@@ -142,6 +148,8 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
 
     global_step = 0
     best_val_loss = float("inf")
+    save_steps = cfg.get("save_steps", 0)
+    cache_dir  = cfg["model_cache_dir"]
     for epoch in range(cfg["stage1_epochs"]):
         train_loader.batch_sampler.set_epoch(epoch)
         model.train()
@@ -175,6 +183,17 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
                         progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
                                              bsz=accum_bsz)
                         accum_bsz = 0
+                    if save_steps and global_step % save_steps == 0:
+                        accelerator.wait_for_everyone()
+                        if accelerator.is_main_process:
+                            unwrapped  = accelerator.unwrap_model(model)
+                            proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
+                                          if "projector" in k or "proj_norm" in k}
+                            step_proj_path = os.path.join(
+                                cache_dir, f"s1_proj_{enc_name}_ep{epoch+1}_step{global_step}.pt"
+                            )
+                            torch.save(proj_state, step_proj_path)
+                            print(f"  [Step {global_step}] Projector saved → {step_proj_path}")
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:
@@ -189,8 +208,25 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
                 unwrapped  = accelerator.unwrap_model(model)
                 proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
                               if "projector" in k or "proj_norm" in k}
+                named_proj_path = os.path.join(
+                    cache_dir, f"s1_proj_{enc_name}_ep{epoch+1}_step{global_step}_best.pt"
+                )
+                torch.save(proj_state, named_proj_path)
                 torch.save(proj_state, proj_path)
-                print(f"  Projector saved (val_loss={val_loss:.4f}) → {proj_path}")
+                print(f"  Projector saved (ep={epoch+1}, step={global_step}, val_loss={val_loss:.4f}) → {named_proj_path}")
+
+        # SIGUSR1 수신 시 조기 종료 (모든 rank 동기화)
+        stop_flag = torch.zeros(1, device=accelerator.device)
+        if accelerator.is_main_process and _stop_stage1:
+            stop_flag[0] = 1.0
+            print(f"  [Stage 1] SIGUSR1 received — stopping early after epoch {epoch+1}")
+        torch.distributed.broadcast(stop_flag, src=0)
+        if stop_flag[0].item() == 1.0:
+            break
+
+    # PID 파일 정리
+    if accelerator.is_main_process and os.path.exists(pid_path):
+        os.remove(pid_path)
 
     # VRAM 해제
     accelerator.wait_for_everyone()
@@ -215,44 +251,21 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     enc_name  = cfg["encoder_name"]
     cache_dir = cfg["model_cache_dir"]
 
-    # 최신 resume checkpoint 자동 탐색 (높은 round 먼저)
-    # rN → rN-1 → ... → r1 → fresh 순으로 탐색, 최대 10회 resume까지 지원
-    MAX_RESUME = 10
-    resume_candidates = [
-        (os.path.join(cache_dir, ckpt_name(f"best_{enc_name}_ckpt", r)), r + 1)
-        for r in range(MAX_RESUME, 0, -1)
-    ] + [(os.path.join(cache_dir, f"best_{enc_name}_ckpt"), 1)]
-    best_ckpt, resume_round = next(
-        ((p, r) for p, r in resume_candidates
-         if os.path.exists(os.path.join(p, "model.safetensors"))),
-        (None, 0),
-    )
-    is_resume = best_ckpt is not None
-    s2_lr     = cfg["stage2_resume_lr"]    if is_resume else cfg["stage2_lr"]
-    s2_epochs = cfg["stage2_resume_epochs"] if is_resume else cfg["stage2_epochs"]
+    s2_lr     = cfg["stage2_lr"]
+    s2_epochs = cfg["stage2_epochs"]
 
     if accelerator.is_main_process:
         print(f"\n{'='*45}")
-        if is_resume:
-            print(f"Stage 2 Resume (r{resume_round})  LR={s2_lr}  epochs={s2_epochs}")
-            print(f"  Loading from: {best_ckpt}")
-        else:
-            print(f"Stage 2: LoRA Fine-tuning  LR={s2_lr}  epochs={s2_epochs}")
+        print(f"Stage 2: LoRA Fine-tuning  LR={s2_lr}  epochs={s2_epochs}")
         print(f"{'='*45}\n")
 
     model = build_model(cfg, accelerator)
     model.apply_lora()
 
-    # 가중치 로드
-    if is_resume:
-        from safetensors.torch import load_file
-        state = load_file(os.path.join(best_ckpt, "model.safetensors"), device="cpu")
-        model.load_state_dict(state, strict=False)
-    else:
-        if accelerator.is_main_process:
-            print("Loading Stage 1 projector weights...")
-        proj_state = torch.load(proj_path, map_location="cpu", weights_only=True)
-        model.load_state_dict(proj_state, strict=False)
+    if accelerator.is_main_process:
+        print("Loading Stage 1 projector weights...")
+    proj_state = torch.load(proj_path, map_location="cpu", weights_only=True)
+    model.load_state_dict(proj_state, strict=False)
 
     # Optimizer
     try:
@@ -292,17 +305,12 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     model, optimizer = accelerator.prepare(model, optimizer)
     scheduler = make_scheduler(optimizer, train_loader, s2_epochs, cfg, accelerator)
 
-    # Resume 시 baseline val_loss 설정 (진짜 개선 시에만 저장)
-    best_val_loss = (
-        run_validation(model, val_loader, accelerator) if is_resume else float("inf")
-    )
-    if is_resume and accelerator.is_main_process:
-        print(f"  [Resume baseline] val_loss={best_val_loss:.4f}")
 
-    prior_resume_epochs = (resume_round - 1) * cfg["stage2_resume_epochs"] if is_resume else 0
-    epoch_offset = cfg["stage1_epochs"] + cfg["stage2_epochs"] + prior_resume_epochs
-    stage_key    = 3 if is_resume else 2
-    global_step  = step_offset
+    best_val_loss = float("inf")
+    epoch_offset  = cfg["stage1_epochs"] + cfg["stage2_epochs"]
+    stage_key     = 2
+    global_step   = step_offset
+    save_steps    = cfg.get("save_steps", 0)
 
     for epoch in range(s2_epochs):
         train_loader.batch_sampler.set_epoch(epoch)
@@ -337,6 +345,14 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
                         progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
                                              bsz=accum_bsz)
                         accum_bsz = 0
+                    if save_steps and global_step % save_steps == 0:
+                        accelerator.wait_for_everyone()
+                        step_dir = os.path.join(
+                            cache_dir, f"step{global_step}_{enc_name}_ckpt",
+                        )
+                        accelerator.save_state(step_dir)
+                        if accelerator.is_main_process:
+                            print(f"  [Step {global_step}] Checkpoint saved → {step_dir}")
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:
@@ -349,18 +365,15 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
             accelerator.wait_for_everyone()
             best_dir = os.path.join(
                 cache_dir,
-                ckpt_name(f"best_{enc_name}_ckpt", resume_round),
+                f"best_{enc_name}_ckpt_ep{epoch+1}_step{global_step}",
             )
             accelerator.save_state(best_dir)
             if accelerator.is_main_process:
-                print(f"  Best checkpoint saved (val_loss={val_loss:.4f}) → {best_dir}")
+                print(f"  Best checkpoint saved (epoch={epoch+1}, step={global_step}, val_loss={val_loss:.4f}) → {best_dir}")
 
     # 최종 checkpoint
     accelerator.wait_for_everyone()
-    final_dir = os.path.join(
-        cache_dir,
-        ckpt_name(f"final_{enc_name}_ckpt", resume_round),
-    )
+    final_dir = os.path.join(cache_dir, f"final_{enc_name}_ckpt_ep{s2_epochs}_step{global_step}")
     accelerator.save_state(final_dir)
     if accelerator.is_main_process:
         print(f"Final checkpoint saved → {final_dir}")
@@ -401,7 +414,7 @@ def main():
 
     if accelerator.is_main_process:
         import datetime
-        llm_tag  = args.llm if args.llm else "4b"
+        llm_tag  = "2b" if "2B" in cfg["llm_model"] else "4b"
         run_name = f"{args.encoder}_{llm_tag}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
         wandb.init(project=cfg["project_name"], config=cfg,
                    name=run_name, mode=cfg["wandb_mode"])
