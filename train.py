@@ -133,9 +133,9 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
     val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
 
     train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
-                              collate_fn=collate, num_workers=4, pin_memory=True)
+                              collate_fn=collate, num_workers=1, pin_memory=True)
     val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
-                              collate_fn=collate, num_workers=2, pin_memory=True)
+                              collate_fn=collate, num_workers=1, pin_memory=True)
 
     model.freeze_llm()
 
@@ -183,6 +183,9 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset):
                         progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
                                              bsz=accum_bsz)
                         accum_bsz = 0
+                    step_tensor = torch.tensor([global_step], device=accelerator.device)
+                    torch.distributed.broadcast(step_tensor, src=0)
+                    global_step = step_tensor[0].item()
                     if save_steps and global_step % save_steps == 0:
                         accelerator.wait_for_everyone()
                         if accelerator.is_main_process:
@@ -298,9 +301,9 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
 
     train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
-                              collate_fn=collate, num_workers=4, pin_memory=True)
+                              collate_fn=collate, num_workers=8, pin_memory=True)
     val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
-                              collate_fn=collate, num_workers=2, pin_memory=True)
+                              collate_fn=collate, num_workers=8, pin_memory=True)
 
     model, optimizer = accelerator.prepare(model, optimizer)
     scheduler = make_scheduler(optimizer, train_loader, s2_epochs, cfg, accelerator)
@@ -345,6 +348,9 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
                         progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
                                              bsz=accum_bsz)
                         accum_bsz = 0
+                    step_tensor = torch.tensor([global_step], device=accelerator.device)
+                    torch.distributed.broadcast(step_tensor, src=0)
+                    global_step = step_tensor[0].item()
                     if save_steps and global_step % save_steps == 0:
                         accelerator.wait_for_everyone()
                         step_dir = os.path.join(
