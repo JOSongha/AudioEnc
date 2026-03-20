@@ -189,6 +189,74 @@ lengths = [min(int(len(t) / 14.0 * target_sr), max_len)
 
 ---
 
+## `__len__` 정확도 문제 및 수정
+
+### 문제: 평균 근사값이 실제 배치 수를 과소 추정
+
+기존 `DynamicBatchSampler.__len__()`은 평균 길이 기반 근사식을 사용했다.
+
+```python
+avg_len        = sum(self.lengths) / len(self.lengths)
+avg_batch_size = self.max_batch_tokens / avg_len
+total_batches  = int(len(self.lengths) / avg_batch_size)
+return total_batches // self.num_replicas
+```
+
+`__iter__()`는 실제 greedy packing을 수행하므로 두 값이 달라진다.
+Stage 1처럼 데이터가 작을 때는 오차가 작아 문제가 없었지만,
+Stage 2에서는 추정값 ~78,000 vs 실제 ~120,000으로 크게 벌어진다.
+
+tqdm은 DataLoader 생성 시 `len(dataloader)` → `len(batch_sampler)`로 total을 가져오므로,
+실제 iteration이 추정 total을 초과하면 progress bar가 사라지고
+`80019it [elapsed, rate]` 형식으로 전락한다.
+
+### 수정: `_count_batches()`로 greedy packing 직접 계산
+
+`__len__`이 `__iter__`와 동일한 greedy packing 로직으로 정확한 배치 수를 계산하도록 변경.
+
+```python
+def __len__(self):
+    if not hasattr(self, '_cached_len'):
+        self._cached_len = self._count_batches()
+    return self._cached_len
+
+def _count_batches(self) -> int:
+    # __iter__와 동일한 greedy 로직, 단 배치를 저장하지 않고 수만 셈
+    g = torch.Generator()
+    g.manual_seed(self.seed)  # epoch 0 기준
+    sorted_idx = sorted(range(len(self.lengths)), key=lambda i: self.lengths[i])
+    count = 0
+    for start in range(0, len(sorted_idx), self.bucket_size):
+        bucket = ...  # 동일한 버킷 셔플
+        cur_count, cur_max = 0, 0
+        for idx in bucket:
+            l = self.lengths[idx]
+            new_max = max(cur_max, l)
+            if cur_count > 0 and (cur_count + 1) * new_max > self.max_batch_tokens:
+                if cur_count >= self.min_batch_size:
+                    count += 1
+                cur_count, cur_max = 1, l
+            else:
+                cur_count += 1
+                cur_max = new_max
+        if cur_count >= self.min_batch_size:
+            count += 1
+    ...
+    return count // self.num_replicas
+```
+
+**"Dynamic이 아니게 되는 거야?"**: 아니다. `DynamicBatchSampler`에서 *Dynamic*은
+배치마다 샘플 수가 가변이라는 의미고, *greedy*는 샘플을 배치에 채우는 알고리즘이다.
+`__iter__()`는 이미 greedy packing을 쓰고 있었고, `_count_batches()`는 그것을 그대로 복제해 수만 센다.
+
+**epoch별 편차**: epoch마다 버킷 내 셔플 순서가 달라지므로 총 배치 수가 미세하게 달라질 수 있다.
+`_count_batches()`는 epoch 0 기준으로 1회 계산해 캐싱한다. 실제로는 에폭 간 차이가 무시할 수준이며,
+중요한 것은 근사식보다 훨씬 정확한 값이 tqdm에 제공된다는 점이다.
+
+**오버헤드**: 첫 `len()` 호출 시 O(N) 계산. 4.33M 샘플 기준 수십 초 이내. 이후는 캐시에서 즉시 반환.
+
+---
+
 ## 변경된 파일 요약
 
 | 파일 | 변경 내용 |

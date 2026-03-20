@@ -341,10 +341,41 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         yield from all_batches[self.rank :: self.num_replicas]
 
     def __len__(self):
-        avg_len       = sum(self.lengths) / len(self.lengths) if self.lengths else 1
-        avg_batch_size = self.max_batch_tokens / avg_len
-        total_batches  = int(len(self.lengths) / avg_batch_size)
-        return total_batches // self.num_replicas
+        if not hasattr(self, '_cached_len'):
+            self._cached_len = self._count_batches()
+        return self._cached_len
+
+    def _count_batches(self) -> int:
+        """실제 greedy packing 로직으로 배치 수를 정확히 계산 (epoch=0 기준, 캐싱)."""
+        g = torch.Generator()
+        g.manual_seed(self.seed)  # epoch 0
+
+        sorted_idx = sorted(range(len(self.lengths)), key=lambda i: self.lengths[i])
+
+        count = 0
+        for start in range(0, len(sorted_idx), self.bucket_size):
+            bucket = sorted_idx[start : start + self.bucket_size]
+            perm   = torch.randperm(len(bucket), generator=g).tolist()
+            bucket = [bucket[p] for p in perm]
+
+            cur_count, cur_max = 0, 0
+            for idx in bucket:
+                l       = self.lengths[idx]
+                new_max = max(cur_max, l)
+                if cur_count > 0 and (cur_count + 1) * new_max > self.max_batch_tokens:
+                    if cur_count >= self.min_batch_size:
+                        count += 1
+                    cur_count, cur_max = 1, l
+                else:
+                    cur_count += 1
+                    cur_max = new_max
+            if cur_count >= self.min_batch_size:
+                count += 1
+
+        remainder = count % self.num_replicas
+        if remainder:
+            count += self.num_replicas - remainder
+        return count // self.num_replicas
 
 
 def collate_fn_factory(tokenizer, max_text_len: int = 256):
