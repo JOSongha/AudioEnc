@@ -209,7 +209,9 @@ class AudioQwen(nn.Module):
         len_ctx    = p1_embeds.shape[1] + audio_embeds.shape[1] + p2_embeds.shape[1]
         ctx_labels = torch.full((B, len_ctx), -100, dtype=torch.long, device=device)
         tgt_labels = transcript_input_ids.clone()
-        tgt_labels[tgt_labels == self.tokenizer.pad_token_id] = -100
+        # 마지막 열은 collate_fn이 항상 수동으로 붙인 EOS — pad와 같은 토큰이지만
+        # 마스킹하면 안 됨. 앞쪽 패딩만 -100으로 마스킹.
+        tgt_labels[:, :-1][tgt_labels[:, :-1] == self.tokenizer.pad_token_id] = -100
         labels     = torch.cat([ctx_labels, tgt_labels], dim=1)
 
         return self.llm(

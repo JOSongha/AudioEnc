@@ -160,8 +160,11 @@ def get_config(encoder_name: str) -> dict:
     cfg["samples_per_token"] = samples_per_token
     max_audio_tokens = int(cfg["max_audio_len"] / samples_per_token)
     # 기본 예산: 6클립 × (최대 오디오 토큰 + 텍스트 토큰)
-    numClips4DAC = 3.7
-    cfg["max_batch_tokens"] = int(numClips4DAC * (max_audio_tokens + cfg["max_text_len"]))
+    # numClips4DAC = 3.7
+    # numClips4DACVAE = 3.7
+    # numClips = numClips4DACVAE
+    # cfg["max_batch_tokens"] = int(numClips * (max_audio_tokens + cfg["max_text_len"]))
+    cfg["max_batch_tokens"] = 2600
 
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg
