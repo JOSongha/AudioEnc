@@ -64,9 +64,11 @@ class MLSDataset(Dataset):
         self.dataset = ds.cast_column("audio", Audio(decode=False))
 
         total = len(self.dataset)
-        n = min(num_samples, total)
-        rng = random.Random(seed)
-        self.indices = rng.sample(range(total), n)
+        if num_samples is None or num_samples >= total:
+            self.indices = list(range(total))
+        else:
+            rng = random.Random(seed)
+            self.indices = rng.sample(range(total), num_samples)
 
     def __len__(self):
         return len(self.indices)
@@ -101,7 +103,7 @@ def build_datasets(cfg: dict):
     root        = cfg["data_path"]
     mls_root    = cfg.get("mls_data_path", root)
     max_len     = cfg["max_audio_len"]
-    mls_samples = cfg.get("mls_num_samples", 900_000)
+    mls_samples = cfg.get("mls_num_samples", None)
 
     librispeech = ConcatDataset([
         LibriSpeechDataset(root=root, url="train-clean-100", max_len=max_len),

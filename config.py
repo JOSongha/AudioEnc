@@ -31,10 +31,10 @@ TRAIN_CONFIG = {
 
     "data_path": "/mnt/tmp/cache",
     "mls_data_path": "/mnt/tmp/cache",
-    "mls_num_samples": 4_050_000,
-    # Stage 1 서브샘플: LibriSpeech ~200h (~58k utterances), MLS ~400h (~160k samples)
+    "mls_num_samples": None,           # None = 전체 사용
+    # Stage 1 서브샘플: LibriSpeech ~200h (~58k utterances)
     "stage1_librispeech_num_samples": None,
-    "stage1_mls_num_samples": 4_050_000,
+    "stage1_mls_num_samples": None,    # None = 전체 사용
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
