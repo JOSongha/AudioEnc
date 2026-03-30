@@ -94,7 +94,7 @@ def build_model(cfg, accelerator):
 # Stage 1: Projector Alignment
 # ==========================================
 
-def run_stage1(cfg, accelerator, train_dataset, val_dataset):
+def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
     enc_name      = cfg["encoder_name"]
     proj_path     = os.path.join(cfg["model_cache_dir"], f"s1_proj_{enc_name}.pt")
 
@@ -388,6 +388,17 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
 # Entry point
 # ==========================================
 
+def _parse_datasets(s: str) -> list:
+    valid = {"ls100", "ls360", "ls500", "mls", "gs"}
+    items = [x.strip() for x in s.split(",") if x.strip()]
+    unknown = set(items) - valid
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"알 수 없는 dataset: {unknown}. 선택 가능: {valid}"
+        )
+    return items
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder", required=True,
@@ -399,6 +410,32 @@ def main():
     parser.add_argument("--data-path",  default=None, help="데이터 루트 경로 (기본: config 값)")
     parser.add_argument("--cache-dir",  default=None, help="모델 캐시 경로 (기본: config 값)")
     parser.add_argument("--wandb-mode", default=None, choices=["online", "offline", "disabled"])
+    parser.add_argument("--debug",      default="",   help="디버그 옵션 (w: step 50에 full weight 저장)")
+
+    # 데이터셋 선택 및 샘플 수
+    parser.add_argument("--datasets",
+                        default=None, type=_parse_datasets,
+                        metavar="ls100,ls360,ls500,mls,gs",
+                        help="사용할 데이터셋 (쉼표 구분). 기본: ls100,ls360,ls500,mls")
+    parser.add_argument("--ls-samples",     default=None, type=int,
+                        metavar="N", help="LibriSpeech 서브샘플 수 (Stage 2, 기본: 전체)")
+    parser.add_argument("--mls-samples",    default=None, type=int,
+                        metavar="N", help="MLS 샘플 수 (Stage 2, 기본: 전체)")
+    parser.add_argument("--gs-subset",      default="l",
+                        choices=["xs", "s", "m", "l", "xl"],
+                        help="GigaSpeech subset (기본: l=2500h)")
+    parser.add_argument("--gs-samples",     default=None, type=int,
+                        metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
+    parser.add_argument("--s1-datasets",
+                        default=None, type=_parse_datasets,
+                        metavar="ls100,ls360,mls",
+                        help="Stage 1 전용 데이터셋. 미지정 시 --datasets 사용")
+    parser.add_argument("--s1-ls-samples",  default=None, type=int,
+                        metavar="N", help="Stage 1 LibriSpeech 서브샘플 수 (기본: --ls-samples)")
+    parser.add_argument("--s1-mls-samples", default=None, type=int,
+                        metavar="N", help="Stage 1 MLS 샘플 수 (기본: --mls-samples)")
+    parser.add_argument("--s1-gs-samples",  default=None, type=int,
+                        metavar="N", help="Stage 1 GigaSpeech 샘플 수 (기본: --gs-samples)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -406,6 +443,11 @@ def main():
     if args.data_path:      cfg["data_path"]       = args.data_path
     if args.cache_dir:      cfg["model_cache_dir"] = args.cache_dir
     if args.wandb_mode:     cfg["wandb_mode"]      = args.wandb_mode
+    if args.datasets:       cfg["datasets"]        = args.datasets
+    if args.ls_samples  is not None: cfg["librispeech_num_samples"] = args.ls_samples
+    if args.mls_samples is not None: cfg["mls_num_samples"]         = args.mls_samples
+    cfg["gs_subset"]     = args.gs_subset
+    if args.gs_samples  is not None: cfg["gs_num_samples"]          = args.gs_samples
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
@@ -424,22 +466,38 @@ def main():
         wandb.init(project=cfg["project_name"], config=cfg,
                    name=run_name, mode=cfg["wandb_mode"])
 
-    # 데이터셋 다운로드 (rank 0만)
+    # 데이터셋 다운로드 (rank 0만, 선택된 LibriSpeech split만)
+    all_datasets = cfg.get("datasets", ["ls100", "ls360", "ls500", "mls"])
+    s1_datasets  = args.s1_datasets or all_datasets
+    _ls_url_map  = {"ls100": "train-clean-100", "ls360": "train-clean-360", "ls500": "train-other-500"}
+    need_splits  = {"dev-clean"}
+    for ds_list in (all_datasets, s1_datasets):
+        for name in ds_list:
+            if name in _ls_url_map:
+                need_splits.add(_ls_url_map[name])
     if accelerator.is_main_process:
-        for split in ["train-clean-100", "train-clean-360", "dev-clean"]:
+        for split in sorted(need_splits):
             torchaudio.datasets.LIBRISPEECH(root=cfg["data_path"], url=split, download=True)
     accelerator.wait_for_everyone()
 
-    # Stage 1: LibriSpeech ~200h, MLS ~400h로 제한
+    # Stage 1 cfg
     stage1_cfg = dict(cfg)
-    stage1_cfg["mls_num_samples"]           = cfg.get("stage1_mls_num_samples", cfg["mls_num_samples"])
-    stage1_cfg["librispeech_num_samples"]   = cfg.get("stage1_librispeech_num_samples", None)
+    stage1_cfg["datasets"] = s1_datasets
+    stage1_cfg["librispeech_num_samples"] = (
+        args.s1_ls_samples  if args.s1_ls_samples  is not None else cfg.get("librispeech_num_samples")
+    )
+    stage1_cfg["mls_num_samples"] = (
+        args.s1_mls_samples if args.s1_mls_samples is not None else cfg.get("mls_num_samples")
+    )
+    stage1_cfg["gs_num_samples"] = (
+        args.s1_gs_samples  if args.s1_gs_samples  is not None else cfg.get("gs_num_samples")
+    )
+
     stage1_train_dataset, val_dataset = build_datasets(stage1_cfg)
+    stage2_train_dataset, _           = build_datasets(cfg)
 
-    # Stage 2: 전체 MLS
-    stage2_train_dataset, _ = build_datasets(cfg)
-
-    proj_path, step_offset = run_stage1(cfg, accelerator, stage1_train_dataset, val_dataset)
+    proj_path, step_offset = run_stage1(cfg, accelerator, stage1_train_dataset, val_dataset,
+                                        debug=args.debug)
     run_stage2(cfg, accelerator, stage2_train_dataset, val_dataset, proj_path, step_offset)
 
     if accelerator.is_main_process:

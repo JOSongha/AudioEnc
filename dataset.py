@@ -93,33 +93,117 @@ class MLSDataset(Dataset):
         return waveform, transcript.lower()
 
 
+class GigaSpeechDataset(Dataset):
+    """
+    speechcolab/gigaspeech — GigaSpeech English (HuggingFace datasets).
+    subset: "xs"(10h) / "s"(250h) / "m"(1000h) / "l"(2500h) / "xl"(10000h)
+    num_samples: None이면 전체, 정수면 랜덤 서브샘플 (seed 고정)
+    """
+
+    def __init__(self, cache_dir: str, subset: str = "l",
+                 num_samples: int = None,
+                 target_sr: int = 16000, max_len: int = 160000,
+                 seed: int = 42):
+        from datasets import load_dataset
+        self.target_sr = target_sr
+        self.max_len   = max_len
+
+        ds = load_dataset(
+            "speechcolab/gigaspeech",
+            subset,
+            split="train",
+            cache_dir=cache_dir,
+            trust_remote_code=True,
+        )
+        total = len(ds)
+        if num_samples is None or num_samples >= total:
+            self.indices = list(range(total))
+        else:
+            rng = random.Random(seed)
+            self.indices = rng.sample(range(total), num_samples)
+        self.dataset = ds
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        item      = self.dataset[self.indices[idx]]
+        audio     = item["audio"]
+        waveform  = torch.tensor(audio["array"], dtype=torch.float32)
+        sample_rate = audio["sampling_rate"]
+
+        if waveform.dim() > 1:
+            waveform = waveform.mean(0)
+
+        if sample_rate != self.target_sr:
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.target_sr)
+
+        if waveform.shape[0] > self.max_len:
+            waveform = waveform[: self.max_len]
+
+        transcript = item["text"].lower()
+        # GigaSpeech 태그 제거: <COMMA>, <PERIOD>, <NOISE> 등
+        import re
+        transcript = re.sub(r"<[^>]+>", "", transcript).strip()
+
+        return waveform, transcript
+
+
+_LS_URL = {
+    "ls100": "train-clean-100",
+    "ls360": "train-clean-360",
+    "ls500": "train-other-500",
+}
+
+
 def build_datasets(cfg: dict):
     """
-    train: LibriSpeech (clean-100 + clean-360 + other-500)
-           + MLS English 샘플링
-           librispeech_num_samples 지정 시 LibriSpeech를 랜덤 서브샘플
+    train: cfg["datasets"] 목록에 지정된 데이터셋만 사용.
+           datasets 예: ["ls100", "ls360", "ls500", "mls", "gs"]
+           *_num_samples 로 각 양을 제한.
     val:   LibriSpeech dev-clean
     """
     root        = cfg["data_path"]
     mls_root    = cfg.get("mls_data_path", root)
     max_len     = cfg["max_audio_len"]
-    mls_samples = cfg.get("mls_num_samples", None)
+    datasets    = cfg.get("datasets", ["ls100", "ls360", "ls500", "mls"])
 
-    librispeech = ConcatDataset([
-        LibriSpeechDataset(root=root, url="train-clean-100", max_len=max_len),
-        LibriSpeechDataset(root=root, url="train-clean-360", max_len=max_len),
-        LibriSpeechDataset(root=root, url="train-other-500", max_len=max_len),
-    ])
-    ls_num = cfg.get("librispeech_num_samples", None)
-    if ls_num and ls_num < len(librispeech):
-        indices = random.Random(42).sample(range(len(librispeech)), ls_num)
-        librispeech = Subset(librispeech, sorted(indices))
+    parts = []
 
-    train_dataset = ConcatDataset([
-        librispeech,
-        MLSDataset(cache_dir=mls_root, num_samples=mls_samples, max_len=max_len),
-    ])
-    val_dataset = LibriSpeechDataset(root=root, url="dev-clean", max_len=max_len)
+    # LibriSpeech splits
+    ls_splits = [name for name in ["ls100", "ls360", "ls500"] if name in datasets]
+    if ls_splits:
+        ls_parts = [LibriSpeechDataset(root=root, url=_LS_URL[name], max_len=max_len)
+                    for name in ls_splits]
+        librispeech = ConcatDataset(ls_parts) if len(ls_parts) > 1 else ls_parts[0]
+        ls_num = cfg.get("librispeech_num_samples", None)
+        if ls_num and ls_num < len(librispeech):
+            indices = random.Random(42).sample(range(len(librispeech)), ls_num)
+            librispeech = Subset(librispeech, sorted(indices))
+        parts.append(librispeech)
+
+    # MLS
+    if "mls" in datasets:
+        parts.append(MLSDataset(
+            cache_dir=mls_root,
+            num_samples=cfg.get("mls_num_samples", None),
+            max_len=max_len,
+        ))
+
+    # GigaSpeech
+    if "gs" in datasets:
+        parts.append(GigaSpeechDataset(
+            cache_dir=mls_root,
+            subset=cfg.get("gs_subset", "l"),
+            num_samples=cfg.get("gs_num_samples", None),
+            max_len=max_len,
+        ))
+
+    if not parts:
+        raise ValueError(f"datasets에 유효한 항목이 없습니다: {datasets}")
+
+    train_dataset = ConcatDataset(parts) if len(parts) > 1 else parts[0]
+    val_dataset   = LibriSpeechDataset(root=root, url="dev-clean", max_len=max_len)
     return train_dataset, val_dataset
 
 
