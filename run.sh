@@ -2,7 +2,6 @@
 # 사용법:
 #   bash run.sh encodec
 #   bash run.sh dac
-#   bash run.sh dac_vae
 #   bash run.sh mimi_acoustic
 #   bash run.sh mimi_semantic
 

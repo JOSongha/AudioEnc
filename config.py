@@ -15,7 +15,7 @@ TRAIN_CONFIG = {
     "stage1_epochs": 2,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 8,
+    "stage2_epochs": 3,
 
 
     "max_grad_norm": 1.0,
@@ -85,20 +85,7 @@ ENCODER_REGISTRY = {
         "proj_strides": [2, 2],
         "stage2_epochs": 8,   # 원본 q_dac_enc.py 기준
     },
-    "dac_vae": {
-        # descript-audio-codec 44kHz + trainable VAE bottleneck
-        # DAC encoder (frozen, 1024-dim) → Linear → (mu, logvar) → z (256-dim)
-        # 학습 중 reparameterization, 평가 중 mu 사용
-        # out: (B, T_enc, 256) @ ~86fps (hop=512 @ 44kHz)
-        # projector: ~86fps → ~21.5fps (~215 tokens/10sec)
-        "model_type":  "44khz",
-        "out_dim":     256,      # latent_dim (after VAE bottleneck)
-        "latent_dim":  256,
-        "tgt_sr":      44100,
-        "hop":         512,
-        "proj_strides": [2, 2],
-        "stage2_epochs": 8,
-    },
+
     "fb_dacvae": {
         # facebookresearch/dacvae — pretrained DACVAE continuous latent
         # 16kHz → 44kHz, DACVAE.encode() 호출 (encoder + VAEBottleneck 전체 frozen)

@@ -206,15 +206,15 @@ kill -USR1 $(cat /mnt/tmp/cache/hf/train.pid)
   - 고정 이름은 Stage 2 로딩 및 Stage 1 skip 판별에 사용
   - 기록용은 어느 epoch/step에서 best였는지 확인용
 
-**예시 (dac_vae, 2번째 epoch에서 best, step=1200일 때)**
+**예시 (fb_dacvae, 2번째 epoch에서 best, step=1200일 때)**
 ```
 /mnt/tmp/cache/hf/
-├── s1_proj_dac_vae.pt                          ← Stage 1 skip 판별 / Stage 2 로딩용
-├── s1_proj_dac_vae_ep2_step1200_best.pt        ← Stage 1 best 기록용
-├── s1_proj_dac_vae_ep1_step600.pt              ← step 저장 예시
-├── best_dac_vae_ckpt_ep3_step5000/             ← Stage 2 val_loss 최선 시점
+├── s1_proj_fb_dacvae.pt                          ← Stage 1 skip 판별 / Stage 2 로딩용
+├── s1_proj_fb_dacvae_ep2_step1200_best.pt        ← Stage 1 best 기록용
+├── s1_proj_fb_dacvae_ep1_step600.pt              ← step 저장 예시
+├── best_fb_dacvae_ckpt_ep3_step5000/             ← Stage 2 val_loss 최선 시점
 │   └── model.safetensors
-├── step4000_dac_vae_ckpt/                      ← Stage 2 step 저장 예시
-└── final_dac_vae_ckpt_ep16_step21000/          ← Stage 2 종료 시
+├── step4000_fb_dacvae_ckpt/                      ← Stage 2 step 저장 예시
+└── final_fb_dacvae_ckpt_ep16_step21000/          ← Stage 2 종료 시
     └── model.safetensors
 ```
