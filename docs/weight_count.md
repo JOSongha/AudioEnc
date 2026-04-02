@@ -90,9 +90,9 @@ dtype: `float32` (`ctc_head.float()` — model.py `init_ctc_head()`)
 
 ## Stage 1 학습 파라미터 요약
 
-Stage 1에서 LLM은 frozen. 학습 대상: projector + proj_norm (+ CTC head if `-c`).
+Stage 1에서 LLM은 frozen. 학습 대상: projector + proj_norm (+ CTC head if `--debug c`).
 
-| encoder | without CTC | with CTC (`-c`) | 차이 |
+| encoder | without CTC | with CTC (`--debug c`) | 차이 |
 |---|---|---|---|
 | encodec | 26.5M | 26.5M + 57K | +0.22% |
 | dac | 35.7M | 35.7M + 57K | +0.16% |

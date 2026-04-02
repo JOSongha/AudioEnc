@@ -122,9 +122,9 @@ Projector (Conv1d ×2)
 (B, T_proj, llm_dim)     ← projector output (T_proj = T_enc / 4)
     ├─────────────────────────────────────────────────
     │  [Stage 1 only]
-    │  CTC head: Linear(llm_dim, char_vocab_size)
+    │  CTC head: Linear(llm_dim, 28)  ← blank=0, a-z=1-26, space=27
     │      ↓
-    │  (B, T_proj, 40)   ← per-frame character logits
+    │  (B, T_proj, 28)   ← per-frame character logits
     │      ↓
     │  CTCLoss(log_softmax(logits), char_targets)
     │      ↓
@@ -133,7 +133,7 @@ Projector (Conv1d ×2)
     ↓  [Stage 2]
 proj_norm
     ↓
-LLM (Qwen3.5-2B)
+LLM (Qwen3.5-2B, 기본; --llm으로 변경 가능)
 ```
 
 **핵심**: CTC loss는 LLM을 전혀 거치지 않는다. projector output에서 바로 계산된다.
@@ -158,25 +158,37 @@ Qwen tokenizer(BPE, ~150k)를 CTC에 그대로 쓰면:
 대신 character-level vocabulary를 사용한다:
 
 ```python
-CHARS = list("abcdefghijklmnopqrstuvwxyz '")  # 28자
-# blank 토큰(index 0) 포함 → 총 29
+# blank=0, a-z=1-26, space=27  →  총 28 classes
+_CTC_CHAR_TO_IDX = {c: i+1 for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}
+_CTC_CHAR_TO_IDX[" "] = 27
 ```
 
 transcript를 character sequence로 변환:
 
 ```python
-"chapter one" → ['c','h','a','p','t','e','r',' ','o','n','e']
+"chapter one" → [3,8,1,16,20,5,18, 27, 15,14,5]   # a=1..z=26, space=27
 ```
 
-CTC head 크기: `Linear(llm_dim, 29)` → 파라미터 약 60k. 오버헤드 무시 가능.
+CTC head 크기: `Linear(llm_dim, 28)` → 파라미터 약 57K. 오버헤드 무시 가능.
+
+**활성화 방법**: `--debug c` 플래그로 Stage 1 시작 시 `model.init_ctc_head()`가 호출된다.
+`init_ctc_head()`는 반드시 `freeze_llm()` 호출 후, optimizer 생성 전에 실행되어야 optimizer에 포함된다.
 
 ### 3-4. Stage 1 loss 구성
 
+현재 구현: `--debug c` 플래그를 쓸 때 loss = CE + CTC (합산, `ctc_weight=1.0` 고정).
+
 ```python
-loss = ce_loss + ctc_weight * ctc_loss
+# model.py forward()
+if self.ctc_head is not None and ctc_targets is not None:
+    ctc_loss = torch.nn.functional.ctc_loss(...)
+...
+out = self.llm(...)          # CE loss 계산
+if ctc_loss is not None:
+    out.loss = out.loss + ctc_loss
 ```
 
-옵션 A (hybrid): CE + CTC 동시 학습
+옵션 A (hybrid, 현재): CE + CTC 동시 학습
 - CE가 projector를 LLM embedding space에 align하는 역할 유지
 - CTC가 audio encoding을 강제
 
@@ -186,6 +198,17 @@ loss = ce_loss + ctc_weight * ctc_loss
 
 권장: **옵션 A**. CE는 projector output을 LLM이 쓸 수 있는 space로 유지시키고,
 CTC는 그 output이 실제 audio 내용을 담도록 강제한다.
+
+### 3-5. EOS over-generation 억제 (eos_weight)
+
+`forward()`의 `eos_weight` 파라미터로 EOS 토큰 위치의 loss에 추가 가중치를 줄 수 있다.
+
+```python
+# eos_weight > 1.0이면 EOS 예측을 더 강하게 학습
+outputs = model(audio, ..., eos_weight=2.0)
+```
+
+CTC와 독립적으로 동작하며, 기본값은 `1.0` (기존 CE loss와 동일).
 
 ---
 
