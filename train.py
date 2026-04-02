@@ -137,6 +137,8 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                               collate_fn=collate, num_workers=1, pin_memory=True)
 
     model.freeze_llm()
+    if "c" in debug:
+        model.init_ctc_head()
 
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -160,8 +162,15 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
             audio_lengths  = audio_lengths.to(accelerator.device)
             transcript_ids = transcript_ids.to(accelerator.device)
             with accelerator.accumulate(model):
-                outputs = model(audio, audio_lengths=audio_lengths,
-                                transcript_input_ids=transcript_ids)
+                if "c" in debug:
+                    texts = tokenizer.batch_decode(transcript_ids, skip_special_tokens=True)
+                    ctc_tgt, ctc_tgt_len = _text_to_ctc_targets(texts)
+                    outputs = model(audio, audio_lengths=audio_lengths,
+                                    transcript_input_ids=transcript_ids,
+                                    ctc_targets=ctc_tgt, ctc_target_lengths=ctc_tgt_len)
+                else:
+                    outputs = model(audio, audio_lengths=audio_lengths,
+                                    transcript_input_ids=transcript_ids)
                 accelerator.backward(outputs.loss)
                 if accelerator.is_main_process:
                     accum_bsz += audio.shape[0]
@@ -182,9 +191,20 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                         progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
                                              bsz=accum_bsz)
                         accum_bsz = 0
-                    step_tensor = torch.tensor([global_step], device=accelerator.device)
-                    torch.distributed.broadcast(step_tensor, src=0)
-                    global_step = step_tensor[0].item()
+                    if accelerator.num_processes > 1:
+                        step_tensor = torch.tensor([global_step], device=accelerator.device)
+                        torch.distributed.broadcast(step_tensor, src=0)
+                        global_step = step_tensor[0].item()
+                    if "w" in debug and global_step in (1, 20):
+                        debug_dir = "/mnt/tmp/cache/weightCmprsn"
+                        os.makedirs(debug_dir, exist_ok=True)
+                        unwrapped  = accelerator.unwrap_model(model)
+                        debug_path = os.path.join(debug_dir, f"full_weights_step{global_step}.pt")
+                        torch.save({k: v.cpu() for k, v in unwrapped.state_dict().items()}, debug_path)
+                        print(f"  [DEBUG] Full weights saved → {debug_path}")
+                        if global_step == 20:
+                            print("  [DEBUG] step 20 reached — exiting")
+                            raise SystemExit(0)
                     if save_steps and global_step % save_steps == 0:
                         accelerator.wait_for_everyone()
                         if accelerator.is_main_process:
@@ -388,6 +408,23 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
 # Entry point
 # ==========================================
 
+# CTC 문자 변환 (blank=0, a-z=1-26, space=27)
+_CTC_CHAR_TO_IDX = {c: i + 1 for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}
+_CTC_CHAR_TO_IDX[" "] = 27
+
+
+def _text_to_ctc_targets(texts: list[str]):
+    seqs = []
+    for text in texts:
+        seq = [_CTC_CHAR_TO_IDX[c] for c in text.lower() if c in _CTC_CHAR_TO_IDX]
+        seqs.append(seq if seq else [27])
+    target_lengths = torch.tensor([len(s) for s in seqs], dtype=torch.long)
+    targets = torch.zeros(len(seqs), max(len(s) for s in seqs), dtype=torch.long)
+    for i, s in enumerate(seqs):
+        targets[i, : len(s)] = torch.tensor(s, dtype=torch.long)
+    return targets, target_lengths
+
+
 def _parse_datasets(s: str) -> list:
     valid = {"ls100", "ls360", "ls500", "mls", "gs"}
     items = [x.strip() for x in s.split(",") if x.strip()]
@@ -405,8 +442,7 @@ def main():
                         choices=["encodec", "dac", "fb_dacvae", "mimi_acoustic", "mimi_semantic"],
                         help="사용할 audio encoder")
     parser.add_argument("--llm",        default=None,
-                        choices=["4b", "2b"],
-                        help="LLM 크기: 4b=Qwen3.5-4B (기본), 2b=Qwen3.5-2B")
+                        help="LLM 모델 이름 (예: Qwen/Qwen3.5-0.8B). 기본: config 값")
     parser.add_argument("--data-path",  default=None, help="데이터 루트 경로 (기본: config 값)")
     parser.add_argument("--cache-dir",  default=None, help="모델 캐시 경로 (기본: config 값)")
     parser.add_argument("--wandb-mode", default=None, choices=["online", "offline", "disabled"])
@@ -439,7 +475,7 @@ def main():
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
-    if args.llm == "2b":    cfg["llm_model"] = "Qwen/Qwen3.5-2B"
+    if args.llm:            cfg["llm_model"] = args.llm
     if args.data_path:      cfg["data_path"]       = args.data_path
     if args.cache_dir:      cfg["model_cache_dir"] = args.cache_dir
     if args.wandb_mode:     cfg["wandb_mode"]      = args.wandb_mode
