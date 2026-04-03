@@ -12,7 +12,7 @@ TRAIN_CONFIG = {
     "gradient_accumulation_steps": 4,
 
     "stage1_lr": 5e-5,
-    "stage1_epochs": 2,
+    "stage1_epochs": 20,
 
     "stage2_lr": 2e-5,
     "stage2_epochs": 3,
