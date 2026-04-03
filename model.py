@@ -2,6 +2,7 @@ import os
 
 import torch
 import torch.nn as nn
+from huggingface_hub import try_to_load_from_cache
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from encoders.base import BaseAudioEncoder
@@ -36,21 +37,20 @@ class AudioQwen(nn.Module):
         cache_dir   = cfg["model_cache_dir"]
         llm_name    = cfg["llm_model"]
 
-        print(f"Loading LLM: {llm_name} (dtype={torch_dtype})...")
+        cached = try_to_load_from_cache(llm_name, "config.json", cache_dir=cache_dir)
+        print(f"Loading LLM: {llm_name} (dtype={torch_dtype}, {'캐시' if cached else '다운로드'})...")
         self.llm = AutoModelForCausalLM.from_pretrained(
             llm_name,
             cache_dir=cache_dir,
             torch_dtype=torch_dtype,
             token=os.environ.get("HF_TOKEN"),
             trust_remote_code=True,
-            local_files_only=True,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
             llm_name,
             cache_dir=cache_dir,
             token=os.environ.get("HF_TOKEN"),
             trust_remote_code=True,
-            local_files_only=True,
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -76,6 +76,7 @@ class AudioQwen(nn.Module):
         self.projector = nn.Sequential(*layers)
 
         self.proj_norm = nn.LayerNorm(llm_dim)
+        self.ctc_head  = None  # init_ctc_head()로 활성화 (--debug c)
         self.projector.to(dtype=torch_dtype)
         self.proj_norm.to(dtype=torch_dtype)
 
@@ -140,6 +141,17 @@ class AudioQwen(nn.Module):
     # Stage 1 / Stage 2 설정
     # ------------------------------------------------------------------
 
+    def init_ctc_head(self, n_chars: int = 28):
+        """Stage 1 CTC head 초기화 (blank=0, a-z=1-26, space=27).
+        freeze_llm() 후, optimizer 생성 전에 호출해야 optimizer에 포함됨."""
+        llm_dim = self.llm.config.hidden_size
+        self.ctc_head = nn.Linear(llm_dim, n_chars)
+        nn.init.xavier_uniform_(self.ctc_head.weight)
+        nn.init.zeros_(self.ctc_head.bias)
+        self.ctc_head.float()
+        self.ctc_head.requires_grad_(True)
+        print(f"CTC head initialized: Linear({llm_dim}, {n_chars})")
+
     def freeze_llm(self):
         """Stage 1: LLM frozen, projector만 학습."""
         print("Freezing LLM (Stage 1)...")
@@ -185,11 +197,23 @@ class AudioQwen(nn.Module):
     # Forward
     # ------------------------------------------------------------------
 
-    def forward(self, audio, audio_lengths=None, transcript_input_ids=None):
+    def forward(self, audio, audio_lengths=None, transcript_input_ids=None,
+                ctc_targets=None, ctc_target_lengths=None, eos_weight: float = 1.0):
         audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
 
         if transcript_input_ids is None:
             return audio_embeds, audio_mask
+
+        # CTC loss (--debug c, projector 출력에서 직접 계산 — LLM 우회)
+        ctc_loss = None
+        if self.ctc_head is not None and ctc_targets is not None:
+            ctc_logits   = self.ctc_head(audio_embeds.float())          # (B, T_proj, n_chars)
+            log_probs    = ctc_logits.log_softmax(-1).transpose(0, 1)   # (T_proj, B, n_chars)
+            input_lengths = audio_mask.long().sum(dim=1).cpu()
+            ctc_loss = torch.nn.functional.ctc_loss(
+                log_probs, ctc_targets.cpu(), input_lengths, ctc_target_lengths.cpu(),
+                blank=0, reduction="mean", zero_infinity=True,
+            )
 
         device = audio_embeds.device
         B      = audio_embeds.shape[0]
@@ -214,9 +238,25 @@ class AudioQwen(nn.Module):
         tgt_labels[:, :-1][tgt_labels[:, :-1] == self.tokenizer.pad_token_id] = -100
         labels     = torch.cat([ctx_labels, tgt_labels], dim=1)
 
-        return self.llm(
+        out = self.llm(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
             labels=labels,
             use_cache=False,
         )
+        if eos_weight != 1.0:
+            # EOS 위치 loss에 추가 가중치 적용 (over-generation 억제)
+            shift_logits = out.logits[:, :-1].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
+            per_tok = torch.nn.functional.cross_entropy(
+                shift_logits.view(-1, shift_logits.shape[-1]),
+                shift_labels.view(-1),
+                ignore_index=-100, reduction="none",
+            ).view(B, -1)
+            is_eos = (shift_labels == self.tokenizer.eos_token_id).float()
+            weights = 1.0 + (eos_weight - 1.0) * is_eos
+            valid   = (shift_labels != -100).float()
+            out.loss = (per_tok * weights * valid).sum() / (valid * weights).sum().clamp(min=1)
+        if ctc_loss is not None:
+            out.loss = out.loss + ctc_loss
+        return out

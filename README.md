@@ -1,7 +1,8 @@
 # AudioEnc — Encoder-Swappable ASR Training Framework
 
-Qwen3.5-4B + 교체 가능한 Audio Encoder로 LibriSpeech, MLS ASR을 학습하는 프레임워크.
-`--encoder encodec|dac|mimi` 인자 하나로 encoder를 바꿔 동일한 학습 파이프라인을 실행한다.
+Qwen3.5-2B + 교체 가능한 Audio Encoder로 LibriSpeech, MLS ASR을 학습하는 프레임워크.
+`--encoder encodec|dac|mimi_acoustic|mimi_semantic|fb_dacvae` 인자 하나로 encoder를 바꿔 동일한 학습 파이프라인을 실행한다.
+LLM 모델은 기본 `Qwen/Qwen3.5-2B`이며 `--llm <모델명>`으로 변경 가능하다.
 
 ---
 
@@ -14,12 +15,16 @@ AudioEnc/
 │   ├── base.py           # BaseAudioEncoder ABC
 │   ├── encodec.py        # facebook/encodec-24khz
 │   ├── dac.py            # descript-audio-codec 44kHz
-│   └── mimi.py           # kyutai/mimi
+│   └── mimi.py           # kyutai/mimi (acoustic / semantic)
+├── docs/                 # 설계 문서
 ├── config.py             # TRAIN_CONFIG + ENCODER_REGISTRY
 ├── dataset.py            # LibriSpeechDataset, MLSDataset, collate_fn_factory
 ├── model.py              # AudioQwen (encoder-agnostic)
 ├── train.py              # 2-Stage 학습 루프 (argparse)
-└── run.sh                # 실행 예시
+├── train_debug.py        # 디버그용 단독 학습 스크립트
+├── weightCmprsn.py       # 가중치 비교/검사 도구
+├── run.sh                # 실행 예시
+└── run_debug.sh          # 디버그 실행 예시 (--debug c/w)
 ```
 
 ---
@@ -91,21 +96,23 @@ forward 흐름:
     → encoder(audio, lengths)           # (B, T_enc, out_dim), mask
     → projector (Conv1d ×3, stride-2×2) # (B, T_proj, llm_dim)
     → proj_norm (LayerNorm)
+    ├─ [--debug c] CTC head → L_CTC (projector output에서 직접)
     → [p1 embed] + [audio embed] + [p2 embed] + [transcript embed]
-    → Qwen2.5-7B → loss (transcript tokens만)
+    → Qwen3.5-2B → L_CE (transcript tokens만)
 ```
 
 **projector 구조** (encoder와 무관하게 동일):
 ```
 Conv1d(out_dim → llm_dim, k=5, s=2) + GELU
-Conv1d(llm_dim → llm_dim, k=5, s=2) + GELU
+Conv1d(llm_dim → llm_dim, k=5, s=2) + GELU  ← mimi_semantic은 생략
 Conv1d(llm_dim → llm_dim, k=1)
 LayerNorm
 ```
-총 stride=4. mask downsampling도 자동 계산 (`::proj_stride`).
+`llm_dim = 2048` (Qwen3.5-2B hidden_size). 총 stride=4 (mimi_semantic은 ×2). mask downsampling도 자동 계산.
 
 **메서드:**
 - `freeze_llm()` — Stage 1용, projector fp32 캐스팅 포함
+- `init_ctc_head()` — Stage 1 CTC 보조 head 초기화 (`--debug c` 시 호출)
 - `apply_lora()` — Stage 2용, peft LoraConfig 적용
 
 ---
@@ -153,17 +160,31 @@ encoder가 바뀌어도 dataset은 변경 없음. 항상 16kHz 출력.
 ```bash
 python train.py --encoder encodec
 python train.py --encoder dac
-python train.py --encoder mimi
+python train.py --encoder mimi_acoustic
+python train.py --encoder mimi_semantic --llm Qwen/Qwen3.5-0.8B  # LLM 직접 지정
 ```
+
+**주요 인자:**
+
+| 인자 | 설명 |
+|---|---|
+| `--encoder` | audio encoder 선택 (`encodec`, `dac`, `fb_dacvae`, `mimi_acoustic`, `mimi_semantic`) |
+| `--llm <모델명>` | LLM 모델 지정 (예: `Qwen/Qwen3.5-0.8B`). 기본: config 값(`Qwen/Qwen3.5-2B`) |
+| `--debug c` | Stage 1에 CTC 보조 head 추가 (`init_ctc_head()` 호출, `L = L_CE + L_CTC`) |
+| `--debug w` | step 1, 20에서 전체 가중치를 `/mnt/tmp/cache/weightCmprsn/`에 저장 후 step 20에서 종료 |
+| `--s1-only` | Stage 1만 실행 |
+| `--s2-only` | Stage 1 스킵, Stage 2만 실행 |
+| `--data-path` | LibriSpeech 데이터 루트 경로 |
+| `--cache-dir` | 모델 캐시 경로 |
 
 **Stage 1: Projector Alignment** (LLM frozen)
 - optimizer: AdamW (standard)
 - projector fp32 강제
-- checkpoint: `s1_projector_{encoder}.pt`
+- checkpoint: `s1_proj_{encoder}.pt`
 
 **Stage 2: LoRA Fine-tuning**
 - optimizer: bitsandbytes AdamW8bit (없으면 standard)
-- checkpoint naming: `best_{encoder}_ckpt`, `best_{encoder}_ckpt_r1`, ...
+- checkpoint naming: `best_{encoder}_ckpt_ep{N}_step{N}/` 등
 - 자동 resume: `r1 > r0 > fresh`
 
 **encoder별로 독립적인 checkpoint 공간** → 동일 머신에서 여러 encoder 병렬 실험 가능.
@@ -177,25 +198,30 @@ python train.py --encoder mimi
 bash run.sh encodec
 
 # 여러 encoder 순차 실험
-for enc in encodec dac mimi; do
+for enc in encodec dac mimi_acoustic mimi_semantic; do
     bash run.sh $enc
 done
+
+# CTC 디버그 모드 (Stage 1 + CTC head)
+bash run_debug.sh
 ```
 
 ---
 
 ## Encoder별 특성 비교
 
-| | EnCodec | DAC | Mimi |
-|---|---|---|---|
-| 모델 | facebook/encodec-24khz | descript/dac-44kHz | kyutai/mimi |
-| out_dim | 128 | 1024 | 512 |
-| fps (before proj) | 75 | ~86 | 12.5 |
-| fps (after proj) | ~19 | ~21 | ~3 |
-| 10초 토큰 수 | ~188 | ~215 | ~31 |
-| 로드 방식 | HuggingFace | dac library | HuggingFace |
-| torch.load 패치 | 불필요 | 필요 (audiotools) | 불필요 |
-| V100 cuDNN 이슈 | LSTM → fp32 강제 | 해당 없음 | 해당 없음 |
+| | EnCodec | DAC | Mimi acoustic | Mimi semantic |
+|---|---|---|---|---|
+| 모델 | facebook/encodec-24khz | descript/dac-44kHz | kyutai/mimi | kyutai/mimi |
+| out_dim | 128 | 1024 | 512 | 512 |
+| fps (before proj) | 75 | ~86 | 25 | 25 |
+| fps (after proj, ×4) | ~19 | ~21 | ~6 | — |
+| fps (after proj, ×2) | — | — | — | ~13 |
+| 10초 토큰 수 | ~188 | ~215 | ~63 | ~125 |
+| 로드 방식 | HuggingFace | dac library | HuggingFace | HuggingFace |
+| encoder_transformer | 제외 | 제외 | 제외 | **포함** |
+| torch.load 패치 | 불필요 | 필요 (audiotools) | 불필요 | 불필요 |
+| V100 cuDNN 이슈 | LSTM → fp32 강제 | 해당 없음 | 해당 없음 | 해당 없음 |
 
 ---
 

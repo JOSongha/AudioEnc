@@ -29,16 +29,17 @@ Audio Encoder 종류에 따른 ASR 성능 비교 실험.
 
 | 항목 | 값 |
 |---|---|
-| 모델 | `Qwen/Qwen3.5-4B` (Base) |
-| 파라미터 | **~4.0B** |
-| hidden_size | 2,560 |
+| 모델 | `Qwen/Qwen3.5-2B` (Base, 기본값) |
+| 파라미터 | **~2.0B** |
+| hidden_size | 2,048 |
+| num_hidden_layers | 24 |
 | 학습 방식 | Stage 1: frozen / Stage 2: LoRA (r=16) |
-| LoRA 학습 파라미터 | ~12M (q/k/v/o_proj × 36 layers) |
+| LoRA 학습 파라미터 | ~5M (q/k/v/o_proj × 24 layers) |
 | dtype | bf16 |
 | 프롬프트 포맷 | `"Audio:\n"` + audio embeds + `"\nTranscript:\n"` + transcript |
 
-> Instruct 버전(`Qwen3.5-4B-Instruct`)과의 차이: config에서 `llm_type: "instruct"`로 전환 가능.
-> Instruct는 ChatML 포맷(`<|im_start|>system...`) 사용.
+> `--llm <모델명>` 인자로 실행 시 임의의 HuggingFace 모델로 교체 가능 (예: `Qwen/Qwen3.5-0.8B`).
+> config의 `llm_model` 키를 직접 수정해도 된다.
 
 ---
 
@@ -124,22 +125,24 @@ Acoustic encoder(저수준) + Semantic transformer(고수준)를 순차 통과.
 
 ## Projector
 
-각 encoder의 출력을 LLM hidden_size(2560)로 매핑하는 학습 가능 모듈.
+각 encoder의 출력을 LLM hidden_size(2048)로 매핑하는 학습 가능 모듈.
 
 ```
-Conv1d(in_dim → 2560, k=5, s=2) + GELU
-Conv1d(2560   → 2560, k=5, s=2) + GELU   ← mimi_semantic은 stride-2 1회만
-Conv1d(2560   → 2560, k=1)
-LayerNorm(2560)
+Conv1d(in_dim → 2048, k=5, s=2) + GELU
+Conv1d(2048   → 2048, k=5, s=2) + GELU   ← mimi_semantic은 stride-2 1회만
+Conv1d(2048   → 2048, k=1)
+LayerNorm(2048)
 ```
+
+파라미터 수 상세 계산은 [docs/weight_count.md](weight_count.md) 참조.
 
 | Encoder | in_dim | Projector 파라미터 | 총 stride | 10초 후 토큰 수 |
 |---|---|---|---|---|
-| DAC | 1,024 | **~52M** | ×4 | ~215 |
-| EnCodec | 128 | **~41M** | ×4 | ~188 |
-| Whisper tiny | 384 | **~44M** | ×4 | ~125 |
-| Mimi semantic | 512 | **~46M** | ×2 | ~125 |
-| Mimi acoustic | 512 | **~46M** | ×4 | ~63 |
+| DAC | 1,024 | **~35.7M** | ×4 | ~215 |
+| EnCodec | 128 | **~26.5M** | ×4 | ~188 |
+| Mimi semantic | 512 | **~9.4M** | ×2 | ~125 |
+| Mimi acoustic | 512 | **~30.4M** | ×4 | ~63 |
+| fb_dacvae | 8 | **~25.3M** | ×4 | ~215 |
 
 ---
 
@@ -147,13 +150,13 @@ LayerNorm(2560)
 
 | 실험 | Encoder | Encoder 크기 | Projector | LLM (LoRA) | 총 파라미터 | 학습 파라미터 (Stage 2) |
 |---|---|---|---|---|---|---|
-| dac | DAC acoustic | ~25M | ~52M | 4.0B | **~4.08B** | ~64M (projector + LoRA) |
-| encodec | EnCodec acoustic | ~14M | ~41M | 4.0B | **~4.06B** | ~53M |
-| mimi_semantic | Mimi hybrid | ~87M | ~46M | 4.0B | **~4.13B** | ~58M |
-| mimi_acoustic | Mimi acoustic | ~20M | ~46M | 4.0B | **~4.07B** | ~58M |
-| whisper (예정) | Whisper semantic | ~15M | ~44M | 4.0B | **~4.06B** | ~56M |
+| dac | DAC acoustic | ~25M | ~35.7M | 2.0B | **~2.06B** | ~41M (projector + LoRA) |
+| encodec | EnCodec acoustic | ~14M | ~26.5M | 2.0B | **~2.04B** | ~32M |
+| mimi_semantic | Mimi hybrid | ~87M | ~9.4M | 2.0B | **~2.10B** | ~14M |
+| mimi_acoustic | Mimi acoustic | ~20M | ~30.4M | 2.0B | **~2.05B** | ~35M |
+| fb_dacvae | FB DAC-VAE | — | ~25.3M | 2.0B | **~2.03B** | ~30M |
 
-> 학습 파라미터: projector 전체 + LoRA (~12M). Encoder와 LLM 나머지는 frozen.
+> 학습 파라미터: projector 전체 + LoRA (~5M, r=16, q/k/v/o_proj × 24 layers). Encoder와 LLM 나머지는 frozen.
 
 ---
 
@@ -164,6 +167,8 @@ Stage 1: Projector Alignment
   - LLM frozen, projector만 학습
   - AdamW, lr=5e-5, 3 epochs, cosine schedule
   - batch_size=4 per GPU × 8 GPU × grad_accum=4 → 실효 배치=128
+  - --debug c: CTC 보조 head 추가 (L = L_CE + L_CTC)
+  - --debug w: step 1,20에서 가중치 덤프 후 종료 (디버그용)
 
 Stage 2: LoRA Fine-tuning
   - LLM에 LoRA(r=16) 적용, projector도 계속 학습
