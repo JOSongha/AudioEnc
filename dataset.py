@@ -1,12 +1,16 @@
+import bisect
 import io
 import os
 import pickle
 import random
+from typing import Any
 
 import numpy as np
 import torch
 import torchaudio
 from torch.utils.data import Dataset, ConcatDataset, Subset
+
+IGNORE_INDEX = -100
 
 
 class LibriSpeechDataset(Dataset):
@@ -248,7 +252,7 @@ def build_datasets(cfg: dict):
     if "gs" in datasets:
         parts.append(GigaSpeechDataset(
             cache_dir=mls_root,
-            subset=cfg.get("gs_subset", "l"),
+            subset=cfg.get("gs_subset", "xl"),
             num_samples=cfg.get("gs_num_samples", None),
             max_len=max_len,
         ))
@@ -318,6 +322,8 @@ def _collect_lengths(dataset) -> list:
         return _mls_lengths(dataset)
     elif isinstance(dataset, VoxPopuliDataset):
         return _voxpopuli_lengths(dataset)
+    elif isinstance(dataset, GigaSpeechDataset):
+        return _gigaspeech_lengths(dataset)
     raise ValueError(f"Unknown dataset type: {type(dataset)}")
 
 
@@ -357,6 +363,19 @@ def _mls_lengths(dataset: "MLSDataset") -> list:
     return [
         min(int(len(t) / chars_per_sec * dataset.target_sr), dataset.max_len)
         for t in selected["transcript"]
+    ]
+
+
+def _gigaspeech_lengths(dataset: "GigaSpeechDataset") -> list:
+    """transcript 글자 수 → 오디오 샘플 수로 변환 (오디오 디코딩 없음).
+    MLS와 동일한 방식: 영어 평균 발화 속도 ~14자/초 기준."""
+    selected = dataset.dataset.select(dataset.indices)
+    chars_per_sec = 14.0
+    import re
+    return [
+        min(int(len(re.sub(r"<[^>]+>", "", t).strip()) / chars_per_sec * dataset.target_sr),
+            dataset.max_len)
+        for t in selected["text"]
     ]
 
 
@@ -595,6 +614,335 @@ def collate_fn_factory(tokenizer, max_text_len: int = 256, eos_token_id: int = N
             if _eos_id is not None:
                 eos = torch.full((input_ids.shape[0], 1), _eos_id, dtype=torch.long)
                 input_ids = torch.cat([input_ids, eos], dim=1)
+
+        return audios_padded, audio_lengths, input_ids
+
+    return collate_fn
+
+
+# ==========================================
+# Sequence Packing 파이프라인
+# ==========================================
+
+def build_packed_processor(tokenizer, cfg: dict):
+    """
+    (waveform: Tensor[T], transcript: str) → dict:
+      input_ids:      list[int]  [p1] + [audio_pad × t_audio] + [p2] + [text] + [EOS]
+      labels:         list[int]  [IGNORE × (p1+t_audio+p2)] + [text] + [EOS]
+      audio_features: Tensor[T]  raw waveform (16kHz)
+      audio_lengths:  int        t_audio (audio token 수, projector 출력 기준)
+
+    모델 forward 시 audio_pad 위치를 encoder+projector 출력으로 교체.
+    t_audio = int(num_samples / samples_per_token) — config와 동일한 공식.
+    """
+    audio_pad_id      = cfg["audio_pad_token_id"]
+    samples_per_token = cfg["samples_per_token"]
+    max_text_len      = cfg["max_text_len"]
+    llm_type          = cfg.get("llm_type", "base")
+
+    if llm_type == "instruct":
+        p1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        p2 = "\nTranscribe the audio to text.<|im_end|>\n<|im_start|>assistant\n"
+    else:
+        p1 = "Audio:\n"
+        p2 = "\nTranscript:\n"
+
+    p1_ids = tokenizer.encode(p1, add_special_tokens=False)
+    p2_ids = tokenizer.encode(p2, add_special_tokens=False)
+
+    def process(waveform: torch.Tensor, transcript: str) -> dict:
+        num_samples = waveform.shape[0]
+        t_audio     = max(1, int(num_samples / samples_per_token))
+
+        text_ids = tokenizer.encode(
+            transcript, add_special_tokens=False,
+            truncation=True, max_length=max_text_len - 1,
+        )
+        if tokenizer.eos_token_id is not None:
+            text_ids = text_ids + [tokenizer.eos_token_id]
+
+        input_ids = p1_ids + [audio_pad_id] * t_audio + p2_ids + text_ids
+        labels    = [IGNORE_INDEX] * (len(p1_ids) + t_audio + len(p2_ids)) + text_ids
+
+        return {
+            "input_ids":      input_ids,
+            "labels":         labels,
+            "audio_features": waveform,
+            "audio_lengths":  t_audio,
+        }
+
+    return process
+
+
+def _build_packs(token_lengths: list, cutoff_len: int, seed: int = 42) -> list:
+    """
+    greedy knapsack packing: cutoff_len 내에 최대한 많은 샘플을 이어붙임.
+    bisect로 O(log n) 탐색. cutoff_len 초과 샘플은 드롭.
+    반환: [[orig_idx, ...], [orig_idx, ...], ...]
+    """
+    rng = random.Random(seed)
+
+    indexed = sorted(
+        [(l, i) for i, l in enumerate(token_lengths) if l <= cutoff_len],
+        key=lambda x: x[0],
+    )
+    sorted_lengths = [l for l, _ in indexed]
+    sorted_indices = [i for _, i in indexed]
+
+    packs = []
+    while sorted_lengths:
+        pack      = []
+        remaining = cutoff_len
+        while True:
+            pos = bisect.bisect_right(sorted_lengths, remaining) - 1
+            if pos < 0:
+                break
+            remaining -= sorted_lengths.pop(pos)
+            pack.append(sorted_indices.pop(pos))
+        if pack:
+            packs.append(pack)
+
+    rng.shuffle(packs)
+    return packs
+
+
+class PackedDataset(Dataset):
+    """
+    기존 (waveform, transcript) Dataset을 greedy knapsack sequence packing으로 변환.
+
+    초기화 시 token_lengths로 packing 계획을 수립 (오디오 미로드),
+    __getitem__ 에서 실제 샘플을 로드·처리·이어붙여 반환.
+
+    출력:
+      input_ids:      Tensor[cutoff_len]  audio_pad placeholder 포함
+      labels:         Tensor[cutoff_len]  audio/prompt 위치 IGNORE_INDEX
+      attention_mask: Tensor[cutoff_len]  0=pad, 1=sample1, 2=sample2, ...
+      audio_features: list[Tensor[S_k]]  각 오디오 waveform
+      audio_lengths:  list[int]           각 오디오 token 수 (t_audio)
+    """
+
+    def __init__(
+        self,
+        source_dataset,
+        processor_fn,
+        token_lengths: list,
+        cutoff_len: int,
+        pad_token_id: int,
+        seed: int = 42,
+    ):
+        self.source       = source_dataset
+        self.processor    = processor_fn
+        self.cutoff_len   = cutoff_len
+        self.pad_token_id = pad_token_id
+        self.packs        = _build_packs(token_lengths, cutoff_len, seed)
+
+    def __len__(self):
+        return len(self.packs)
+
+    def __getitem__(self, idx: int) -> dict:
+        orig_indices          = self.packs[idx]
+        packed_input_ids      = []
+        packed_labels         = []
+        packed_attention_mask = []
+        packed_audio_features = []
+        packed_audio_lengths  = []
+
+        for seq_idx, orig_idx in enumerate(orig_indices):
+            waveform, transcript = self.source[orig_idx]
+            item = self.processor(waveform, transcript)
+
+            packed_input_ids.extend(item["input_ids"])
+            packed_labels.extend(item["labels"])
+            packed_attention_mask.extend([seq_idx + 1] * len(item["input_ids"]))
+            packed_audio_features.append(item["audio_features"])
+            packed_audio_lengths.append(item["audio_lengths"])
+
+        # cutoff_len까지 패딩
+        pad_len = self.cutoff_len - len(packed_input_ids)
+        if pad_len > 0:
+            packed_input_ids.extend([self.pad_token_id] * pad_len)
+            packed_labels.extend([IGNORE_INDEX] * pad_len)
+            packed_attention_mask.extend([0] * pad_len)
+
+        return {
+            "input_ids":      torch.tensor(packed_input_ids[:self.cutoff_len], dtype=torch.long),
+            "labels":         torch.tensor(packed_labels[:self.cutoff_len], dtype=torch.long),
+            "attention_mask": torch.tensor(packed_attention_mask[:self.cutoff_len], dtype=torch.long),
+            "audio_features": packed_audio_features,
+            "audio_lengths":  packed_audio_lengths,
+        }
+
+
+def _build_position_ids(attention_mask: torch.Tensor) -> torch.Tensor:
+    """
+    neat_packing attention_mask (B, T, values=sample_idx) →
+    position_ids (B, T): 샘플마다 0부터 리셋, pad=0.
+    FA2 varlen 경계 인식에 사용.
+    """
+    B, T = attention_mask.shape
+    position_ids = torch.zeros(B, T, dtype=torch.long)
+    for b in range(B):
+        cnt, prev = 0, -1
+        for t in range(T):
+            grp = int(attention_mask[b, t])
+            if grp == 0:
+                cnt, prev = 0, 0
+            else:
+                if grp != prev:
+                    cnt, prev = 0, grp
+                position_ids[b, t] = cnt
+                cnt += 1
+    return position_ids
+
+
+def _make_block_causal_mask(
+    attention_mask: torch.Tensor, dtype: torch.dtype
+) -> torch.Tensor:
+    """
+    neat_packing attention_mask (B, T, values=sample_idx) →
+    4D block-diagonal causal additive mask (B, 1, T, T).
+
+    같은 샘플 내 + causal 방향만 attend. pad(0) 위치는 완전 차단.
+    eager / sdpa attention에 직접 전달 가능.
+    """
+    B, T   = attention_mask.shape
+    device = attention_mask.device
+
+    causal = torch.tril(torch.ones(T, T, dtype=torch.bool, device=device))
+    same   = (
+        (attention_mask.unsqueeze(2) == attention_mask.unsqueeze(1))
+        & (attention_mask.unsqueeze(2) != 0)
+        & (attention_mask.unsqueeze(1) != 0)
+    )
+    mask_bool = causal.unsqueeze(0) & same                            # (B, T, T)
+
+    additive = torch.zeros(B, 1, T, T, dtype=dtype, device=device)
+    additive.masked_fill_(~mask_bool.unsqueeze(1), float("-inf"))
+    return additive
+
+
+class PackedCollator:
+    """
+    PackedDataset 출력을 배치로 묶어 model._forward_packed() 입력 형태로 변환.
+
+    flash_attention_2:
+      - 패딩 제거 → input_ids/labels: (1, sum_nonpad)
+      - position_ids: 샘플마다 0부터 리셋 (FA2 varlen 경계 인식)
+
+    eager / sdpa:
+      - input_ids/labels: (B, cutoff_len)
+      - attention_mask: 4D block-diagonal causal mask (B, 1, T, T)
+    """
+
+    def __init__(
+        self,
+        pad_token_id: int,
+        attn_implementation: str = "eager",
+        compute_dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.pad_token_id        = pad_token_id
+        self.attn_implementation = attn_implementation
+        self.compute_dtype       = compute_dtype
+
+    def __call__(self, features: list) -> dict:
+        input_ids      = torch.stack([f["input_ids"]      for f in features])  # (B, T)
+        labels         = torch.stack([f["labels"]         for f in features])  # (B, T)
+        attention_mask = torch.stack([f["attention_mask"] for f in features])  # (B, T)
+
+        # 배치 내 모든 오디오를 flatten + zero-pad → (N_audio, 1, S_max)
+        all_wavs, all_t_audio = [], []
+        for f in features:
+            for wav in f["audio_features"]:
+                all_wavs.append(
+                    wav if isinstance(wav, torch.Tensor)
+                    else torch.tensor(wav, dtype=torch.float32)
+                )
+            all_t_audio.extend(f["audio_lengths"])
+
+        if all_wavs:
+            max_s = max(w.shape[0] for w in all_wavs)
+            audio_features = torch.stack([
+                torch.nn.functional.pad(w, (0, max_s - w.shape[0])) for w in all_wavs
+            ]).unsqueeze(1)  # (N, 1, S_max)
+        else:
+            audio_features = torch.zeros(0, 1, 0, dtype=torch.float32)
+        audio_lengths = torch.tensor(all_t_audio, dtype=torch.long)
+
+        result = {"audio_features": audio_features, "audio_lengths": audio_lengths}
+
+        if self.attn_implementation == "flash_attention_2":
+            non_pad             = attention_mask != 0
+            result["input_ids"] = input_ids[non_pad].unsqueeze(0)    # (1, sum_nonpad)
+            result["labels"]    = labels[non_pad].unsqueeze(0)
+            position_ids        = _build_position_ids(attention_mask)
+            result["position_ids"] = position_ids[non_pad].unsqueeze(0)
+        else:
+            result["input_ids"]      = input_ids
+            result["labels"]         = labels
+            result["attention_mask"] = _make_block_causal_mask(
+                attention_mask, self.compute_dtype
+            )
+
+        return result
+
+
+def build_packed_datasets(cfg: dict, tokenizer, is_main_process: bool = False) -> tuple:
+    """
+    Sequence packing 파이프라인용 데이터셋 빌드.
+
+    train: PackedDataset (cfg["datasets"] 기준, greedy knapsack 패킹)
+    val:   LibriSpeech dev-clean (패킹 없음 — 기존 collate_fn_factory 사용)
+    """
+    train_base, val_dataset = build_datasets(cfg)
+
+    spt       = cfg["samples_per_token"]
+    mt        = cfg["max_text_len"]
+    cache_dir = cfg["model_cache_dir"]
+    cutoff    = cfg["packing_cutoff_len"]
+
+    if is_main_process:
+        print("Computing token lengths for sequence packing...")
+    token_lengths = get_dataset_lengths(train_base, spt, mt, cache_dir=cache_dir)
+
+    processor    = build_packed_processor(tokenizer, cfg)
+    train_packed = PackedDataset(
+        source_dataset=train_base,
+        processor_fn=processor,
+        token_lengths=token_lengths,
+        cutoff_len=cutoff,
+        pad_token_id=tokenizer.pad_token_id,
+    )
+    return train_packed, val_dataset
+
+
+def collate_fn_factory_eos_first(tokenizer, max_text_len: int = 256):
+    """
+    EOS-first collate: truncate to max_text_len-1, append EOS, then right-pad.
+    결과: [tok1, tok2, tok3, EOS, PAD, PAD]
+    → loss가 tok3 위치에서 EOS를 예측 (추론과 일치)
+    """
+    def collate_fn(batch):
+        audios = [item[0] for item in batch]
+        texts  = [item[1] for item in batch]
+
+        audio_lengths = torch.tensor([a.shape[0] for a in audios], dtype=torch.long)
+        audios_padded = torch.nn.utils.rnn.pad_sequence(audios, batch_first=True)
+
+        text_inputs = tokenizer(
+            texts,
+            return_tensors=None,
+            padding=False,
+            truncation=True,
+            max_length=max_text_len - 1,
+            add_special_tokens=False,
+        )
+        sequences = []
+        for ids in text_inputs["input_ids"]:
+            seq = torch.tensor(ids + [tokenizer.eos_token_id], dtype=torch.long)
+            sequences.append(seq)
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            sequences, batch_first=True, padding_value=tokenizer.pad_token_id
+        )
 
         return audios_padded, audio_lengths, input_ids
 

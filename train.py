@@ -457,9 +457,9 @@ def main():
                         metavar="N", help="LibriSpeech 서브샘플 수 (Stage 2, 기본: 전체)")
     parser.add_argument("--mls-samples",    default=None, type=int,
                         metavar="N", help="MLS 샘플 수 (Stage 2, 기본: 전체)")
-    parser.add_argument("--gs-subset",      default="l",
+    parser.add_argument("--gs-subset",      default="xl",
                         choices=["xs", "s", "m", "l", "xl"],
-                        help="GigaSpeech subset (기본: l=2500h)")
+                        help="GigaSpeech subset (기본: xl=10000h)")
     parser.add_argument("--gs-samples",     default=None, type=int,
                         metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
     parser.add_argument("--s1-datasets",
@@ -472,6 +472,12 @@ def main():
                         metavar="N", help="Stage 1 MLS 샘플 수 (기본: --mls-samples)")
     parser.add_argument("--s1-gs-samples",  default=None, type=int,
                         metavar="N", help="Stage 1 GigaSpeech 샘플 수 (기본: --gs-samples)")
+    # 최적화 플래그
+    parser.add_argument("--flash-attn",  action="store_true", help="Flash Attention 2 사용")
+    parser.add_argument("--liger",       action="store_true", help="Liger fused kernel 사용")
+    parser.add_argument("--packing",     action="store_true", help="Sequence packing 사용")
+    parser.add_argument("--cutoff-len",  default=4096, type=int, help="Packing cutoff length (기본: 4096)")
+    parser.add_argument("--fsdp",        action="store_true", help="FSDP 사용 (DDP 대체)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -484,15 +490,34 @@ def main():
     if args.mls_samples is not None: cfg["mls_num_samples"]         = args.mls_samples
     cfg["gs_subset"]     = args.gs_subset
     if args.gs_samples  is not None: cfg["gs_num_samples"]          = args.gs_samples
+    if args.flash_attn:  cfg["attn_implementation"] = "flash_attention_2"
+    if args.liger:       cfg["use_liger_kernel"]    = True
+    if args.packing:     cfg["use_packing"]         = True
+    if args.cutoff_len:  cfg["packing_cutoff_len"]  = args.cutoff_len
+    if args.fsdp:        cfg["use_fsdp"]            = True
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
     os.environ.setdefault("TORCH_HOME", os.path.join(os.path.dirname(cfg["model_cache_dir"]), "torch"))
 
+    if cfg.get("use_fsdp", False):
+        from accelerate.utils import FullyShardedDataParallelPlugin
+        from torch.distributed.fsdp.fully_sharded_data_parallel import (
+            FullStateDictConfig, FullOptimStateDictConfig,
+        )
+        fsdp_plugin = FullyShardedDataParallelPlugin(
+            state_dict_config=FullStateDictConfig(offload_to_cpu=True, rank0_only=False),
+            optim_state_dict_config=FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=False),
+            use_orig_params=True,  # LoRA + FSDP 필수
+        )
+    else:
+        fsdp_plugin = None
+
     accelerator = Accelerator(
         gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
         mixed_precision="no",  # fp16 모델을 직접 로드하므로 "no"
         kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=7200))],
+        fsdp_plugin=fsdp_plugin,
     )
 
     if accelerator.is_main_process:

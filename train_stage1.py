@@ -1,16 +1,12 @@
 """
-Stage 1 (Projector Alignment) — EOS-first collate 버전.
-
-train_stage1.py와 동일하지만 collate_fn의 패딩 순서를 변경:
-  기존: [tok1, tok2, tok3, PAD, PAD, EOS]  ← tokenize(padding) → append EOS
-  변경: [tok1, tok2, tok3, EOS, PAD, PAD]  ← tokenize → append EOS → pad
-
-변경 사항 두 곳:
-  1. collate_fn_factory_eos_first  (이 파일 내 재정의)
-  2. AudioQwenEosFirst.forward     (label 마스킹 단순화)
+Stage 1 (Projector Alignment) 단독 학습 루프.
 
 사용법:
-    torchrun --nproc_per_node=8 train_stage1_eos_first.py --encoder fb_dacvae
+    torchrun --nproc_per_node=8 train_stage1.py --encoder encodec
+    torchrun --nproc_per_node=8 train_stage1.py --encoder dac
+    torchrun --nproc_per_node=8 train_stage1.py --encoder fb_dacvae
+    torchrun --nproc_per_node=8 train_stage1.py --encoder mimi_acoustic
+    torchrun --nproc_per_node=8 train_stage1.py --encoder mimi_semantic
 """
 
 import argparse
@@ -22,7 +18,6 @@ import warnings
 from datetime import timedelta
 
 import torch
-import torch.nn as nn
 import torchaudio
 import wandb
 from accelerate import Accelerator, InitProcessGroupKwargs
@@ -31,7 +26,7 @@ from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
 from config import get_config
-from dataset import build_datasets, get_dataset_lengths, DynamicBatchSampler
+from dataset import build_datasets, collate_fn_factory, get_dataset_lengths, DynamicBatchSampler
 from encoders import build_encoder
 from model import AudioQwen
 
@@ -52,109 +47,7 @@ def _handle_sigusr1(signum, frame):
 
 
 # ==========================================
-# [변경 1] EOS-first collate_fn
-#
-# 기존: tokenize(padding=True, max_length=L) → append EOS
-#       → [tok1, tok2, PAD, PAD, EOS]   attention_mask: [1,1,0,0,1]
-#
-# 변경: tokenize(padding=False, max_length=L-1) → append EOS → pad
-#       → [tok1, tok2, EOS, PAD, PAD]   attention_mask: [1,1,1,0,0]
-# ==========================================
-
-def collate_fn_factory_eos_first(tokenizer, max_text_len: int = 256):
-    """
-    batch: [(waveform, transcript), ...]
-    반환: (audios_padded, audio_lengths, input_ids)
-      - input_ids: [tok1, ..., EOS, PAD, PAD]  — EOS 먼저, PAD 뒤
-    """
-    def collate_fn(batch):
-        audios = [item[0] for item in batch]
-        texts  = [item[1] for item in batch]
-
-        audio_lengths = torch.tensor([a.shape[0] for a in audios], dtype=torch.long)
-        audios_padded = torch.nn.utils.rnn.pad_sequence(audios, batch_first=True)
-
-        # EOS 자리 확보를 위해 max_text_len-1로 truncate, 패딩은 나중에
-        text_inputs = tokenizer(
-            texts,
-            return_tensors=None,
-            padding=False,
-            truncation=True,
-            max_length=max_text_len - 1,
-            add_special_tokens=False,
-        )
-        # 각 샘플: EOS append 후 텐서 변환
-        sequences = []
-        for ids in text_inputs["input_ids"]:
-            seq = torch.tensor(ids + [tokenizer.eos_token_id], dtype=torch.long)
-            sequences.append(seq)
-
-        # 배치 내 최대 길이로 right-padding → [tok1, ..., EOS, PAD, PAD]
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            sequences, batch_first=True, padding_value=tokenizer.pad_token_id
-        )
-        return audios_padded, audio_lengths, input_ids
-
-    return collate_fn
-
-
-# ==========================================
-# [변경 2] AudioQwenEosFirst
-#
-# 기존 label 마스킹:
-#   tgt_labels[:, :-1][tgt_labels[:, :-1] == pad_id] = -100
-#   → 마지막 열(항상 EOS)을 보존하기 위한 [:, :-1] trick
-#
-# 변경:
-#   tgt_labels[tgt_labels == pad_id] = -100
-#   → EOS(248046) ≠ PAD(248044)이므로 직접 PAD만 마스킹
-#   → EOS는 시퀀스 중간에 있어도 자동 보존
-# ==========================================
-
-class AudioQwenEosFirst(AudioQwen):
-    """EOS-first collate에 맞춘 label 마스킹 버전."""
-
-    def forward(self, audio, audio_lengths=None, transcript_input_ids=None):
-        audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
-
-        if transcript_input_ids is None:
-            return audio_embeds, audio_mask
-
-        device = audio_embeds.device
-        B      = audio_embeds.shape[0]
-        embed  = self.llm.get_input_embeddings()
-
-        p1_embeds         = embed(self.prompt_p1_ids).expand(B, -1, -1)
-        p2_embeds         = embed(self.prompt_p2_ids).expand(B, -1, -1)
-        transcript_embeds = embed(transcript_input_ids)
-
-        inputs_embeds = torch.cat([p1_embeds, audio_embeds, p2_embeds, transcript_embeds], dim=1)
-
-        p1_mask         = torch.ones(B, p1_embeds.shape[1], device=device, dtype=torch.long)
-        p2_mask         = torch.ones(B, p2_embeds.shape[1], device=device, dtype=torch.long)
-        transcript_mask = (transcript_input_ids != self.tokenizer.pad_token_id).long()
-        attention_mask  = torch.cat([p1_mask, audio_mask.long(), p2_mask, transcript_mask], dim=1)
-
-        len_ctx    = p1_embeds.shape[1] + audio_embeds.shape[1] + p2_embeds.shape[1]
-        ctx_labels = torch.full((B, len_ctx), -100, dtype=torch.long, device=device)
-        tgt_labels = transcript_input_ids.clone()
-
-        # [변경] PAD(248044) 위치만 -100으로 마스킹.
-        # EOS(248046) ≠ PAD이므로 EOS는 위치에 무관하게 자동 보존됨.
-        tgt_labels[tgt_labels == self.tokenizer.pad_token_id] = -100
-
-        labels = torch.cat([ctx_labels, tgt_labels], dim=1)
-
-        return self.llm(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            labels=labels,
-            use_cache=False,
-        )
-
-
-# ==========================================
-# Utilities (train_stage1.py와 동일)
+# Utilities
 # ==========================================
 
 def make_scheduler(optimizer, dataloader, epochs, cfg, accelerator):
@@ -188,11 +81,11 @@ def build_model(cfg, accelerator):
 
     if local_rank == 0:
         encoder = build_encoder(enc_name, enc_cfg, cache_dir)
-        model   = AudioQwenEosFirst(encoder, cfg)
+        model   = AudioQwen(encoder, cfg)
     accelerator.wait_for_everyone()
     if local_rank != 0:
         encoder = build_encoder(enc_name, enc_cfg, cache_dir)
-        model   = AudioQwenEosFirst(encoder, cfg)
+        model   = AudioQwen(encoder, cfg)
     accelerator.wait_for_everyone()
     return model
 
@@ -205,8 +98,8 @@ def _save_resume_state(accelerator, model, optimizer, scheduler,
                         cache_dir, enc_name,
                         epoch, global_step, best_val_loss, batches_to_skip=0):
     """accelerator.save_state()로 전체 학습 상태 저장 + 메타데이터 JSON 기록."""
-    resume_dir = os.path.join(cache_dir, f"s1_resume_{enc_name}_eosfirst")
-    meta_path  = os.path.join(cache_dir, f"s1_resume_{enc_name}_eosfirst_meta.json")
+    resume_dir = os.path.join(cache_dir, f"s1_resume_{enc_name}")
+    meta_path  = os.path.join(cache_dir, f"s1_resume_{enc_name}_meta.json")
     accelerator.wait_for_everyone()
     accelerator.save_state(resume_dir)
     if accelerator.is_main_process:
@@ -223,12 +116,13 @@ def _save_resume_state(accelerator, model, optimizer, scheduler,
 
 
 def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
-    enc_name  = cfg["encoder_name"]
-    cache_dir = cfg["model_cache_dir"]
-    proj_path = os.path.join(cache_dir, f"s1_proj_{enc_name}_eosfirst.pt")
-    resume_dir = os.path.join(cache_dir, f"s1_resume_{enc_name}_eosfirst")
-    meta_path  = os.path.join(cache_dir, f"s1_resume_{enc_name}_eosfirst_meta.json")
+    enc_name      = cfg["encoder_name"]
+    cache_dir     = cfg["model_cache_dir"]
+    proj_path     = os.path.join(cache_dir, f"s1_proj_{enc_name}.pt")
+    resume_dir    = os.path.join(cache_dir, f"s1_resume_{enc_name}")
+    meta_path     = os.path.join(cache_dir, f"s1_resume_{enc_name}_meta.json")
 
+    # Resume 메타데이터 로드
     has_resume = os.path.isdir(resume_dir) and os.path.exists(meta_path)
     if has_resume:
         with open(meta_path) as f:
@@ -246,25 +140,25 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
         best_val_loss   = float("inf")
         batches_to_skip = 0
 
+    # Stage 1 완료 여부 확인 (resume 없을 때만)
     if not has_resume and os.path.exists(proj_path):
         if accelerator.is_main_process:
             print(f"\n[Stage 1 Skip] checkpoint found: {proj_path}")
         return proj_path, 0
 
-    pid_path = os.path.join(cache_dir, "train_eosfirst.pid")
+    pid_path = os.path.join(cache_dir, "train.pid")
     if accelerator.is_main_process:
         signal.signal(signal.SIGUSR1, _handle_sigusr1)
         with open(pid_path, "w") as f:
             f.write(str(os.getpid()))
         print(f"\n{'='*45}")
-        print(f"Stage 1 (EOS-first): Projector Alignment  LR={cfg['stage1_lr']}")
+        print(f"Stage 1: Projector Alignment  LR={cfg['stage1_lr']}")
         print(f"  Early stop: kill -USR1 $(cat {pid_path})")
         print(f"{'='*45}\n")
 
-    model     = build_model(cfg, accelerator)
+    model    = build_model(cfg, accelerator)
     tokenizer = model.tokenizer
-    # [변경 1 적용] EOS-first collate 사용
-    collate   = collate_fn_factory_eos_first(tokenizer, cfg["max_text_len"])
+    collate  = collate_fn_factory(tokenizer, cfg["max_text_len"])
 
     num_replicas = accelerator.num_processes
     rank         = accelerator.process_index
@@ -293,6 +187,7 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
     model, optimizer = accelerator.prepare(model, optimizer)
     scheduler = make_scheduler(optimizer, train_loader, cfg["stage1_epochs"], cfg, accelerator)
 
+    # Resume: 모델·옵티마이저·스케줄러·RNG 복원
     if has_resume:
         accelerator.load_state(resume_dir)
         if accelerator.is_main_process:
@@ -304,6 +199,7 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
         train_loader.batch_sampler.set_epoch(epoch)
         model.train()
 
+        # mid-epoch resume: 이미 처리한 배치 건너뜀
         skip_batches = batches_to_skip if epoch == start_epoch else 0
         if skip_batches:
             active_loader = accelerator.skip_first_batches(train_loader, skip_batches)
@@ -315,7 +211,7 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
         progress = tqdm(active_loader, desc=f"Stage1 Epoch {epoch+1}",
                         disable=not accelerator.is_main_process)
         accum_loss, accum_count, accum_bsz = 0.0, 0, 0
-        steps_in_epoch = 0
+        steps_in_epoch = 0  # 이 epoch에서의 optimizer step 수
 
         for audio, audio_lengths, transcript_ids in progress:
             audio_lengths  = audio_lengths.to(accelerator.device)
@@ -349,6 +245,8 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                     global_step = step_tensor[0].item()
 
                     if save_steps and global_step % save_steps == 0:
+                        # 전체 resume 상태 저장 (mid-epoch)
+                        # skip할 배치 수 = (이 epoch에서 처리한 step) × grad_accum + 원래 skip 수
                         done_batches = (steps_in_epoch * cfg["gradient_accumulation_steps"]
                                         + skip_batches)
                         _save_resume_state(
@@ -358,12 +256,13 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                             best_val_loss=best_val_loss,
                             batches_to_skip=done_batches,
                         )
+                        # projector-only 스냅샷 (Stage 2용)
                         if accelerator.is_main_process:
                             unwrapped  = accelerator.unwrap_model(model)
                             proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
                                           if "projector" in k or "proj_norm" in k}
                             step_proj_path = os.path.join(
-                                cache_dir, f"s1_proj_{enc_name}_eosfirst_ep{epoch+1}_step{global_step}.pt"
+                                cache_dir, f"s1_proj_{enc_name}_ep{epoch+1}_step{global_step}.pt"
                             )
                             torch.save(proj_state, step_proj_path)
                             print(f"  [Step {global_step}] Projector saved → {step_proj_path}")
@@ -374,6 +273,7 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
             wandb.log({"stage": 1, "val/loss": val_loss, "epoch": epoch + 1},
                       step=global_step)
 
+        # epoch 완료 후 전체 resume 상태 저장 (batches_to_skip=0 → 다음 epoch 처음부터)
         _save_resume_state(
             accelerator, model, optimizer, scheduler,
             cache_dir, enc_name,
@@ -390,12 +290,13 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                 proj_state = {k: v.cpu().half() for k, v in unwrapped.state_dict().items()
                               if "projector" in k or "proj_norm" in k}
                 named_proj_path = os.path.join(
-                    cache_dir, f"s1_proj_{enc_name}_eosfirst_ep{epoch+1}_step{global_step}_best.pt"
+                    cache_dir, f"s1_proj_{enc_name}_ep{epoch+1}_step{global_step}_best.pt"
                 )
                 torch.save(proj_state, named_proj_path)
                 torch.save(proj_state, proj_path)
                 print(f"  Projector saved (ep={epoch+1}, step={global_step}, val_loss={val_loss:.4f}) → {named_proj_path}")
 
+        # SIGUSR1 수신 시 조기 종료 (모든 rank 동기화)
         stop_flag = torch.zeros(1, device=accelerator.device)
         if accelerator.is_main_process and _stop_stage1:
             stop_flag[0] = 1.0
@@ -404,9 +305,11 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
         if stop_flag[0].item() == 1.0:
             break
 
+    # PID 파일 정리
     if accelerator.is_main_process and os.path.exists(pid_path):
         os.remove(pid_path)
 
+    # VRAM 해제
     accelerator.wait_for_everyone()
     if hasattr(accelerator, "free_memory"):
         accelerator.free_memory()
@@ -441,17 +344,28 @@ def main():
     parser.add_argument("--encoder", required=True,
                         choices=["encodec", "dac", "fb_dacvae", "mimi_acoustic", "mimi_semantic"],
                         help="사용할 audio encoder")
-    parser.add_argument("--llm",        default=None, choices=["4b", "2b"])
-    parser.add_argument("--data-path",  default=None)
-    parser.add_argument("--cache-dir",  default=None)
+    parser.add_argument("--llm",        default=None,
+                        choices=["4b", "2b"],
+                        help="LLM 크기: 4b=Qwen3.5-4B (기본), 2b=Qwen3.5-2B")
+    parser.add_argument("--data-path",  default=None, help="데이터 루트 경로 (기본: config 값)")
+    parser.add_argument("--cache-dir",  default=None, help="모델 캐시 경로 (기본: config 값)")
     parser.add_argument("--wandb-mode", default=None, choices=["online", "offline", "disabled"])
-    parser.add_argument("--debug",      default="")
-    parser.add_argument("--datasets",   default=None, type=_parse_datasets,
-                        metavar="ls100,ls360,ls500,mls,gs")
-    parser.add_argument("--ls-samples",  default=None, type=int)
-    parser.add_argument("--mls-samples", default=None, type=int)
-    parser.add_argument("--gs-subset",   default="xl", choices=["xs", "s", "m", "l", "xl"])
-    parser.add_argument("--gs-samples",  default=None, type=int)
+    parser.add_argument("--debug",      default="",   help="디버그 옵션 (w: step 50에 full weight 저장)")
+
+    # 데이터셋 선택 및 샘플 수
+    parser.add_argument("--datasets",
+                        default=None, type=_parse_datasets,
+                        metavar="ls100,ls360,ls500,mls,gs",
+                        help="사용할 데이터셋 (쉼표 구분). 기본: ls100,ls360,ls500,mls")
+    parser.add_argument("--ls-samples",     default=None, type=int,
+                        metavar="N", help="LibriSpeech 서브샘플 수 (기본: 전체)")
+    parser.add_argument("--mls-samples",    default=None, type=int,
+                        metavar="N", help="MLS 샘플 수 (기본: 전체)")
+    parser.add_argument("--gs-subset",      default="xl",
+                        choices=["xs", "s", "m", "l", "xl"],
+                        help="GigaSpeech subset (기본: xl=10000h)")
+    parser.add_argument("--gs-samples",     default=None, type=int,
+                        metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -462,8 +376,8 @@ def main():
     if args.datasets:       cfg["datasets"]        = args.datasets
     if args.ls_samples  is not None: cfg["librispeech_num_samples"] = args.ls_samples
     if args.mls_samples is not None: cfg["mls_num_samples"]         = args.mls_samples
-    cfg["gs_subset"] = args.gs_subset
-    if args.gs_samples is not None:  cfg["gs_num_samples"] = args.gs_samples
+    cfg["gs_subset"]     = args.gs_subset
+    if args.gs_samples  is not None: cfg["gs_num_samples"]          = args.gs_samples
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
@@ -478,10 +392,11 @@ def main():
     if accelerator.is_main_process:
         import datetime
         llm_tag  = "2b" if "2B" in cfg["llm_model"] else "4b"
-        run_name = f"{args.encoder}_{llm_tag}_s1_eosfirst_{datetime.datetime.now().strftime('%m%d_%H%M')}"
+        run_name = f"{args.encoder}_{llm_tag}_s1_{datetime.datetime.now().strftime('%m%d_%H%M')}"
         wandb.init(project=cfg["project_name"], config=cfg,
                    name=run_name, mode=cfg["wandb_mode"])
 
+    # 데이터셋 다운로드 (rank 0만, 선택된 LibriSpeech split만)
     all_datasets = cfg.get("datasets", ["ls100", "ls360", "ls500", "mls"])
     _ls_url_map  = {"ls100": "train-clean-100", "ls360": "train-clean-360", "ls500": "train-other-500"}
     need_splits  = {"dev-clean"}
