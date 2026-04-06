@@ -267,7 +267,22 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
 
     model    = build_model(cfg, accelerator)
     tokenizer = model.tokenizer
-    collate  = collate_fn_factory(tokenizer, cfg["max_text_len"])
+    if "n" in debug:
+        _old_eos = tokenizer.eos_token_id
+        tokenizer.add_special_tokens({"additional_special_tokens": ["<|asr_eos|>"]})
+        _new_eos = tokenizer.convert_tokens_to_ids("<|asr_eos|>")
+        model.llm.resize_token_embeddings(len(tokenizer))
+        with torch.no_grad():
+            _emb = model.llm.get_input_embeddings().weight
+            _emb[_new_eos] = _emb[_old_eos].clone()
+            _out = model.llm.get_output_embeddings()
+            if _out is not None:
+                _out.weight[_new_eos] = _out.weight[_old_eos].clone()
+        tokenizer.eos_token_id = _new_eos
+        tokenizer.pad_token_id = _new_eos
+        if accelerator.is_main_process:
+            print(f"[debug n] <|asr_eos|> added: id={_new_eos} (copied from old EOS id={_old_eos})")
+    collate  = collate_fn_factory(tokenizer, cfg["max_text_len"], eos_before_pad=("o" in debug))
 
     num_replicas = accelerator.num_processes
     rank         = accelerator.process_index
@@ -430,6 +445,21 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
         print(f"{'='*45}\n")
 
     model = build_model(cfg, accelerator)
+    if "n" in debug:
+        _old_eos = model.tokenizer.eos_token_id
+        model.tokenizer.add_special_tokens({"additional_special_tokens": ["<|asr_eos|>"]})
+        _new_eos = model.tokenizer.convert_tokens_to_ids("<|asr_eos|>")
+        model.llm.resize_token_embeddings(len(model.tokenizer))
+        with torch.no_grad():
+            _emb = model.llm.get_input_embeddings().weight
+            _emb[_new_eos] = _emb[_old_eos].clone()
+            _out = model.llm.get_output_embeddings()
+            if _out is not None:
+                _out.weight[_new_eos] = _out.weight[_old_eos].clone()
+        model.tokenizer.eos_token_id = _new_eos
+        model.tokenizer.pad_token_id = _new_eos
+        if accelerator.is_main_process:
+            print(f"[debug n] <|asr_eos|> added: id={_new_eos} (copied from old EOS id={_old_eos})")
     model.apply_lora()
 
     proj_state = torch.load(proj_path, map_location="cpu", weights_only=True)
@@ -450,7 +480,7 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
         lr=cfg["stage2_lr"], weight_decay=0.01,
     )
 
-    collate      = collate_fn_factory(model.tokenizer, cfg["max_text_len"])
+    collate      = collate_fn_factory(model.tokenizer, cfg["max_text_len"], eos_before_pad=("o" in debug))
     num_replicas = accelerator.num_processes
     rank         = accelerator.process_index
     spt  = cfg["samples_per_token"]
@@ -580,7 +610,7 @@ def main():
     parser.add_argument("--llm", default=None,
                         help="LLM 모델 이름 (예: Qwen/Qwen3.5-0.8B). 기본: config 값")
     parser.add_argument("--debug", default="",
-                        help="디버그 옵션 (c: CTC loss 추가)")
+                        help="디버그 옵션 (c: CTC, e: EOS weight, n: asr_eos 토큰, o: EOS-before-PAD 순서)")
     parser.add_argument("--stage1-epochs", type=int, default=65)
     parser.add_argument("--stage2-epochs", type=int, default=50)
     parser.add_argument("--debug-dir",  default=None,
@@ -613,9 +643,10 @@ def main():
     # debug_dir: 체크포인트 저장 경로 (model_cache_dir와 분리)
     import datetime
     ctc_tag   = "ctc" if "c" in args.debug else "nonctc"
+    eos_tag   = "eos_before" if "o" in args.debug else "eos_after"
     timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
     debug_dir = args.debug_dir or os.path.join(
-        cfg["model_cache_dir"], f"debug_{args.encoder}_{ctc_tag}_{timestamp}"
+        cfg["model_cache_dir"], f"debug_{args.encoder}_{ctc_tag}_{eos_tag}_{timestamp}"
     )
     cfg["debug_dir"] = debug_dir
 
@@ -634,6 +665,7 @@ def main():
     if accelerator.is_main_process:
         llm_tag  = "2b" if "2B" in cfg["llm_model"] else "4b"
         run_name = f"debug_{args.encoder}_{llm_tag}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
+        cfg["eos_order"] = "eos_then_pad" if "o" in args.debug else "pad_then_eos"
         wandb.init(project=cfg["project_name"], config=cfg,
                    name=run_name, mode=cfg["wandb_mode"])
         print(f"debug_dir : {debug_dir}")

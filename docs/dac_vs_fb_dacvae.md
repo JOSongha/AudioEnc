@@ -30,6 +30,7 @@
 |---|---|
 | 모델 | `facebook/dacvae-watermarked` |
 | 사용 부분 | encoder + VAE bottleneck (전체 frozen) |
+| Encoder 파라미터 | ~27M (논문 base 22M; watermarked 버전은 encoder 확장 + wm_model 9M 추가로 전체 107M) |
 | out_dim | 8 (codebook_dim) |
 | 입력 sr | 48kHz |
 | 출력 fps | ~25 fps (hop=1920 @ 48kHz) |

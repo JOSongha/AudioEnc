@@ -85,3 +85,6 @@ torchrun \
     train_debug.py \
     --encoder "$ENCODER" \
     "${EXTRA_ARGS[@]}"
+
+
+# CUDA_VISIBLE_DEVICES=4,5,6,7 bash run_debug.sh --debug ced --port 29502 --div 5 --eos-decay-epochs 20
