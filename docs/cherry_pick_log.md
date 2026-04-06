@@ -37,7 +37,20 @@
 
 ---
 
-## 2cf37e0 — 미정
+## 2cf37e0 — 2026-04-06 (일부 반영)
 
-내용: Sequence Packing, Flash Attention 2, Liger Kernel, FSDP 추가
-→ 검토 후 반영 여부 결정
+**반영 커밋**: `7a6d2f7` (2026-04-06)
+
+### 반영된 파일
+
+| 파일 | 변경 | 내용 |
+|------|------|------|
+| `docs/packing_fa2_liger_fsdp.md` | +240줄 (신규) | Sequence Packing / FA2 / Liger / FSDP 설계 문서 |
+
+### 로컬 전용 (미커밋, 실험용)
+
+| 파일 | 내용 |
+|------|------|
+| `config.py` | 최적화 플래그 (`use_packing`, `attn_implementation`, `use_liger_kernel`, `use_fsdp`, `log_every`), `audio_pad_token_id` |
+| `dataset.py` | `_gigaspeech_lengths()`, Sequence Packing 파이프라인 전체 (`PackedDataset`, `PackedCollator` 등) |
+| `model.py` | Liger kernel, FA2, FSDP dtype 대응, `_forward_packed()`, `eos_first` 파라미터 |
