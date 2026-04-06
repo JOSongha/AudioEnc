@@ -39,6 +39,21 @@ DataLoader
   └─ num_workers: Stage1=1, Stage2=8
 ```
 
+**EOS / PAD 토큰** (Qwen3.5-2B):
+
+| 토큰 | 문자열 | ID |
+|------|--------|----|
+| EOS  | `<\|im_end\|>` | 151643 → (Qwen3.5) 248046 |
+| PAD  | `<\|endoftext\|>` | 248044 |
+
+EOS ≠ PAD. `model.py`에서 `pad_token is None`이면 EOS로 대체하는 분기가 있으나,  
+Qwen3.5-2B는 PAD가 이미 설정되어 있으므로 **실행되지 않음** — 두 토큰은 항상 다름.
+
+**PAD 발생 위치 및 마스킹**:
+- `collate_fn`: 배치 내 최장 샘플 기준 right-padding (pad_id=248044)
+- `eos_first=False` (기본): `tgt_labels[:, :-1]`의 PAD만 -100 → 마지막 열(EOS) 무조건 보존
+- `eos_first=True`: PAD 위치 전부 -100 → EOS ≠ PAD이므로 EOS는 위치에 무관하게 자동 보존
+
 **문제**: 배치 내 가장 긴 샘플 기준 패딩 → 최대 40% 토큰이 낭비.
 
 ### 모델 forward
@@ -112,6 +127,14 @@ PackedCollator(attn_implementation)
 audio_features: (N_audio, 1, S_max)  ← 배치 내 모든 오디오 flatten
 audio_lengths:  (N_audio,)
 ```
+
+**PAD 처리 비교**:
+
+| 설정 | PAD 존재 여부 |
+|------|--------------|
+| 패킹 없음 | 배치 내 최대 길이까지 PAD (최대 40% 낭비) |
+| `--packing` only | 각 pack 끝에 소량 PAD (cutoff_len까지 채움) |
+| `--packing --flash-attn` | **PAD 완전 제거** → `(1, sum_nonpad)` shape |
 
 **효과**: 패딩 없이 cutoff_len을 꽉 채움 → 실질적 배치 크기 증가.
 
