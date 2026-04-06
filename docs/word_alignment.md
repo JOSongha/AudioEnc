@@ -41,9 +41,10 @@ LV-60k (60,000h LibriVox) + 960h LibriSpeech fine-tuned. HF 모델 로드 없이
 
 ```
 alignment/
-  build_manifest.py    # LibriSpeech 전체 발화 목록 → manifest.jsonl + shard_0~7.jsonl
-  align_worker.py      # 단일 GPU 워커 (shard 하나 처리)
-  run_align.sh         # 8 GPU 동시 실행 런처
+  build_manifest.py      # LibriSpeech 전체 발화 목록 → manifest.jsonl + shard_N.jsonl
+  align_worker.py        # 단일 GPU 워커 (shard 하나 처리, ThreadPoolExecutor prefetch)
+  run_align.sh           # 다중 GPU × 다중 워커 런처
+  merge_alignments.py    # 완료 후 per-utt JSON → per-split JSONL + 검증
 ```
 
 ### 출력 경로
@@ -83,26 +84,57 @@ alignment/
 
 ## 병렬화 전략
 
-- 8 GPU, 각 GPU가 독립 프로세스로 shard 하나 담당
+- **8 GPU × 8 workers/GPU = 64 프로세스** (WORKERS_PER_GPU 파라미터로 조정)
+- GPU 당 wav2vec2-large VRAM: ~3.2GB × 8 = ~25GB (A100 80GB의 30%)
+- ThreadPoolExecutor(max_workers=4)로 flac I/O prefetch → GPU 연산과 I/O 오버랩
 - GPU 간 통신 없음 (alignment는 utterance 단위로 독립)
 - 출력 파일이 이미 존재하면 스킵 → 재시작 내성
-- rank-0 워커가 HF 모델을 먼저 다운로드 → 나머지 7개 워커는 10초 대기 후 시작 (캐시 충돌 방지)
+- rank 0이 먼저 모델 로드, 나머지는 `min(rank*2, 30)`초 stagger (GPU 메모리 할당 충돌 방지)
+
+### GPU 활용률 참고
+
+실측 utilization: 5~37% (낮은 이유)
+1. 여러 프로세스가 CUDA MPS 없이 GPU 공유 → time-slicing 직렬화
+2. CTC forced alignment (`torchaudio.functional.forced_align`)가 CPU 연산
+3. wav2vec2 forward는 짧고 빠름 → GPU idle 구간 큼
+
+개선 방안: `nvidia-smi -c EXCLUSIVE_PROCESS + nvidia-cuda-mps-control -d` (root 권한 필요)
 
 ---
 
-## 발화 수 및 예상 처리 시간
+## 발화 수 및 처리 시간
 
 | Split | 발화 수 | 평균 길이 |
 |-------|--------|---------|
-| train-clean-100 | ~28,500 | ~14s |
-| train-clean-360 | ~104,000 | ~14s |
-| train-other-500 | ~148,700 | ~14s |
-| dev-clean | ~2,700 | ~14s |
-| **합계** | **~284,000** | |
+| train-clean-100 | 28,539 | ~14s |
+| train-clean-360 | 104,014 | ~14s |
+| train-other-500 | 148,688 | ~14s |
+| dev-clean | 2,703 | ~14s |
+| **합계** | **283,944** | |
 
-- GPU당: 284,000 / 8 ≈ 35,500 발화
-- 발화당 처리 시간 (wav2vec2-large + A100): ~0.3~0.5초 (I/O 포함)
-- **예상 총 소요: 3~5시간**
+- 64 워커 (8/GPU): shard당 4,437개
+- 실측 처리속도: ~62 utt/s (전체 기준)
+- **실제 소요: 약 75~90분**
+
+### merge 및 검증
+
+완료 후 `merge_alignments.py`로 per-utt JSON → per-split JSONL 병합:
+```bash
+python3 merge_alignments.py \
+    --alignment-dir /mnt/tmp/cache/word_alignments \
+    --manifest      /mnt/tmp/cache/word_alignments/manifest.jsonl \
+    --output-dir    /mnt/tmp/cache/word_alignments
+```
+
+출력:
+- `train-clean-100.jsonl`, `train-clean-360.jsonl`, `train-other-500.jsonl`, `dev-clean.jsonl`
+- `merge_report.json`: split별 ok/missing/invalid/low_score 통계, coverage %
+
+검증 기준:
+- 필수 필드 누락 → `invalid`
+- word `end < start` → `invalid`
+- word 평균 score < 0.5 → `low_score` (JSONL에 포함, 학습 시 필터링)
+- 출력 JSON 없음 → `missing` (워커 재실행 필요)
 
 ---
 
