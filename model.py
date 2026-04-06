@@ -38,11 +38,28 @@ class AudioQwen(nn.Module):
         llm_name    = cfg["llm_model"]
 
         cached = try_to_load_from_cache(llm_name, "config.json", cache_dir=cache_dir)
-        print(f"Loading LLM: {llm_name} (dtype={torch_dtype}, {'캐시' if cached else '다운로드'})...")
+        attn_impl = cfg.get("attn_implementation", "eager")
+        print(f"Loading LLM: {llm_name} (dtype={torch_dtype}, attn={attn_impl}, {'캐시' if cached else '다운로드'})...")
+
+        # Liger kernel: LLM 로드 직전 적용 (모듈 교체 방식이므로 로드 전 등록)
+        if cfg.get("use_liger_kernel", False):
+            try:
+                from liger_kernel.transformers import apply_liger_kernel_to_qwen2
+                apply_liger_kernel_to_qwen2(
+                    rope=True, rms_norm=True, swiglu=True,
+                    fused_linear_cross_entropy=True,
+                )
+                print("Liger kernel applied (rope, rms_norm, swiglu, fused_linear_ce).")
+            except ImportError:
+                raise RuntimeError(
+                    "liger-kernel 미설치. pip install liger-kernel"
+                )
+
         self.llm = AutoModelForCausalLM.from_pretrained(
             llm_name,
             cache_dir=cache_dir,
             torch_dtype=torch_dtype,
+            attn_implementation=attn_impl,
             token=os.environ.get("HF_TOKEN"),
             trust_remote_code=True,
         )
@@ -77,6 +94,11 @@ class AudioQwen(nn.Module):
 
         self.proj_norm = nn.LayerNorm(llm_dim)
         self.ctc_head  = None  # init_ctc_head()로 활성화 (--debug c)
+
+        # audio placeholder token id (Qwen2.5 <|image_pad|>=151655, packed forward에서 사용)
+        self.audio_pad_token_id = cfg.get("audio_pad_token_id", 151655)
+        # Liger fused_linear_ce 활성 여부 (packed forward에서만 적용)
+        self._use_liger_kernel  = cfg.get("use_liger_kernel", False)
         self.projector.to(dtype=torch_dtype)
         self.proj_norm.to(dtype=torch_dtype)
 
@@ -118,7 +140,9 @@ class AudioQwen(nn.Module):
     # ------------------------------------------------------------------
 
     def _get_audio_embeds(self, audio, audio_lengths=None):
-        feats, enc_mask = self.encoder(audio, audio_lengths)  # (B, T_enc, C), (B, T_enc)
+        # cast audio to encoder's dtype (fp32 normally; bf16 under FSDP)
+        enc_dtype = next(self.encoder.parameters()).dtype
+        feats, enc_mask = self.encoder(audio.to(enc_dtype), audio_lengths)  # (B, T_enc, C)
 
         feats = feats.to(self.projector[0].weight.dtype)
 
@@ -197,8 +221,21 @@ class AudioQwen(nn.Module):
     # Forward
     # ------------------------------------------------------------------
 
-    def forward(self, audio, audio_lengths=None, transcript_input_ids=None,
-                ctc_targets=None, ctc_target_lengths=None, eos_weight: float = 1.0):
+    def forward(self, audio=None, audio_lengths=None, transcript_input_ids=None,
+                ctc_targets=None, ctc_target_lengths=None, eos_weight: float = 1.0,
+                eos_first: bool = False,
+                # ── packed 경로 (--packing 시 사용) ──────────────────────
+                input_ids=None, labels=None,
+                audio_features=None, audio_feat_lengths=None,
+                attention_mask=None, position_ids=None):
+        if input_ids is not None:
+            # ── packed 경로 ───────────────────────────────────────────────
+            return self._forward_packed(
+                input_ids, labels, audio_features, audio_feat_lengths,
+                attention_mask, position_ids,
+            )
+
+        # ── 기존(legacy) 경로 ─────────────────────────────────────────────
         audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
 
         if transcript_input_ids is None:
@@ -233,9 +270,12 @@ class AudioQwen(nn.Module):
         len_ctx    = p1_embeds.shape[1] + audio_embeds.shape[1] + p2_embeds.shape[1]
         ctx_labels = torch.full((B, len_ctx), -100, dtype=torch.long, device=device)
         tgt_labels = transcript_input_ids.clone()
-        # 마지막 열은 collate_fn이 항상 수동으로 붙인 EOS — pad와 같은 토큰이지만
-        # 마스킹하면 안 됨. 앞쪽 패딩만 -100으로 마스킹.
-        tgt_labels[:, :-1][tgt_labels[:, :-1] == self.tokenizer.pad_token_id] = -100
+        if eos_first:
+            # EOS-first: [tok, EOS, PAD, PAD] — PAD는 모두 -100, EOS는 자동 보존 (EOS≠PAD)
+            tgt_labels[tgt_labels == self.tokenizer.pad_token_id] = -100
+        else:
+            # EOS-last: [tok, PAD, PAD, EOS] — 마지막 열(EOS)은 보존, 앞쪽 PAD만 -100
+            tgt_labels[:, :-1][tgt_labels[:, :-1] == self.tokenizer.pad_token_id] = -100
         labels     = torch.cat([ctx_labels, tgt_labels], dim=1)
 
         out = self.llm(
@@ -260,3 +300,53 @@ class AudioQwen(nn.Module):
         if ctc_loss is not None:
             out.loss = out.loss + ctc_loss
         return out
+
+    def _forward_packed(self, input_ids, labels, audio_features, audio_feat_lengths,
+                        attention_mask, position_ids):
+        """
+        Sequence packing 경로 (--packing 플래그 사용 시).
+
+        audio_features:     (N_audio, 1, S_max)  배치 내 모든 오디오 flatten + zero-pad
+        audio_feat_lengths: (N_audio,)            각 오디오 token 수 (t_audio, projector 출력 기준)
+        input_ids:          (B, T) [eager] 또는 (1, sum_nonpad) [FA2]
+        labels:             동일 shape
+        attention_mask:     (B, 1, T, T) 4D block-diagonal mask [eager] 또는 None [FA2]
+        position_ids:       (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager]
+        """
+        # 1. 오디오 인코딩
+        #    audio_features: (N, 1, S_max) → squeeze → (N, S_max)
+        #    audio_feat_lengths: t_audio (LLM token 기준) → 실제 audio sample 수로 역산
+        wavs            = audio_features.squeeze(1)                     # (N, S_max)
+        spt             = self._cfg.get("samples_per_token", 1.0)
+        lengths_samples = (audio_feat_lengths.float() * spt).long()     # (N,) audio sample 수
+        audio_embeds, _ = self._get_audio_embeds(wavs, lengths_samples) # (N, T_proj, llm_dim)
+
+        # 2. 전체 토큰 임베딩
+        embed         = self.llm.get_input_embeddings()
+        inputs_embeds = embed(input_ids).clone()                        # (B/1, T, llm_dim)
+
+        # 3. audio placeholder 위치를 audio embedding으로 교체
+        audio_pad_mask = (input_ids == self.audio_pad_token_id)         # (B, T) bool
+        audio_flat     = audio_embeds.reshape(-1, audio_embeds.shape[-1])
+        n_ph           = int(audio_pad_mask.sum().item())
+
+        if audio_flat.shape[0] != n_ph:
+            # ±1 frame 불일치 방어: 짧은 쪽에 맞춰 trim
+            n          = min(audio_flat.shape[0], n_ph)
+            audio_flat = audio_flat[:n]
+            flat_mask  = audio_pad_mask.reshape(-1)
+            positions  = flat_mask.nonzero(as_tuple=False).squeeze(1)
+            fix_mask   = torch.zeros_like(flat_mask)
+            fix_mask[positions[:n]] = True
+            audio_pad_mask = fix_mask.reshape(audio_pad_mask.shape)
+
+        inputs_embeds[audio_pad_mask] = audio_flat.to(inputs_embeds.dtype)
+
+        # 4. LLM forward
+        return self.llm(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            labels=labels,
+            use_cache=False,
+        )

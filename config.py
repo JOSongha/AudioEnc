@@ -49,6 +49,18 @@ TRAIN_CONFIG = {
     # True: LoRA + projector 동시 학습 (기본)
     # False: LoRA만 학습, projector frozen
     "stage2_train_projector": True,
+
+    # ── 최적화 플래그 (기본값 모두 False → 기존 동작 보존) ──────────────
+    # --packing     : Sequence packing (processor+SequencePacker+PackedCollator)
+    # --flash-attn  : Flash Attention 2 (flash-attn 설치 필요, 이미 설치됨)
+    # --liger       : Liger fused kernels (pip install liger-kernel 필요)
+    # --fsdp        : FSDP (DDP 대체, 4B+ 모델 권장)
+    "use_packing":         False,
+    "packing_cutoff_len":  4096,      # packing 시 최대 시퀀스 길이 (토큰 수 기준)
+    "attn_implementation": "eager",   # "eager" | "flash_attention_2"
+    "use_liger_kernel":    False,
+    "use_fsdp":            False,
+    "log_every":           1,         # WandB 로깅 주기 (step 수), 병목 수정 후 10으로 변경
 }
 
 # ==========================================
@@ -157,4 +169,9 @@ def get_config(encoder_name: str) -> dict:
     cfg["encoder"]      = enc_cfg
     llm_tag = "2b" if "2B" in cfg["llm_model"] else "4b"
     cfg["project_name"] = f"Qwen3.5-{llm_tag}-ASR-{encoder_name}"
+
+    # Qwen2.5 <|image_pad|> (id=151655) — 미학습 슬롯, audio placeholder로 재사용
+    # (새 special token 추가 불필요, resize_token_embeddings 불필요)
+    cfg["audio_pad_token_id"] = 151655
+
     return cfg
