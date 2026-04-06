@@ -22,6 +22,7 @@ from typing import Optional
 import numpy as np
 import torch
 import torchaudio
+from tqdm import tqdm
 
 VENV = "/mnt/fr20tb/wbl_residency/jos/.venv310/lib/python3.10/site-packages"
 if VENV not in sys.path:
@@ -66,9 +67,11 @@ def main():
     device = f"cuda:{args.gpu}"
 
     # rank-0이 먼저 모델 다운로드 → 나머지는 캐시에서 로드
+    # 같은 GPU 내 여러 워커: rank * 2초 stagger로 GPU 메모리 할당 충돌 방지
     if args.rank != 0:
-        print(f"[rank {args.rank}] rank-0 모델 다운로드 대기 (10s)...")
-        time.sleep(10)
+        wait_sec = min(args.rank * 2, 30)   # rank-1=2s, rank-2=4s, ..., max 30s
+        print(f"[rank {args.rank}] stagger 대기 ({wait_sec}s)...")
+        time.sleep(wait_sec)
 
     print(f"[rank {args.rank}] Loading alignment model: {MODEL_NAME} on {device}")
     align_model, align_metadata = whisperx.load_align_model(
@@ -102,7 +105,6 @@ def main():
     queue: list[tuple[dict, Optional[Future]]] = []
 
     with ThreadPoolExecutor(max_workers=PREFETCH) as pool:
-        # 초기 prefetch 채우기
         def submit_next(idx: int):
             if idx >= total:
                 return None
@@ -119,6 +121,9 @@ def main():
                 queue.append(item)
             fetch_idx += 1
 
+        pbar = tqdm(total=total, desc=f"rank{args.rank}", unit="utt",
+                    dynamic_ncols=True, position=args.rank)
+
         i = 0
         while queue:
             entry, fut = queue.pop(0)
@@ -134,6 +139,8 @@ def main():
             if fut is None:
                 skipped += 1
                 i += 1
+                pbar.update(1)
+                pbar.set_postfix(done=done, skip=skipped, fail=failed)
                 continue
 
             try:
@@ -189,8 +196,12 @@ def main():
                 log(f"FAIL {entry['utterance_id']}: {e}")
 
             i += 1
+            pbar.update(1)
+            pbar.set_postfix(done=done, skip=skipped, fail=failed)
             if i % 500 == 0:
                 log(f"Progress: {i}/{total} | done={done} skip={skipped} fail={failed}")
+
+        pbar.close()
 
     log(f"Done: total={total} done={done} skipped={skipped} failed={failed}")
     log_f.close()
