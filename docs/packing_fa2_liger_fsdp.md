@@ -198,8 +198,8 @@ accelerator = Accelerator(..., fsdp_plugin=fsdp_plugin)
 ```
 
 **LoRA + FSDP**: `use_orig_params=True` 필수.  
-현재 8×A100 80GB + 2B 모델: DDP로 충분 (VRAM 여유 있음).  
-FSDP 권장 시나리오: 4B 모델 또는 LoRA 없는 full fine-tuning.
+8×A100 80GB + Qwen3.5-2B 기준으로도 **FSDP 적용** — sequence packing + FA2 + Liger 조합 시 메모리 여유가 줄어들기 때문.  
+FSDP 없는 DDP는 이 조합에서 권장하지 않음.
 
 ---
 
@@ -227,14 +227,15 @@ torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
 
 # 검증1a: --flash-attn
 # 검증1b: --packing --flash-attn
-# 검증1c: --packing --flash-attn --liger   ← 주력 비교
-# 검증1d: --packing --flash-attn --fsdp   (Qwen3.5-2B 동일 모델)
+# 검증1c: --packing --flash-attn --liger --fsdp   ← 주력 비교 (FSDP 필수)
+# 검증1d: --packing --flash-attn --liger --fsdp --cutoff-len 4096   ← 실운용 설정
 ```
 
 ### 검증2: 병목 수정 후
 
 ```bash
-# 검증2: 5-0 적용 + 검증1c 동일 플래그
+# 검증2: 병목 수정 + 실운용 플래그
 torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
-    --datasets ls100 --ls-samples 5000 --packing --flash-attn --liger --wandb-mode offline
+    --datasets ls100 --ls-samples 5000 --packing --flash-attn --liger --fsdp \
+    --cutoff-len 4096 --wandb-mode offline
 ```
