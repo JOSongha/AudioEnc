@@ -97,6 +97,60 @@ class MLSDataset(Dataset):
         return waveform, transcript.lower()
 
 
+class VoxPopuliDataset(Dataset):
+    """
+    facebook/voxpopuli — VoxPopuli (HuggingFace datasets).
+    language: "en" (기본값) 등 언어 코드
+    split: "train" / "validation" / "test"
+    num_samples: None이면 전체, 정수면 랜덤 서브샘플 (seed 고정)
+    출력: (waveform @ 16kHz mono, normalized_text 소문자)
+    """
+
+    def __init__(self, cache_dir: str, language: str = "en",
+                 split: str = "train", num_samples: int = None,
+                 target_sr: int = 16000, max_len: int = 160000,
+                 seed: int = 42):
+        from datasets import load_dataset
+        self.target_sr = target_sr
+        self.max_len   = max_len
+
+        ds = load_dataset(
+            "facebook/voxpopuli",
+            language,
+            split=split,
+            cache_dir=cache_dir,
+            trust_remote_code=True,
+        )
+        total = len(ds)
+        if num_samples is None or num_samples >= total:
+            self.indices = list(range(total))
+        else:
+            rng = random.Random(seed)
+            self.indices = rng.sample(range(total), num_samples)
+        self.dataset = ds
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        item        = self.dataset[self.indices[idx]]
+        audio       = item["audio"]
+        waveform    = torch.tensor(audio["array"], dtype=torch.float32)
+        sample_rate = audio["sampling_rate"]
+
+        if waveform.dim() > 1:
+            waveform = waveform.mean(0)
+
+        if sample_rate != self.target_sr:
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.target_sr)
+
+        if waveform.shape[0] > self.max_len:
+            waveform = waveform[: self.max_len]
+
+        transcript = item.get("normalized_text") or item.get("raw_text") or ""
+        return waveform, transcript.lower()
+
+
 class GigaSpeechDataset(Dataset):
     """
     speechcolab/gigaspeech — GigaSpeech English (HuggingFace datasets).
@@ -203,6 +257,15 @@ def build_datasets(cfg: dict):
             max_len=max_len,
         ))
 
+    # VoxPopuli
+    if "vp" in datasets:
+        parts.append(VoxPopuliDataset(
+            cache_dir=mls_root,
+            language=cfg.get("vp_language", "en"),
+            num_samples=cfg.get("vp_num_samples", None),
+            max_len=max_len,
+        ))
+
     if not parts:
         raise ValueError(f"datasets에 유효한 항목이 없습니다: {datasets}")
 
@@ -259,6 +322,8 @@ def _collect_lengths(dataset) -> list:
         return _mls_lengths(dataset)
     elif isinstance(dataset, GigaSpeechDataset):
         return _gigaspeech_lengths(dataset)
+    elif isinstance(dataset, VoxPopuliDataset):
+        return _voxpopuli_lengths(dataset)
     raise ValueError(f"Unknown dataset type: {type(dataset)}")
 
 
@@ -274,6 +339,20 @@ def _librispeech_lengths(dataset: "LibriSpeechDataset") -> list:
         n = int(info.num_frames * dataset.target_sr / info.sample_rate)
         lengths.append(min(n, dataset.max_len))
     return lengths
+
+
+def _voxpopuli_lengths(dataset: "VoxPopuliDataset") -> list:
+    """transcript 글자 수 → 오디오 샘플 수로 변환 (오디오 디코딩 없음)."""
+    selected = dataset.dataset.select(dataset.indices)
+    chars_per_sec = 14.0
+    texts = [
+        (row.get("normalized_text") or row.get("raw_text") or "")
+        for row in selected
+    ]
+    return [
+        min(int(len(t) / chars_per_sec * dataset.target_sr), dataset.max_len)
+        for t in texts
+    ]
 
 
 def _mls_lengths(dataset: "MLSDataset") -> list:
@@ -483,14 +562,21 @@ class DynamicBatchSampler(torch.utils.data.Sampler):
         return count // self.num_replicas
 
 
-def collate_fn_factory(tokenizer, max_text_len: int = 256):
+def collate_fn_factory(tokenizer, max_text_len: int = 256, eos_token_id: int = None, eos_before_pad: bool = False):
     """
     batch: [(waveform, transcript), ...]
     반환: (audios_padded, audio_lengths, input_ids)
       - audios_padded: (B, T_max)  0-padded
       - audio_lengths: (B,)        실제 샘플 수
       - input_ids:     (B, L+1)    텍스트 토큰 + EOS
+    eos_token_id: None이면 tokenizer.eos_token_id 사용 (기본값).
+                  --debug n 시 model.asr_eos_token_id를 전달.
+    eos_before_pad: True  → [tok1, tok2, EOS, PAD, PAD]  (--debug o)
+                    False → [tok1, tok2, PAD, PAD, EOS]  (기본)
     """
+    _eos_id = eos_token_id if eos_token_id is not None else tokenizer.eos_token_id
+    _pad_id = tokenizer.pad_token_id
+
     def collate_fn(batch):
         audios = [item[0] for item in batch]
         texts  = [item[1] for item in batch]
@@ -498,18 +584,36 @@ def collate_fn_factory(tokenizer, max_text_len: int = 256):
         audio_lengths = torch.tensor([a.shape[0] for a in audios], dtype=torch.long)
         audios_padded = torch.nn.utils.rnn.pad_sequence(audios, batch_first=True)
 
-        text_inputs = tokenizer(
-            texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=max_text_len,
-            add_special_tokens=False,
-        )
-        input_ids = text_inputs.input_ids
-        if tokenizer.eos_token_id is not None:
-            eos = torch.full((input_ids.shape[0], 1), tokenizer.eos_token_id, dtype=torch.long)
-            input_ids = torch.cat([input_ids, eos], dim=1)
+        if eos_before_pad and _eos_id is not None:
+            seqs = []
+            for t in texts:
+                ids = tokenizer(
+                    t,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_text_len - 1,
+                    add_special_tokens=False,
+                ).input_ids[0]
+                ids = torch.cat([ids, torch.tensor([_eos_id], dtype=torch.long)])
+                seqs.append(ids)
+            max_len = max(s.shape[0] for s in seqs)
+            input_ids = torch.full((len(seqs), max_len), _pad_id, dtype=torch.long)
+            for i, s in enumerate(seqs):
+                input_ids[i, :s.shape[0]] = s
+        else:
+            text_inputs = tokenizer(
+                texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=max_text_len,
+                add_special_tokens=False,
+            )
+            input_ids = text_inputs.input_ids
+            if _eos_id is not None:
+                eos = torch.full((input_ids.shape[0], 1), _eos_id, dtype=torch.long)
+                input_ids = torch.cat([input_ids, eos], dim=1)
 
         return audios_padded, audio_lengths, input_ids
 
