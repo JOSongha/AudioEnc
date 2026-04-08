@@ -9,47 +9,56 @@
 # GPU 수 변경:
 #   bash run.sh --encoder dac --gpus 4
 #
-# 데이터셋 선택:
+# 데이터셋 선택 (기본: ls100,ls360,ls500,mls,gs,vp):
 #   bash run.sh --encoder fb_dacvae --datasets ls100,ls360,mls,gs
 #
-# 데이터셋 양 제한:
-#   bash run.sh --encoder fb_dacvae \
-#       --datasets ls100,ls360,mls \
-#       --ls-samples 58000 \
-#       --mls-samples 200000
+# Stage 1만 실행:
+#   bash run.sh --encoder fb_dacvae --stage 1
 #
-# Stage 1 / Stage 2 데이터셋 분리:
-#   bash run.sh --encoder fb_dacvae \
-#       --s1-datasets ls100,ls360 \
-#       --s1-ls-samples 58000 \
-#       --datasets ls100,ls360,ls500,mls,gs \
-#       --mls-samples 500000
+# WandB 비활성화:
+#   bash run.sh --encoder fb_dacvae --wandb-mode disabled
 #
-# GigaSpeech subset 지정 (xs/s/m/l/xl, 기본 l=2500h):
-#   bash run.sh --encoder fb_dacvae --datasets ls100,gs --gs-subset m --gs-samples 100000
-#
-# 디버그 (step 50에 full weight 저장):
-#   bash run.sh --encoder fb_dacvae --debug w
+# conda 환경 경로 재정의:
+#   AUDIO_ENV_PATH=/path/to/conda/env bash run.sh --encoder fb_dacvae
 #
 # 인자 목록:
 #   --encoder       필수. encodec | dac | fb_dacvae | mimi_acoustic | mimi_semantic
 #   --gpus          GPU 수 (기본 8)
-#   --llm           2b | 4b (기본 2b)
-#   --datasets      쉼표 구분. ls100 | ls360 | ls500 | mls | gs (기본: ls100,ls360,ls500,mls)
-#   --ls-samples    LibriSpeech 서브샘플 수 (Stage 2)
-#   --mls-samples   MLS 샘플 수 (Stage 2)
-#   --gs-subset     GigaSpeech 크기: xs(10h) s(250h) m(1000h) l(2500h) xl(10000h)
-#   --gs-samples    GigaSpeech 샘플 수 (Stage 2)
-#   --s1-datasets   Stage 1 전용 데이터셋 (미지정 시 --datasets 사용)
-#   --s1-ls-samples Stage 1 LibriSpeech 서브샘플 수
-#   --s1-mls-samples Stage 1 MLS 샘플 수
-#   --s1-gs-samples Stage 1 GigaSpeech 샘플 수
-#   --wandb-mode    online | offline | disabled
-#   --debug         w: step 50에 full weight 저장
+#   --llm           LLM 모델명 (기본: Qwen/Qwen3.5-2B)
+#   --datasets      쉼표 구분 (기본: ls100,ls360,ls500,mls,gs,vp)
+#   --stage         all | 1 | 2 (기본 all)
+#   --stage1-epochs Stage 1 epoch 수
+#   --stage2-epochs Stage 2 epoch 수
+#   --cutoff-len    Packing 시퀀스 최대 길이 (기본 2048)
+#   --eval-steps    WER 평가 주기 (기본 500)
+#   --save-steps    체크포인트 저장 주기 (기본 500)
+#   --attn-impl     eager | sdpa | flash_attention_2 (기본 flash_attention_2)
+#   --no-liger      Liger Kernel 비활성화
+#   --no-fsdp       FSDP 비활성화
+#   --wandb-mode    online | offline | disabled (기본 online)
+#   --resume        체크포인트 경로
 # =============================================================================
 
 set -e
 
+# -----------------------------------------------------------------------------
+# Conda 환경 설정
+# CONDA_PREFIX가 이미 설정된 경우 그대로 사용.
+# 미설정 시 AUDIO_ENV_PATH 환경 변수 또는 기본 경로를 사용.
+# -----------------------------------------------------------------------------
+if [[ -z "$CONDA_PREFIX" ]]; then
+    _CONDA_ENV="${AUDIO_ENV_PATH:-/mnt/ddn/users/jos/miniforge3/envs/audio}"
+    export PATH="$_CONDA_ENV/bin:$PATH"
+    export CONDA_PREFIX="$_CONDA_ENV"
+fi
+
+# flash_attn LD_PRELOAD (GLIBCXX_3.4.29 + GLIBC_2.32 우회)
+# 자세한 내용: docs/train_pipeline_errors.md §6.7–6.8
+export LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so"
+
+# -----------------------------------------------------------------------------
+# 인자 파싱
+# -----------------------------------------------------------------------------
 ENCODER=""
 GPUS=8
 EXTRA_ARGS=()
@@ -71,12 +80,17 @@ fi
 echo "========================================"
 echo "  Encoder  : $ENCODER"
 echo "  GPUs     : $GPUS"
+echo "  Env      : $CONDA_PREFIX"
 echo "  Extra    : ${EXTRA_ARGS[*]}"
 echo "========================================"
 
-torchrun \
-    --nproc_per_node=$GPUS \
-    --master_port=29500 \
-    train.py \
+# 기본값: full dataset, sequence packing + FA2 + Liger + FSDP 모두 활성화.
+# EXTRA_ARGS에 동일 인자가 있으면 argparse의 last-wins 규칙으로 덮어써짐.
+accelerate launch \
+    --num_processes "$GPUS" \
+    train_pipeline_override.py \
     --encoder "$ENCODER" \
+    --datasets ls100,ls360,ls500,mls,gs,vp \
+    --liger \
+    --fsdp \
     "${EXTRA_ARGS[@]}"

@@ -1580,7 +1580,9 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--encoder", required=True, choices=["fb_dacvae"], help="사용할 audio encoder")
+    parser.add_argument("--encoder", required=True,
+                        choices=["encodec", "dac", "fb_dacvae", "mimi_acoustic", "mimi_semantic"],
+                        help="사용할 audio encoder")
     parser.add_argument("--llm", default=None, help="LLM 모델 이름")
     parser.add_argument("--cache-dir", default=None, help="모델 캐시 경로 (기본: TRAIN_CONFIG의 model_cache_dir)")
     parser.add_argument("--wandb-mode", default="online", choices=["online", "offline", "disabled"])
@@ -1591,7 +1593,7 @@ def main():
                         help="총 데이터셋 시간(시간 단위) 수동 지정. 미지정 시 --datasets 기반 자동 계산")
     parser.add_argument("--max-steps", default=None, type=int,
                         help="학습을 종료할 최대 Step 수 (스트리밍 전용). 미지정 시 estimated_hours 기반 계산")    
-    parser.add_argument("--cutoff-len", default=1024, type=int, help="Packing 시퀀스 최대 길이")
+    parser.add_argument("--cutoff-len", default=None, type=int, help="Packing 시퀀스 최대 길이 (기본: config의 packing_cutoff_len=2048)")
     parser.add_argument("--eval-steps", default=500, type=int, help="WER 평가 주기")
     parser.add_argument("--save-steps", default=500, type=int, help="Trainer 체크포인트 저장 주기")
     parser.add_argument("--resume", default=None, help="체크포인트에서 재개")
