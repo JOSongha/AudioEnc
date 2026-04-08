@@ -30,13 +30,14 @@
 #   --stage1-epochs Stage 1 epoch 수
 #   --stage2-epochs Stage 2 epoch 수
 #   --cutoff-len    Packing 시퀀스 최대 길이 (기본 2048)
-#   --eval-steps    WER 평가 주기 (기본 500)
-#   --save-steps    체크포인트 저장 주기 (기본 500)
+#   --eval-steps    WER 평가 주기 (기본: config eval_steps=500)
+#   --save-steps    체크포인트 저장 주기 (기본: config save_steps=5000)
 #   --attn-impl     eager | sdpa | flash_attention_2 (기본 flash_attention_2)
 #   --no-liger      Liger Kernel 비활성화
 #   --no-fsdp       FSDP 비활성화
 #   --wandb-mode    online | offline | disabled (기본 online)
 #   --resume        체크포인트 경로
+#   --word-aug      단어 단위 ASR 서브샘플 생성 (word alignment Arrow 사용)
 # =============================================================================
 
 set -e

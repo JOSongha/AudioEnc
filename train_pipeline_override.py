@@ -608,6 +608,93 @@ def build_static_eval_datasets(cfg, tokenizer=None):
 
 
 # ══════════════════════════════════════════════════════════
+# Word-level alignment augmentation
+# ══════════════════════════════════════════════════════════
+
+_ALIGNMENT_BASE = "/mnt/tmp/cache/word_alignments_merged"
+
+# ── Processor 통계 카운터 (worker-local, debug 확인용) ────────────────────────
+_PROC_STATS: dict[str, int] = {"sentence": 0, "word": 0}
+_PROC_LOG_EVERY = 2000  # N 문장 샘플마다 한 번씩 stderr로 출력
+
+_ALIGNMENT_ARROW_PATHS = {
+    "ls100": f"{_ALIGNMENT_BASE}/librispeech/train-clean-100.arrow",
+    "ls360": f"{_ALIGNMENT_BASE}/librispeech/train-clean-360.arrow",
+    "ls500": f"{_ALIGNMENT_BASE}/librispeech/train-other-500.arrow",
+    "mls":   f"{_ALIGNMENT_BASE}/mls/train.arrow",
+    "gs":    f"{_ALIGNMENT_BASE}/gigaspeech/train.arrow",
+    "vp":    f"{_ALIGNMENT_BASE}/voxpopuli/train.arrow",
+}
+
+# 데이터셋별 utterance_id 추출 방법: (HF 필드명, id 변환 함수 or None)
+_DATASET_ID_CONFIG = {
+    "ls100": ("id",            None),
+    "ls360": ("id",            None),
+    "ls500": ("id",            None),
+    "mls":   ("original_path", lambda s: s.removesuffix(".opus")),
+    "gs":    ("segment_id",    None),
+    "vp":    ("audio_id",      None),
+}
+
+
+class AlignmentLookup:
+    """Arrow 파일로부터 utterance_id → words 목록 조회.
+
+    index (utterance_id → row_idx) 만 Python dict에 보유.
+    words 실데이터는 memory-mapped pyarrow table에서 on-demand 접근 (zero-copy).
+    """
+
+    def __init__(self, arrow_path: str, id_transform=None):
+        import pyarrow as pa  # 지연 import (main process에서만 생성)
+        mmap = pa.memory_map(arrow_path, "r")
+        self._table = pa.ipc.open_file(mmap).read_all()
+        utt_ids = self._table.column("utterance_id").to_pylist()
+        self._index: dict[str, int] = {uid: i for i, uid in enumerate(utt_ids)}
+        self._id_transform = id_transform
+        logger.info(f"AlignmentLookup: {len(self._index):,} utterances ← {arrow_path}")
+
+    def get(self, utterance_id: str):
+        """utterance_id에 해당하는 [{word, start, end, ...}, ...] 반환. 없으면 None."""
+        if self._id_transform:
+            utterance_id = self._id_transform(utterance_id)
+        idx = self._index.get(utterance_id)
+        if idx is None:
+            return None
+        return self._table.column("words")[idx].as_py()  # list[dict]
+
+
+class MergedAlignmentLookup:
+    """여러 AlignmentLookup을 묶어 utterance_id로 통합 조회."""
+
+    def __init__(self, lookups: "list[AlignmentLookup | None]"):
+        self._lookups = [l for l in lookups if l is not None]
+
+    def get(self, utterance_id: str):
+        for lookup in self._lookups:
+            words = lookup.get(utterance_id)
+            if words is not None:
+                return words
+        return None
+
+
+def build_alignment_lookups(selected_datasets: list[str]) -> dict[str, AlignmentLookup | None]:
+    """선택된 데이터셋에 대한 AlignmentLookup 딕셔너리 생성.
+
+    Arrow 파일이 없는 데이터셋은 None으로 설정.
+    """
+    lookups: dict[str, AlignmentLookup | None] = {}
+    for key in selected_datasets:
+        arrow_path = _ALIGNMENT_ARROW_PATHS.get(key)
+        if arrow_path and os.path.exists(arrow_path):
+            id_field, id_transform = _DATASET_ID_CONFIG.get(key, ("id", None))
+            lookups[key] = AlignmentLookup(arrow_path, id_transform=id_transform)
+        else:
+            lookups[key] = None
+            logger.warning(f"AlignmentLookup: no arrow for '{key}' at {arrow_path}")
+    return lookups
+
+
+# ══════════════════════════════════════════════════════════
 # Data pipeline: processor → packer → collator → streaming loader
 # ══════════════════════════════════════════════════════════
 
@@ -617,13 +704,53 @@ def create_processor(
     sample_rate: int = 16000,
     hop_length: int = 1920,
     max_audio_samples: int = 5760000,
+    alignment_lookup: "AlignmentLookup | None" = None,
+    word_aug: bool = False,
+    min_word_samples: int = 1600,   # ≥ 100ms (@ 16kHz)
 ):
     """(audio, text) 원시 쌍을 모델 입력 형식으로 변환하는 batched map 함수 반환.
 
     시퀀스 형식: [audio_pad]*t_audio + <|audio_correspond|> + text_ids + EOS
     Labels:     [IGNORE]*t_audio    + [IGNORE]              + text_ids + EOS
+
+    word_aug=True이고 alignment_lookup이 제공된 경우,
+    각 발화에 대해 원본 샘플 + 단어 단위 서브샘플을 추가 생성.
+    ("utterance_id" 컬럼이 batch에 있어야 함)
     """
     audio_correspond_id = tokenizer.convert_tokens_to_ids("<|audio_correspond|>")
+
+    def _build_one(waveform_1d: torch.Tensor, text: str):
+        """(1D waveform tensor, text string) → (input_ids, labels, t_audio) 또는 None."""
+        t_audio = waveform_1d.shape[0] // hop_length
+        if t_audio == 0:
+            return None
+        text_ids = tokenizer.encode(text, add_special_tokens=False)
+        if not text_ids:
+            return None
+        input_ids = (
+            [audio_pad_token_id] * t_audio
+            + [audio_correspond_id]
+            + text_ids
+            + [tokenizer.eos_token_id]
+        )
+        labels = (
+            [IGNORE_INDEX] * (t_audio + 1)
+            + text_ids
+            + [tokenizer.eos_token_id]
+        )
+        return input_ids, labels, t_audio
+
+    def _emit(all_input_ids, all_labels, all_audio_features, all_audio_lengths,
+              waveform_1d, text):
+        """단일 (waveform, text) 샘플을 출력 리스트에 추가."""
+        result = _build_one(waveform_1d, text)
+        if result is None:
+            return
+        ids, lbls, t_audio = result
+        all_input_ids.append(ids)
+        all_labels.append(lbls)
+        all_audio_features.append(waveform_1d)
+        all_audio_lengths.append(t_audio)
 
     def process_samples(examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
         all_input_ids = []
@@ -631,10 +758,11 @@ def create_processor(
         all_audio_features = []
         all_audio_lengths = []
 
-        audios = examples["audio"]
-        texts  = examples["text"]
+        audios        = examples["audio"]
+        texts         = examples["text"]
+        utt_ids       = examples.get("utterance_id", [None] * len(audios))
 
-        for audio_obj, text in zip(audios, texts):
+        for audio_obj, text, utt_id in zip(audios, texts, utt_ids):
             # 1. Load audio
             try:
                 if ("bytes" in audio_obj and audio_obj["bytes"] is not None) or \
@@ -654,34 +782,46 @@ def create_processor(
             if max_audio_samples is not None and waveform.shape[-1] > max_audio_samples:
                 continue
 
-            # 2. Compute audio token count
-            num_samples = waveform.shape[-1]
-            t_audio = num_samples // hop_length
-            if t_audio == 0:
-                continue
+            waveform_1d = waveform.squeeze(0)
 
-            # 3. Tokenize text
-            text_ids = tokenizer.encode(text, add_special_tokens=False)
-            if not text_ids:
-                continue
+            # 2. 원본 샘플 추가
+            _emit(all_input_ids, all_labels, all_audio_features, all_audio_lengths,
+                  waveform_1d, text)
+            _PROC_STATS["sentence"] += 1
 
-            # 4. Build input_ids and labels
-            input_ids = (
-                [audio_pad_token_id] * t_audio
-                + [audio_correspond_id]
-                + text_ids
-                + [tokenizer.eos_token_id]
-            )
-            labels = (
-                [IGNORE_INDEX] * (t_audio + 1)
-                + text_ids
-                + [tokenizer.eos_token_id]
-            )
+            # 3. Word-level 서브샘플 추가 (word_aug=True이고 alignment 존재 시)
+            if word_aug and alignment_lookup is not None and utt_id is not None:
+                words = alignment_lookup.get(utt_id)
+                if words:
+                    sr_ratio = sample_rate  # waveform은 이미 sample_rate로 리샘플됨
+                    n_word_added = 0
+                    for w in words:
+                        word_text = w.get("word", "").strip()
+                        if not word_text:
+                            continue
+                        start_s = int(w.get("start", 0.0) * sr_ratio)
+                        end_s   = int(w.get("end",   0.0) * sr_ratio)
+                        if end_s - start_s < min_word_samples:
+                            continue  # 너무 짧은 단어 건너뜀 (< 100ms)
+                        end_s = min(end_s, waveform_1d.shape[0])
+                        if end_s <= start_s:
+                            continue
+                        word_wav = waveform_1d[start_s:end_s]
+                        _emit(all_input_ids, all_labels, all_audio_features, all_audio_lengths,
+                              word_wav, word_text.lower())
+                        n_word_added += 1
+                    _PROC_STATS["word"] += n_word_added
 
-            all_input_ids.append(input_ids)
-            all_labels.append(labels)
-            all_audio_features.append(waveform.squeeze(0))  # 1D CPU tensor
-            all_audio_lengths.append(t_audio)
+            # 주기적 통계 출력 (worker-local)
+            if _PROC_STATS["sentence"] % _PROC_LOG_EVERY == 0 and _PROC_STATS["sentence"] > 0:
+                import os as _os
+                print(
+                    f"[Processor pid={_os.getpid()}] "
+                    f"sentence={_PROC_STATS['sentence']:,} "
+                    f"word={_PROC_STATS['word']:,} "
+                    f"(ratio={_PROC_STATS['word']/_PROC_STATS['sentence']:.1f}x)",
+                    flush=True,
+                )
 
         return {
             "input_ids":       all_input_ids,
@@ -905,14 +1045,20 @@ class OmniCollator:
 
 
 def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packer_fn,
-                                           shuffle=True, selected_datasets=None):
+                                           shuffle=True, selected_datasets=None,
+                                           word_aug: bool = False):
     """스트리밍 데이터셋 파이프라인 구성: 로드 → 샤딩 → Interleave → 셔플 → 처리 → 패킹.
 
     로드 직후 샤딩하여 각 GPU가 1/N 슬라이스만 처리.
-    Interleave 전에 컬럼명을 ["audio", "text"]로 통일.
+    Interleave 전에 컬럼명을 ["audio", "text"] (또는 word_aug=True 시 + "utterance_id")로 통일.
+
+    word_aug=True: 각 데이터셋에서 utterance_id 컬럼을 보존.
+    processor_fn에 alignment_lookup이 설정된 경우 단어 단위 서브샘플 생성.
     """
     root = cfg.get("data_path", "/mnt/tmp/cache")
     mls_root = cfg.get("mls_data_path", root)
+
+    base_cols = ["audio", "text", "utterance_id"] if word_aug else ["audio", "text"]
 
     dataset_list = []
     selected = set(selected_datasets or ["ls100", "ls360", "ls500", "mls", "gs", "vp"])
@@ -931,7 +1077,9 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
         if accelerator.num_processes > 1:
             ds_ls = ds_ls.shard(num_shards=accelerator.num_processes,
                                 index=accelerator.process_index, contiguous=False)
-        ds_ls = ds_ls.select_columns(["audio", "text"])
+        if word_aug:
+            ds_ls = ds_ls.rename_column("id", "utterance_id")
+        ds_ls = ds_ls.select_columns(base_cols)
         ds_ls = ds_ls.cast_column("audio", Audio(decode=False))
         dataset_list.append(ds_ls)
 
@@ -943,7 +1091,10 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
             ds_mls = ds_mls.shard(num_shards=accelerator.num_processes,
                                   index=accelerator.process_index, contiguous=False)
         ds_mls = ds_mls.rename_column("transcript", "text")
-        ds_mls = ds_mls.select_columns(["audio", "text"])
+        if word_aug:
+            # original_path: "12345_678_000001.opus" → AlignmentLookup에서 .opus 제거
+            ds_mls = ds_mls.rename_column("original_path", "utterance_id")
+        ds_mls = ds_mls.select_columns(base_cols)
         ds_mls = ds_mls.cast_column("audio", Audio(decode=False))
         dataset_list.append(ds_mls)
 
@@ -956,7 +1107,9 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
                                 index=accelerator.process_index, contiguous=False)
         if "text" not in ds_gs.column_names and "transcript" in ds_gs.column_names:
             ds_gs = ds_gs.rename_column("transcript", "text")
-        ds_gs = ds_gs.select_columns(["audio", "text"])
+        if word_aug:
+            ds_gs = ds_gs.rename_column("segment_id", "utterance_id")
+        ds_gs = ds_gs.select_columns(base_cols)
         ds_gs = ds_gs.cast_column("audio", Audio(decode=False))
         dataset_list.append(ds_gs)
 
@@ -968,7 +1121,9 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
             ds_vox = ds_vox.shard(num_shards=accelerator.num_processes,
                                   index=accelerator.process_index, contiguous=False)
         ds_vox = ds_vox.rename_column("normalized_text", "text")
-        ds_vox = ds_vox.select_columns(["audio", "text"])
+        if word_aug:
+            ds_vox = ds_vox.rename_column("audio_id", "utterance_id")
+        ds_vox = ds_vox.select_columns(base_cols)
         ds_vox = ds_vox.cast_column("audio", Audio(decode=False))
         dataset_list.append(ds_vox)
 
@@ -981,11 +1136,12 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
         ds = ds.shuffle(seed=cfg.get("seed", 42),
                         buffer_size=cfg.get("shuffle_buffer_size", 10000))
 
+    remove_cols = ["audio", "text"] + (["utterance_id"] if word_aug else [])
     ds = ds.map(
         processor_fn,
         batched=True,
         batch_size=cfg.get("process_batch_size", 4),
-        remove_columns=["audio", "text"],
+        remove_columns=remove_cols,
     )
 
     if cfg.get("packing", True):
@@ -1594,8 +1750,8 @@ def main():
     parser.add_argument("--max-steps", default=None, type=int,
                         help="학습을 종료할 최대 Step 수 (스트리밍 전용). 미지정 시 estimated_hours 기반 계산")    
     parser.add_argument("--cutoff-len", default=None, type=int, help="Packing 시퀀스 최대 길이 (기본: config의 packing_cutoff_len=2048)")
-    parser.add_argument("--eval-steps", default=500, type=int, help="WER 평가 주기")
-    parser.add_argument("--save-steps", default=500, type=int, help="Trainer 체크포인트 저장 주기")
+    parser.add_argument("--eval-steps", default=None, type=int, help="WER 평가 주기 (기본: config의 eval_steps=500)")
+    parser.add_argument("--save-steps", default=None, type=int, help="Trainer 체크포인트 저장 주기 (기본: config의 save_steps=5000)")
     parser.add_argument("--resume", default=None, help="체크포인트에서 재개")
     parser.add_argument("--stage", choices=["all", "1", "2"], default="all",
                         help="실행할 스테이지: all (1→2, 기본값), 1, or 2")
@@ -1611,6 +1767,8 @@ def main():
                         help="Liger fused kernel 활성화/비활성화 (기본: --liger)")
     parser.add_argument("--fsdp", default=True, action=argparse.BooleanOptionalAction,
                         help="Stage 2 FSDP 활성화/비활성화 (기본: --fsdp)")
+    parser.add_argument("--word-aug", action="store_true", default=False,
+                        help="단어 단위 ASR 서브샘플 생성 활성화 (word alignment Arrow 필요)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -1621,8 +1779,8 @@ def main():
     cfg["use_fsdp"]         = args.fsdp
     cfg["wandb_mode"]         = args.wandb_mode
     cfg["packing_cutoff_len"] = args.cutoff_len if args.cutoff_len is not None else cfg["packing_cutoff_len"]
-    cfg["eval_steps"]         = args.eval_steps
-    cfg["save_steps"]         = args.save_steps
+    cfg["eval_steps"]         = args.eval_steps  if args.eval_steps  is not None else cfg.get("eval_steps",  500)
+    cfg["save_steps"]         = args.save_steps if args.save_steps is not None else cfg.get("save_steps", 5000)
     cfg["max_steps"]          = args.max_steps
     if args.stage1_epochs is not None: cfg["stage1_epochs"] = args.stage1_epochs
     if args.stage2_epochs is not None: cfg["stage2_epochs"] = args.stage2_epochs
@@ -1647,7 +1805,38 @@ def main():
         wandb.init(project=cfg.get("project_name", "audio-qwen"), config=cfg,
                    name=run_name, mode=cfg.get("wandb_mode", "online"))
 
-    logger.info(f"Selected datasets={selected_datasets}, estimated_hours={cfg['estimated_hours']}")
+    # ── Startup configuration summary ────────────────────────────────────────
+    if accelerator.is_main_process:
+        _w = 56
+        logger.info("=" * _w)
+        logger.info(f"  PIPELINE CONFIG")
+        logger.info("=" * _w)
+        logger.info(f"  Encoder       : {cfg['encoder_name']}")
+        logger.info(f"  LLM           : {cfg['llm_model']}")
+        logger.info(f"  Stage(s)      : {args.stage}")
+        logger.info(f"  Datasets      : {', '.join(selected_datasets)}")
+        logger.info(f"  Est. hours    : {cfg['estimated_hours']:.0f}h")
+        logger.info(f"  Cutoff len    : {cfg['packing_cutoff_len']} tokens")
+        logger.info("  ── Optimizations ──────────────────────────────")
+        logger.info(f"  Seq Packing   : ✓ (always on, cutoff={cfg['packing_cutoff_len']})")
+        logger.info(f"  Flash Attn 2  : {'✓' if cfg.get('attn_implementation') == 'flash_attention_2' else '✗ (' + cfg.get('attn_implementation', '?') + ')'}")
+        logger.info(f"  Liger Kernel  : {'✓' if cfg.get('use_liger_kernel') else '✗'}")
+        logger.info(f"  FSDP (Stage2) : {'✓' if cfg.get('use_fsdp') else '✗'}")
+        logger.info("  ── Word Augmentation ──────────────────────────")
+        logger.info(f"  Word-aug      : {'✓' if args.word_aug else '✗ (disabled)'}")
+        if args.word_aug:
+            for ds_key in selected_datasets:
+                arrow_path = _ALIGNMENT_ARROW_PATHS.get(ds_key, "")
+                exists = os.path.exists(arrow_path) if arrow_path else False
+                status = f"✓ {arrow_path.split('/')[-2]}/{arrow_path.split('/')[-1]}" if exists else "✗ arrow not found"
+                logger.info(f"    {ds_key:<8}: {status}")
+        logger.info("  ── Training Schedule ──────────────────────────")
+        logger.info(f"  Stage1 epochs : {cfg.get('stage1_epochs', 2)}")
+        logger.info(f"  Stage2 epochs : {cfg.get('stage2_epochs', 2)}")
+        logger.info(f"  Eval steps    : {cfg['eval_steps']}")
+        logger.info(f"  Save steps    : {cfg['save_steps']}")
+        logger.info("=" * _w)
+    # ─────────────────────────────────────────────────────────────────────────
 
     # 1. Build model (AudioQwen with encoder + projector + LLM)
     model     = build_model(cfg, accelerator)
@@ -1655,10 +1844,20 @@ def main():
 
     # 2. Build data pipeline components
     logger.info("Initializing Omni Data Pipeline Components...",)
+
+    # Word-aug: AlignmentLookup 로드 (word_aug=True 이고 rank-0에서만 먼저 로드 후 fork)
+    merged_alignment: "MergedAlignmentLookup | None" = None
+    if args.word_aug:
+        lookups_dict = build_alignment_lookups(selected_datasets)
+        merged_alignment = MergedAlignmentLookup(list(lookups_dict.values()))
+        logger.info(f"Word-aug enabled. Loaded {sum(1 for v in lookups_dict.values() if v)} alignment lookups.")
+
     processor_fn = create_processor(
         tokenizer=tokenizer,
         audio_pad_token_id=cfg.get("audio_pad_token_id", 151655),
         sample_rate=cfg.get("sample_rate", 16000),
+        alignment_lookup=merged_alignment,
+        word_aug=args.word_aug,
     )
     packer_fn = create_packer(
         cutoff_len=cfg["packing_cutoff_len"],
@@ -1680,6 +1879,7 @@ def main():
         packer_fn=packer_fn,
         shuffle=True,
         selected_datasets=selected_datasets,
+        word_aug=args.word_aug,
     )
 
     # 4. Sanity-check packing efficiency (rank-0 only)

@@ -37,6 +37,7 @@ TRAIN_CONFIG = {
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
+    "eval_steps": 500,
     "save_steps": 5000,
 
     "lora_r": 16,
