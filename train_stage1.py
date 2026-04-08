@@ -72,6 +72,34 @@ def run_validation(model, val_loader, accelerator):
     return total_loss / max(n, 1)
 
 
+def build_accelerator(cfg):
+    """cfg 플래그에 따라 DDP 또는 FSDP Accelerator 생성.
+
+    FSDP full shard 사용 시 gradient_checkpointing(TrainingArguments 방식)은
+    backward pass에서 불필요한 AllGather를 유발하므로, 대신 FSDP 자체의
+    activation_checkpointing을 활성화한다.
+    Ref: https://github.com/huggingface/transformers/issues/30404
+    """
+    mp = "bf16" if cfg.get("attn_implementation") == "flash_attention_2" else "no"
+    kwargs = dict(
+        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
+        mixed_precision=mp,
+        kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=7200))],
+    )
+    if cfg.get("use_fsdp", False):
+        from accelerate.utils import FullyShardedDataParallelPlugin
+        from torch.distributed.fsdp import FullStateDictConfig, FullOptimStateDictConfig
+        fsdp_plugin = FullyShardedDataParallelPlugin(
+            use_orig_params=True,
+            activation_checkpointing=True,   # FSDP 자체 activation checkpointing 사용
+            state_dict_config=FullStateDictConfig(offload_to_cpu=True, rank0_only=False),
+            optim_state_dict_config=FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=False),
+        )
+        kwargs["fsdp_plugin"] = fsdp_plugin
+        print("FSDP enabled (activation_checkpointing=True)")
+    return Accelerator(**kwargs)
+
+
 def build_model(cfg, accelerator):
     """rank-0 먼저 로드해서 HF 캐시 생성, 나머지는 캐시에서 로드."""
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -174,11 +202,13 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
     val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
 
     train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
-                              collate_fn=collate, num_workers=1, pin_memory=True)
+                              collate_fn=collate, num_workers=4, pin_memory=True,
+                              persistent_workers=True, prefetch_factor=2)
     val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
-                              collate_fn=collate, num_workers=1, pin_memory=True)
+                              collate_fn=collate, num_workers=2, pin_memory=True)
 
-    model.freeze_llm()
+    # FSDP는 모든 파라미터가 동일 dtype이어야 함 → projector를 fp32로 올리지 않음
+    model.freeze_llm(projector_fp32=not cfg.get("use_fsdp", False))
 
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -210,8 +240,10 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
 
         progress = tqdm(active_loader, desc=f"Stage1 Epoch {epoch+1}",
                         disable=not accelerator.is_main_process)
-        accum_loss, accum_count, accum_bsz = 0.0, 0, 0
+        accum_loss_buf = torch.zeros(1, device=accelerator.device)
+        accum_count, accum_bsz = 0, 0
         steps_in_epoch = 0  # 이 epoch에서의 optimizer step 수
+        log_every = cfg.get("log_every", 1)
 
         for audio, audio_lengths, transcript_ids in progress:
             audio_lengths  = audio_lengths.to(accelerator.device)
@@ -228,21 +260,22 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, debug=""):
                     scheduler.step()
                     optimizer.zero_grad()
                     steps_in_epoch += 1
+                    # 모든 rank가 동일한 step 수를 밟으므로 broadcast 불필요
+                    global_step += 1
                     if accelerator.is_main_process:
-                        global_step += 1
                         lr_now = scheduler.get_last_lr()[0]
-                        accum_loss  += outputs.loss.item()
+                        accum_loss_buf += outputs.loss.detach()
                         accum_count += 1
-                        avg_loss = accum_loss / accum_count
-                        wandb.log({"stage": 1, "train/loss": avg_loss,
-                                   "train/lr": lr_now, "train/batch_size": accum_bsz},
-                                  step=global_step)
-                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
-                                             bsz=accum_bsz)
+                        if global_step % log_every == 0:
+                            avg_loss = (accum_loss_buf / accum_count).item()
+                            accum_loss_buf.zero_()
+                            accum_count = 0
+                            wandb.log({"stage": 1, "train/loss": avg_loss,
+                                       "train/lr": lr_now, "train/batch_size": accum_bsz},
+                                      step=global_step)
+                            progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
+                                                 bsz=accum_bsz)
                         accum_bsz = 0
-                    step_tensor = torch.tensor([global_step], device=accelerator.device)
-                    torch.distributed.broadcast(step_tensor, src=0)
-                    global_step = step_tensor[0].item()
 
                     if save_steps and global_step % save_steps == 0:
                         # 전체 resume 상태 저장 (mid-epoch)
@@ -366,6 +399,8 @@ def main():
                         help="GigaSpeech subset (기본: xl=10000h)")
     parser.add_argument("--gs-samples",     default=None, type=int,
                         metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
+    parser.add_argument("--fsdp",  action="store_true",
+                        help="FSDP (DDP 대체, 4B+ 모델 권장; activation_checkpointing 사용)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -378,16 +413,13 @@ def main():
     if args.mls_samples is not None: cfg["mls_num_samples"]         = args.mls_samples
     cfg["gs_subset"]     = args.gs_subset
     if args.gs_samples  is not None: cfg["gs_num_samples"]          = args.gs_samples
+    if args.fsdp:                    cfg["use_fsdp"] = True
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
     os.environ.setdefault("TORCH_HOME", os.path.join(os.path.dirname(cfg["model_cache_dir"]), "torch"))
 
-    accelerator = Accelerator(
-        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
-        mixed_precision="no",
-        kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=7200))],
-    )
+    accelerator = build_accelerator(cfg)
 
     if accelerator.is_main_process:
         import datetime

@@ -61,8 +61,9 @@ class FbDACVAEEncoder(BaseAudioEncoder):
         device = audio_waveform.device
         B = audio_waveform.shape[0]
 
-        # 16kHz → 44.1kHz
-        audio_tgt = AF.resample(audio_waveform.float(), self.src_sr, self.tgt_sr)
+        # 16kHz → 44.1kHz; cast to dacvae weight dtype (fp32 normally, bf16 under FSDP)
+        enc_dtype = next(self.dacvae.parameters()).dtype
+        audio_tgt = AF.resample(audio_waveform.to(enc_dtype), self.src_sr, self.tgt_sr)
 
         if audio_lengths is not None:
             lengths_tgt = (audio_lengths.float() * self.tgt_sr / self.src_sr).long()
@@ -74,9 +75,10 @@ class FbDACVAEEncoder(BaseAudioEncoder):
 
         with torch.no_grad():
             with torch.autocast(device_type="cuda", enabled=False):
-                z = self.dacvae.encode(audio_in.float())  # (B, codebook_dim, T_enc)
+                # z = self.dacvae.encode(audio_in.float())  # (B, codebook_dim, T_enc)
+                z = self.dacvae.encode(audio_in)  # (B, codebook_dim, T_enc)
 
-        feats = z.transpose(1, 2).float()  # (B, T_enc, codebook_dim)
+        feats = z.transpose(1, 2)  # (B, T_enc, codebook_dim); dtype matches enc_dtype
 
         T_enc = feats.shape[1]
         lengths_enc = (lengths_tgt.float() / self.hop).ceil().long().clamp(max=T_enc)

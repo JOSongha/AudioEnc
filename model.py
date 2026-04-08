@@ -177,8 +177,12 @@ class AudioQwen(nn.Module):
         self.ctc_head.requires_grad_(True)
         print(f"CTC head initialized: Linear({llm_dim}, {n_chars})")
 
-    def freeze_llm(self):
-        """Stage 1: LLM frozen, projector만 학습."""
+    def freeze_llm(self, projector_fp32=True):
+        """Stage 1: LLM frozen, projector만 학습.
+
+        projector_fp32=False: FSDP 사용 시 모든 파라미터를 동일 dtype(bfloat16)으로
+        유지해야 하므로 projector를 fp32로 올리지 않음.
+        """
         print("Freezing LLM (Stage 1)...")
         for p in self.llm.parameters():
             p.requires_grad = False
@@ -188,8 +192,9 @@ class AudioQwen(nn.Module):
             p.requires_grad = True
 
         self.llm.gradient_checkpointing_disable()
-        self.projector.float()
-        self.proj_norm.float()
+        if projector_fp32:
+            self.projector.float()
+            self.proj_norm.float()
 
     def apply_lora(self):
         """Stage 2: LLM에 LoRA 적용. LoRA 설정은 cfg에서 읽음."""

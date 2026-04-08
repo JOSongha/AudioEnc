@@ -3,6 +3,7 @@ import io
 import os
 import pickle
 import random
+import re
 from typing import Any
 
 import numpy as np
@@ -82,7 +83,13 @@ class MLSDataset(Dataset):
         audio_bytes = item["audio"]["bytes"]
         transcript  = item["transcript"]
 
-        waveform, sample_rate = torchaudio.load(io.BytesIO(audio_bytes))  # (C, T)
+        try:
+            waveform, sample_rate = torchaudio.load(io.BytesIO(audio_bytes))
+        except Exception as e:
+            print("ERROR SAMPLE:", idx)
+            print(len(audio_bytes))
+            print(audio_bytes[:20])
+            raise e
 
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
@@ -170,7 +177,8 @@ class GigaSpeechDataset(Dataset):
             "speechcolab/gigaspeech",
             subset,
             split="train",
-            cache_dir=cache_dir,
+            # cache_dir=cache_dir,
+            cache_dir="/mnt/tmp/cache/hf/datasets",
             trust_remote_code=True,
         )
         total = len(ds)
@@ -239,6 +247,7 @@ def build_datasets(cfg: dict):
             indices = random.Random(42).sample(range(len(librispeech)), ls_num)
             librispeech = Subset(librispeech, sorted(indices))
         parts.append(librispeech)
+        print (f"Loaded LibriSpeech splits {ls_splits}, total samples: {len(librispeech)}")
 
     # MLS
     if "mls" in datasets:
@@ -247,6 +256,7 @@ def build_datasets(cfg: dict):
             num_samples=cfg.get("mls_num_samples", None),
             max_len=max_len,
         ))
+        print (f"Loaded MLS, total samples: {len(parts[-1])}")
 
     # GigaSpeech
     if "gs" in datasets:
@@ -256,6 +266,7 @@ def build_datasets(cfg: dict):
             num_samples=cfg.get("gs_num_samples", None),
             max_len=max_len,
         ))
+        print (f"Loaded GigaSpeech subset {cfg.get('gs_subset', 'l')}, total samples: {len(parts[-1])}")
 
     # VoxPopuli
     if "vp" in datasets:
@@ -265,6 +276,7 @@ def build_datasets(cfg: dict):
             num_samples=cfg.get("vp_num_samples", None),
             max_len=max_len,
         ))
+        print (f"Loaded VoxPopuli language {cfg.get('vp_language', 'en')}, total samples: {len(parts[-1])}")
 
     if not parts:
         raise ValueError(f"datasets에 유효한 항목이 없습니다: {datasets}")
@@ -274,8 +286,49 @@ def build_datasets(cfg: dict):
     return train_dataset, val_dataset
 
 
+def build_train_eval_dataset(cfg, n_per_ds: int = 10):
+    """
+    WER 평가용 train subset.
+    cfg["datasets"]에 있는 각 데이터셋에서 앞 n_per_ds개씩 가져와 concat.
+    """
+    root     = cfg["data_path"]
+    mls_root = cfg.get("mls_data_path", root)
+    max_len  = cfg["max_audio_len"]
+    datasets = cfg.get("datasets", ["ls100", "ls360", "ls500", "mls"])
+
+    parts = []
+    for name in ["ls100", "ls360", "ls500"]:
+        if name in datasets:
+            ds = LibriSpeechDataset(root=root, url=_LS_URL[name], max_len=max_len)
+            parts.append(Subset(ds, range(min(n_per_ds, len(ds)))))
+
+    if "mls" in datasets:
+        ds = MLSDataset(cache_dir=mls_root, max_len=max_len)
+        parts.append(Subset(ds, range(min(n_per_ds, len(ds)))))
+
+    if "gs" in datasets:
+        ds = GigaSpeechDataset(
+            cache_dir=mls_root,
+            subset=cfg.get("gs_subset", "l"),
+            max_len=max_len,
+        )
+        parts.append(Subset(ds, range(min(n_per_ds, len(ds)))))
+
+    if "vp" in datasets:
+        ds = VoxPopuliDataset(
+            cache_dir=mls_root,
+            language=cfg.get("vp_language", "en"),
+            max_len=max_len,
+        )
+        parts.append(Subset(ds, range(min(n_per_ds, len(ds)))))
+
+    if not parts:
+        raise ValueError(f"datasets에 유효한 항목이 없습니다: {datasets}")
+    return ConcatDataset(parts) if len(parts) > 1 else parts[0]
+
+
 def get_dataset_lengths(dataset, samples_per_token: float, max_text_len: int,
-                        cache_dir: str = None) -> list:
+                        cache_dir: str = None, cache_tag: str = "") -> list:
     """
     LLM 토큰 수 기준 길이를 반환.
       token_len = audio_samples_16k / samples_per_token + max_text_len
@@ -283,7 +336,10 @@ def get_dataset_lengths(dataset, samples_per_token: float, max_text_len: int,
     raw 오디오 샘플 수는 cache_dir에 캐싱되어 재사용됨.
     samples_per_token / max_text_len 이 바뀌어도 캐시를 다시 쓰지 않아도 됨
     (변환은 캐시 로드 후 런타임에 적용).
+    cache_tag: 데이터셋 구성 식별자 (동일 len의 다른 구성 간 충돌 방지)
     """
+    # audio_lengths = _get_raw_lengths(dataset, cache_dir, cache_tag=cache_tag)
+    # return [int(l / samples_per_token) + max_text_len for l in audio_lengths]
     audio_lengths = _get_raw_lengths(dataset, cache_dir)
     return [int(l / samples_per_token) + max_text_len for l in audio_lengths]
 
@@ -295,6 +351,7 @@ def _get_raw_lengths(dataset, cache_dir: str = None) -> list:
         cache_path = os.path.join(cache_dir, f"bucket_lengths_{len(dataset)}.pkl")
         if os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
+                print (f"[DEBUG] Loaded raw lengths from {cache_path}. dataset: {type(dataset).__name__}, samples: {len(dataset)}")
                 return pickle.load(f)
 
     lengths = _collect_lengths(dataset)
@@ -302,6 +359,7 @@ def _get_raw_lengths(dataset, cache_dir: str = None) -> list:
     if cache_path:
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "wb") as f:
+            print (f"[DEBUG] Saving lengths to {cache_path}. dataset: {type(dataset).__name__}, samples: {len(dataset)}")
             pickle.dump(lengths, f)
 
     return lengths
@@ -312,17 +370,23 @@ def _collect_lengths(dataset) -> list:
         lengths = []
         for sub in dataset.datasets:
             lengths.extend(_collect_lengths(sub))
+        print (f"[DEBUG] Collected lengths for ConcatDataset with {len(lengths)} samples (subsets {[type(s).__name__ for s in dataset.datasets]})")
         return lengths
     elif isinstance(dataset, Subset):
         parent_lengths = _collect_lengths(dataset.dataset)
+        print (f"[DEBUG] Collecting lengths for Subset with {len(dataset)} samples (parent {len(parent_lengths)})...")
         return [parent_lengths[i] for i in dataset.indices]
     elif isinstance(dataset, LibriSpeechDataset):
+        print (f"[DEBUG] Collecting lengths for LibriSpeechDataset with {len(dataset)} samples...")
         return _librispeech_lengths(dataset)
     elif isinstance(dataset, MLSDataset):
+        print (f"[DEBUG] Collecting lengths for MLSDataset with {len(dataset)} samples...")
         return _mls_lengths(dataset)
     elif isinstance(dataset, GigaSpeechDataset):
+        print (f"[DEBUG] Collecting lengths for GigaSpeechDataset with {len(dataset)} samples...")
         return _gigaspeech_lengths(dataset)
     elif isinstance(dataset, VoxPopuliDataset):
+        print (f"[DEBUG] Collecting lengths for VoxPopuliDataset with {len(dataset)} samples...")
         return _voxpopuli_lengths(dataset)
     elif isinstance(dataset, GigaSpeechDataset):
         return _gigaspeech_lengths(dataset)
@@ -769,9 +833,9 @@ class PackedDataset(Dataset):
         return {
             "input_ids":      torch.tensor(packed_input_ids[:self.cutoff_len], dtype=torch.long),
             "labels":         torch.tensor(packed_labels[:self.cutoff_len], dtype=torch.long),
-            "attention_mask": torch.tensor(packed_attention_mask[:self.cutoff_len], dtype=torch.long),
-            "audio_features": packed_audio_features,
-            "audio_lengths":  packed_audio_lengths,
+            "attention_mask": torch.tensor(packed_attention_mask[:self.cutoff_len], dtype=torch.long), # 샘플 인덱스 (sample_idx+1, pad=0) 
+            "audio_features": packed_audio_features, # list of waveforms (샘플별 개별 tensor)
+            "audio_lengths":  packed_audio_lengths,  # list of t_audio
         }
 
 
@@ -870,7 +934,11 @@ class PackedCollator:
             audio_features = torch.zeros(0, 1, 0, dtype=torch.float32)
         audio_lengths = torch.tensor(all_t_audio, dtype=torch.long)
 
-        result = {"audio_features": audio_features, "audio_lengths": audio_lengths}
+        result = {
+            "audio_features": audio_features,
+            "audio_lengths": audio_lengths,
+            "num_items_in_batch": int((labels != -100).sum()),
+        }
 
         if self.attn_implementation == "flash_attention_2":
             non_pad             = attention_mask != 0

@@ -27,6 +27,8 @@
 # wandb 비활성화:
 #   bash run_debug.sh --encoder fb_dacvae --wandb-mode disabled
 #
+# eos-first:
+#   bash run_debug.sh --encoder fb_dacvae --eos-first
 # 인자 목록:
 #   --encoder           필수. encodec | dac | fb_dacvae | mimi_acoustic | mimi_semantic
 #   --gpus              GPU 수 (기본: CUDA_VISIBLE_DEVICES 개수, 없으면 1)

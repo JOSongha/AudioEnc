@@ -19,7 +19,7 @@ import torchaudio
 import wandb
 from accelerate import Accelerator, InitProcessGroupKwargs
 import random
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, DistributedSampler, Subset
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
@@ -27,8 +27,12 @@ from config import get_config
 from dataset import (
     LibriSpeechDataset,
     collate_fn_factory,
+    collate_fn_factory_eos_first,
     get_dataset_lengths,
     DynamicBatchSampler,
+    PackedDataset,
+    PackedCollator,
+    build_packed_processor,
 )
 from encoders import build_encoder
 from model import AudioQwen
@@ -267,38 +271,53 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
 
     model    = build_model(cfg, accelerator)
     tokenizer = model.tokenizer
-    if "n" in debug:
-        _old_eos = tokenizer.eos_token_id
-        tokenizer.add_special_tokens({"additional_special_tokens": ["<|asr_eos|>"]})
-        _new_eos = tokenizer.convert_tokens_to_ids("<|asr_eos|>")
-        model.llm.resize_token_embeddings(len(tokenizer))
-        with torch.no_grad():
-            _emb = model.llm.get_input_embeddings().weight
-            _emb[_new_eos] = _emb[_old_eos].clone()
-            _out = model.llm.get_output_embeddings()
-            if _out is not None:
-                _out.weight[_new_eos] = _out.weight[_old_eos].clone()
-        tokenizer.eos_token_id = _new_eos
-        tokenizer.pad_token_id = _new_eos
-        if accelerator.is_main_process:
-            print(f"[debug n] <|asr_eos|> added: id={_new_eos} (copied from old EOS id={_old_eos})")
-    collate  = collate_fn_factory(tokenizer, cfg["max_text_len"], eos_before_pad=("o" in debug))
-
+    use_packing  = cfg.get("use_packing", False)
     num_replicas = accelerator.num_processes
     rank         = accelerator.process_index
     spt  = cfg["samples_per_token"]
     mt   = cfg["max_text_len"]
     mbt  = cfg["max_batch_tokens"]
-    train_lengths = get_dataset_lengths(train_dataset, spt, mt, cache_dir=cfg["model_cache_dir"])
-    val_lengths   = get_dataset_lengths(val_dataset,   spt, mt, cache_dir=cfg["model_cache_dir"])
 
-    train_sampler = DynamicBatchSampler(train_lengths, mbt, num_replicas=num_replicas, rank=rank)
-    val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
-
-    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
-                              collate_fn=collate, num_workers=2, pin_memory=True)
-    val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
-                              collate_fn=collate, num_workers=1, pin_memory=True)
+    if use_packing:
+        token_lengths = get_dataset_lengths(train_dataset, spt, mt, cache_dir=cfg["model_cache_dir"])
+        processor     = build_packed_processor(tokenizer, cfg)
+        train_packed  = PackedDataset(
+            source_dataset=train_dataset,
+            processor_fn=processor,
+            token_lengths=token_lengths,
+            cutoff_len=cfg["packing_cutoff_len"],
+            pad_token_id=tokenizer.pad_token_id,
+        )
+        collator           = PackedCollator(
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation=cfg.get("attn_implementation", "eager"),
+        )
+        train_dist_sampler = DistributedSampler(
+            train_packed, num_replicas=num_replicas, rank=rank, shuffle=True,
+        )
+        train_loader = DataLoader(
+            train_packed, batch_size=4, sampler=train_dist_sampler,
+            collate_fn=collator, num_workers=4, pin_memory=True, persistent_workers=True,
+        )
+        # val: 기존 방식 유지
+        _collate_factory = collate_fn_factory_eos_first if cfg.get("eos_first") else collate_fn_factory
+        collate_val = _collate_factory(tokenizer, cfg["max_text_len"])
+        val_lengths = get_dataset_lengths(val_dataset, spt, mt, cache_dir=cfg["model_cache_dir"])
+        val_sampler = DynamicBatchSampler(val_lengths, mbt, num_replicas=num_replicas, rank=rank)
+        val_loader  = DataLoader(val_dataset, batch_sampler=val_sampler,
+                                 collate_fn=collate_val, num_workers=2, pin_memory=True)
+        
+    else:
+        _collate_factory = collate_fn_factory_eos_first if cfg.get("eos_first") else collate_fn_factory
+        collate  = _collate_factory(tokenizer, cfg["max_text_len"])
+        train_lengths = get_dataset_lengths(train_dataset, spt, mt, cache_dir=cfg["model_cache_dir"])
+        val_lengths   = get_dataset_lengths(val_dataset,   spt, mt, cache_dir=cfg["model_cache_dir"])
+        train_sampler = DynamicBatchSampler(train_lengths, mbt, num_replicas=num_replicas, rank=rank)
+        val_sampler   = DynamicBatchSampler(val_lengths,   mbt, num_replicas=num_replicas, rank=rank)
+        train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
+                                  collate_fn=collate, num_workers=2, pin_memory=True)
+        val_loader   = DataLoader(val_dataset,   batch_sampler=val_sampler,
+                                  collate_fn=collate, num_workers=1, pin_memory=True)
 
     model.freeze_llm()
     if "c" in debug:
@@ -314,7 +333,10 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
     best_werT   = float("inf")
 
     for epoch in range(s1_epochs):
-        train_loader.batch_sampler.set_epoch(epoch)
+        if use_packing:
+            train_dist_sampler.set_epoch(epoch)
+        else:
+            train_loader.batch_sampler.set_epoch(epoch)
         model.train()
         if "e" in debug:
             if "d" in debug:
@@ -327,46 +349,64 @@ def run_stage1(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
             eos_w = 1.0
         progress = tqdm(train_loader, desc=f"S1 Epoch {epoch+1}/{s1_epochs}",
                         disable=not accelerator.is_main_process)
-        accum_loss, accum_count, accum_bsz = 0.0, 0, 0
+        accum_loss_buf = torch.zeros(1, device=accelerator.device)
+        accum_count, accum_bsz = 0, 0
+        log_every = cfg.get("log_every", 1)
 
-        for audio, audio_lengths, transcript_ids in progress:
-            audio_lengths  = audio_lengths.to(accelerator.device)
-            transcript_ids = transcript_ids.to(accelerator.device)
+        for batch in progress:
             with accelerator.accumulate(model):
-                if "c" in debug:
-                    texts = tokenizer.batch_decode(transcript_ids, skip_special_tokens=True)
-                    ctc_tgt, ctc_tgt_len = _text_to_ctc_targets(texts)
-                    outputs = model(audio, audio_lengths=audio_lengths,
-                                    transcript_input_ids=transcript_ids,
-                                    ctc_targets=ctc_tgt, ctc_target_lengths=ctc_tgt_len,
-                                    eos_weight=eos_w)
+                if use_packing:
+                    batch = {k: v.to(accelerator.device) if isinstance(v, torch.Tensor) else v
+                             for k, v in batch.items()}
+                    outputs = model(
+                        input_ids=batch["input_ids"],
+                        labels=batch["labels"],
+                        audio_features=batch["audio_features"],
+                        audio_feat_lengths=batch["audio_lengths"],
+                        attention_mask=batch.get("attention_mask"),
+                        position_ids=batch.get("position_ids"),
+                    )
+                    if accelerator.is_main_process:
+                        accum_bsz += batch["input_ids"].shape[0]
                 else:
-                    outputs = model(audio, audio_lengths=audio_lengths,
-                                    transcript_input_ids=transcript_ids,
-                                    eos_weight=eos_w)
+                    audio, audio_lengths, transcript_ids = batch
+                    audio_lengths  = audio_lengths.to(accelerator.device)
+                    transcript_ids = transcript_ids.to(accelerator.device)
+                    if "c" in debug:
+                        texts = tokenizer.batch_decode(transcript_ids, skip_special_tokens=True)
+                        ctc_tgt, ctc_tgt_len = _text_to_ctc_targets(texts)
+                        outputs = model(audio, audio_lengths=audio_lengths,
+                                        transcript_input_ids=transcript_ids,
+                                        ctc_targets=ctc_tgt, ctc_target_lengths=ctc_tgt_len,
+                                        eos_weight=eos_w, eos_first=cfg.get("eos_first", False))
+                    else:
+                        outputs = model(audio, audio_lengths=audio_lengths,
+                                        transcript_input_ids=transcript_ids,
+                                        eos_weight=eos_w, eos_first=cfg.get("eos_first", False))
+                    if accelerator.is_main_process:
+                        accum_bsz += audio.shape[0]
                 accelerator.backward(outputs.loss)
-                if accelerator.is_main_process:
-                    accum_bsz += audio.shape[0]
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(model.parameters(), cfg["max_grad_norm"])
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
+                    # 모든 rank가 동일한 step 수를 밟으므로 broadcast 불필요
+                    global_step += 1
                     if accelerator.is_main_process:
-                        global_step += 1
                         lr_now = scheduler.get_last_lr()[0]
-                        accum_loss  += outputs.loss.item()
+                        accum_loss_buf += outputs.loss.detach()
                         accum_count += 1
-                        avg_loss = accum_loss / accum_count
-                        wandb.log({"stage": 1, "train/loss": avg_loss,
-                                   "train/lr": lr_now, "train/batch_size": accum_bsz},
-                                  step=global_step)
-                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
-                                             bsz=accum_bsz)
+                        if global_step % log_every == 0:
+                            avg_loss = (accum_loss_buf / accum_count).item()
+                            accum_loss_buf.zero_()
+                            accum_count = 0
+                            wandb.log({"stage": 1, "train/loss": avg_loss,
+                                       "train/lr": lr_now, "train/batch_size": accum_bsz},
+                                      step=global_step)
+                            progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
+                                                 bsz=accum_bsz)
                         accum_bsz = 0
-                    step_tensor = torch.tensor([global_step], device=accelerator.device)
-                    torch.distributed.broadcast(step_tensor, src=0)
-                    global_step = step_tensor[0].item()
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:
@@ -480,7 +520,8 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
         lr=cfg["stage2_lr"], weight_decay=0.01,
     )
 
-    collate      = collate_fn_factory(model.tokenizer, cfg["max_text_len"], eos_before_pad=("o" in debug))
+    _collate_factory = collate_fn_factory_eos_first if cfg.get("eos_first") else collate_fn_factory
+    collate      = _collate_factory(model.tokenizer, cfg["max_text_len"])
     num_replicas = accelerator.num_processes
     rank         = accelerator.process_index
     spt  = cfg["samples_per_token"]
@@ -518,7 +559,9 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
             eos_w = 1.0
         progress = tqdm(train_loader, desc=f"S2 Epoch {epoch+1}/{s2_epochs}",
                         disable=not accelerator.is_main_process)
-        accum_loss, accum_count, accum_bsz = 0.0, 0, 0
+        accum_loss_buf = torch.zeros(1, device=accelerator.device)
+        accum_count, accum_bsz = 0, 0
+        log_every = cfg.get("log_every", 1)
 
         for audio, audio_lengths, transcript_ids in progress:
             audio_lengths  = audio_lengths.to(accelerator.device)
@@ -526,7 +569,7 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
             with accelerator.accumulate(model):
                 outputs = model(audio, audio_lengths=audio_lengths,
                                 transcript_input_ids=transcript_ids,
-                                eos_weight=eos_w)
+                                eos_weight=eos_w, eos_first=cfg.get("eos_first", False))
                 accelerator.backward(outputs.loss)
                 if accelerator.is_main_process:
                     accum_bsz += audio.shape[0]
@@ -535,21 +578,22 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, train_eval_dataset,
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
+                    # 모든 rank가 동일한 step 수를 밟으므로 broadcast 불필요
+                    global_step += 1
                     if accelerator.is_main_process:
-                        global_step += 1
                         lr_now = scheduler.get_last_lr()[0]
-                        accum_loss  += outputs.loss.item()
+                        accum_loss_buf += outputs.loss.detach()
                         accum_count += 1
-                        avg_loss = accum_loss / accum_count
-                        wandb.log({"stage": 2, "train/loss": avg_loss,
-                                   "train/lr": lr_now, "train/batch_size": accum_bsz},
-                                  step=global_step)
-                        progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
-                                             bsz=accum_bsz)
+                        if global_step % log_every == 0:
+                            avg_loss = (accum_loss_buf / accum_count).item()
+                            accum_loss_buf.zero_()
+                            accum_count = 0
+                            wandb.log({"stage": 2, "train/loss": avg_loss,
+                                       "train/lr": lr_now, "train/batch_size": accum_bsz},
+                                      step=global_step)
+                            progress.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr_now:.2e}",
+                                                 bsz=accum_bsz)
                         accum_bsz = 0
-                    step_tensor = torch.tensor([global_step], device=accelerator.device)
-                    torch.distributed.broadcast(step_tensor, src=0)
-                    global_step = step_tensor[0].item()
 
         val_loss = run_validation(model, val_loader, accelerator)
         if accelerator.is_main_process:
@@ -627,6 +671,17 @@ def main():
                         help="EOS 토큰 loss 가중치 (debug=e일 때 적용, 기본 3.0)")
     parser.add_argument("--eos-decay-epochs",  type=int,   default=None,
                         help="EOS weight를 1.0까지 decay할 에폭 수 (debug=ed일 때 적용, 기본: 전체 에폭)")
+    parser.add_argument("--eos-first", action="store_true",
+                        help="EOS-first collate 사용: [tok, EOS, PAD] 순서로 패딩")
+    # ── 최적화 플래그 ────────────────────────────────────────────────────
+    parser.add_argument("--packing",    action="store_true",
+                        help="Sequence packing (PackedDataset + PackedCollator)")
+    parser.add_argument("--flash-attn", action="store_true",
+                        help="Flash Attention 2")
+    parser.add_argument("--liger",      action="store_true",
+                        help="Liger fused kernels")
+    parser.add_argument("--cutoff-len", type=int, default=2048,
+                        help="Packing 시퀀스 최대 길이 (기본 2048)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -639,6 +694,12 @@ def main():
     cfg["print_samples"]  = args.print_samples
     cfg["eos_weight"]       = args.eos_weight
     cfg["eos_decay_epochs"] = args.eos_decay_epochs
+    cfg["eos_first"]        = args.eos_first
+    # 최적화 플래그 반영
+    if args.packing:    cfg["use_packing"]         = True
+    if args.flash_attn: cfg["attn_implementation"] = "flash_attention_2"
+    if args.liger:      cfg["use_liger_kernel"]    = True
+    cfg["packing_cutoff_len"] = args.cutoff_len
 
     # debug_dir: 체크포인트 저장 경로 (model_cache_dir와 분리)
     import datetime
@@ -656,9 +717,10 @@ def main():
     os.environ.setdefault("TORCH_HOME",
                           os.path.join(os.path.dirname(cfg["model_cache_dir"]), "torch"))
 
+    mp = "bf16" if cfg.get("attn_implementation") == "flash_attention_2" else "no"
     accelerator = Accelerator(
         gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
-        mixed_precision="no",
+        mixed_precision=mp,
         kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(seconds=3600))],
     )
 

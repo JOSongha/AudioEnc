@@ -11,12 +11,11 @@ TRAIN_CONFIG = {
 
     "gradient_accumulation_steps": 4,
 
-    "stage1_lr": 5e-5,
-    "stage1_epochs": 20,
+    "stage1_lr": 5e-4,
+    "stage1_epochs": 2,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 3,
-
+    "stage2_epochs": 30,
 
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,
@@ -55,12 +54,12 @@ TRAIN_CONFIG = {
     # --flash-attn  : Flash Attention 2 (flash-attn 설치 필요, 이미 설치됨)
     # --liger       : Liger fused kernels (pip install liger-kernel 필요)
     # --fsdp        : FSDP (DDP 대체, 4B+ 모델 권장)
-    "use_packing":         False,
-    "packing_cutoff_len":  4096,      # packing 시 최대 시퀀스 길이 (토큰 수 기준)
-    "attn_implementation": "eager",   # "eager" | "flash_attention_2"
-    "use_liger_kernel":    False,
+    "use_packing":         True,
+    "packing_cutoff_len":  2048,      # packing 시 최대 시퀀스 길이 (토큰 수 기준)
+    "attn_implementation": "flash_attention_2",   # "eager" | "flash_attention_2" | sdpa
+    "use_liger_kernel":    True,
     "use_fsdp":            False,
-    "log_every":           1,         # WandB 로깅 주기 (step 수), 병목 수정 후 10으로 변경
+    "log_every":           10,         # WandB 로깅 주기 (step 수), previously 1
 }
 
 # ==========================================
@@ -151,9 +150,10 @@ def get_config(encoder_name: str) -> dict:
 
     # 16kHz 오디오 샘플 1개당 LLM 토큰 수 변환 계수
     # samples_per_token = hop_tgt × (16000 / tgt_sr) × prod(proj_strides)
+    cfg["sample_rate"] = 16000
     samples_per_token = (
         enc_cfg["hop"]
-        * (16000 / enc_cfg["tgt_sr"])
+        * (cfg["sample_rate"] / enc_cfg["tgt_sr"])
         * math.prod(enc_cfg["proj_strides"])
     )
     cfg["samples_per_token"] = samples_per_token
