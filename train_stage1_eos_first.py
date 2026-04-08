@@ -450,7 +450,7 @@ def main():
                         metavar="ls100,ls360,ls500,mls,gs")
     parser.add_argument("--ls-samples",  default=None, type=int)
     parser.add_argument("--mls-samples", default=None, type=int)
-    parser.add_argument("--gs-subset",   default="l", choices=["xs", "s", "m", "l", "xl"])
+    parser.add_argument("--gs-subset",   default="xl", choices=["xs", "s", "m", "l", "xl"])
     parser.add_argument("--gs-samples",  default=None, type=int)
     args = parser.parse_args()
 

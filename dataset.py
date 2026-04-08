@@ -252,7 +252,7 @@ def build_datasets(cfg: dict):
     if "gs" in datasets:
         parts.append(GigaSpeechDataset(
             cache_dir=mls_root,
-            subset=cfg.get("gs_subset", "l"),
+            subset=cfg.get("gs_subset", "xl"),
             num_samples=cfg.get("gs_num_samples", None),
             max_len=max_len,
         ))
@@ -324,6 +324,8 @@ def _collect_lengths(dataset) -> list:
         return _gigaspeech_lengths(dataset)
     elif isinstance(dataset, VoxPopuliDataset):
         return _voxpopuli_lengths(dataset)
+    elif isinstance(dataset, GigaSpeechDataset):
+        return _gigaspeech_lengths(dataset)
     raise ValueError(f"Unknown dataset type: {type(dataset)}")
 
 

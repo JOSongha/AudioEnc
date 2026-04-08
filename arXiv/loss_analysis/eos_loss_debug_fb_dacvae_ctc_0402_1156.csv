@@ -1,0 +1,2874 @@
+sample_idx,pos,gt_token,pred_token,tf_loss,free_loss,audio_only,is_eos,gt_eos_pos,pred_eos_pos
+0,0,chapter,it,22.625,22.375,True,False,48,48
+0,1, one, was,1.148438,20.0,False,False,48,48
+0,2, miss, a,14.125,24.875,False,False,48,48
+0,3,us, dark,4.59375,28.875,False,False,48,48
+0,4, r, rainy,19.125,16.625,False,False,48,48
+0,5,achel, night,4.4375,26.25,False,False,48,48
+0,6, ly, nobody,19.125,14.1875,False,False,48,48
+0,7,nde, answered,6.03125,21.0,False,False,48,48
+0,8, is, as,11.5,16.125,False,False,48,48
+0,9, surprised, i,11.875,21.625,False,False,48,48
+0,10, miss, rode,19.0,23.625,False,False,48,48
+0,11,us, on,0.384766,27.5,False,False,48,48
+0,12, r, beyond,7.625,18.75,False,False,48,48
+0,13,achel, the,0.003632,17.875,False,False,48,48
+0,14, ly, gate,3.46875,19.125,False,False,48,48
+0,15,nde, an,0.000504,15.75,False,False,48,48
+0,16, lived, old,12.5625,19.0,False,False,48,48
+0,17, just, man,9.8125,35.25,False,False,48,48
+0,18, where,'s,18.375,11.125,False,False,48,48
+0,19, the, voice,9.375,23.5,False,False,48,48
+0,20, av, called,17.5,23.875,False,False,48,48
+0,21,on, to,7.8125,31.875,False,False,48,48
+0,22,lea, me,13.8125,26.25,False,False,48,48
+0,23, main, he,11.6875,21.875,False,False,48,48
+0,24, road, said,2.578125,23.0,False,False,48,48
+0,25, dipped, you,19.375,20.5,False,False,48,48
+0,26, down, must,2.71875,14.125,False,False,48,48
+0,27, into, be,8.5625,23.75,False,False,48,48
+0,28, a, Ch,12.5625,11.5,False,False,48,48
+0,29, little,as,2.953125,14.8125,False,False,48,48
+0,30, hollow, you,3.75,16.875,False,False,48,48
+0,31, fr, can,17.75,21.5,False,False,48,48
+0,32,inged,'t,5.625,28.25,False,False,48,48
+0,33, with, keep,1.1e-05,21.5,False,False,48,48
+0,34, al, secret,18.125,21.375,False,False,48,48
+0,35,ders, something,2.015625,26.875,False,False,48,48
+0,36, and, hidden,0.179688,8.9375,False,False,48,48
+0,37, ladies, in,19.25,22.125,False,False,48,48
+0,38, e, your,12.625,21.875,False,False,48,48
+0,39,ard, room,8.5625,25.25,False,False,48,48
+0,40,rops, i,7.0,22.125,False,False,48,48
+0,41, and, heard,4.71875,16.125,False,False,48,48
+0,42, travers, a,20.875,21.75,False,False,48,48
+0,43,ed, foot,1.3e-05,14.875,False,False,48,48
+0,44, by,step,8.375,18.75,False,False,48,48
+0,45, a, close,5.3125,17.625,False,False,48,48
+0,46, bro, behind,9.75,16.125,False,False,48,48
+0,47,ok, me,0.003433,32.5,False,False,48,48
+0,48,<|im_end|>,<|im_end|>,7.65625,0.02002,False,True,48,48
+1,0,that,the,11.0,10.125,True,False,59,48
+1,1, had, whole,4.34375,11.0625,False,False,59,48
+1,2, its, of,16.875,21.125,False,False,59,48
+1,3, source, north,11.9375,18.0,False,False,59,48
+1,4, away, ang,29.5,13.0625,False,False,59,48
+1,5, back,lia,11.5625,19.75,False,False,59,48
+1,6, in, was,6e-06,6.0625,False,False,59,48
+1,7, the, devastated,5.96875,11.6875,False,False,59,48
+1,8, woods, by,12.625,34.0,False,False,59,48
+1,9, of, his,11.1875,17.375,False,False,59,48
+1,10, the, violence,2.296875,13.4375,False,False,59,48
+1,11, old, he,11.3125,22.125,False,False,59,48
+1,12, c, carried,13.0,12.375,False,False,59,48
+1,13,uth, away,10.125,18.875,False,False,59,48
+1,14,bert, not,0.223633,21.625,False,False,59,48
+1,15, place, only,15.375,26.5,False,False,59,48
+1,16, it, the,5.15625,16.125,False,False,59,48
+1,17, was, clothes,12.625,12.9375,False,False,59,48
+1,18, reputed, but,14.0,23.375,False,False,59,48
+1,19, to, also,7.09375,15.75,False,False,59,48
+1,20, be, the,0.613281,18.125,False,False,59,48
+1,21, an, hands,15.8125,11.375,False,False,59,48
+1,22, intricate, and,10.375,17.875,False,False,59,48
+1,23, head, feet,17.0,19.875,False,False,59,48
+1,24,long, as,13.0625,21.75,False,False,59,48
+1,25, bro, well,13.4375,23.375,False,False,59,48
+1,26,ok, as,2.328125,39.25,False,False,59,48
+1,27, in, the,5.1875,22.125,False,False,59,48
+1,28, its, heart,18.75,17.125,False,False,59,48
+1,29, earlier, and,15.0625,13.625,False,False,59,48
+1,30, course, solar,7.75,14.0625,False,False,59,48
+1,31, through, hair,21.875,14.4375,False,False,59,48
+1,32, those, which,19.875,14.75,False,False,59,48
+1,33, woods, he,1.617188,23.625,False,False,59,48
+1,34, with, had,22.125,15.125,False,False,59,48
+1,35, dark, requested,20.875,7.875,False,False,59,48
+1,36, secrets, of,18.5,21.75,False,False,59,48
+1,37, of, a,15.1875,15.0,False,False,59,48
+1,38, pool, private,15.0,11.4375,False,False,59,48
+1,39, and, practitioner,0.386719,12.125,False,False,59,48
+1,40, cascade, to,4.84375,22.25,False,False,59,48
+1,41, but, be,12.0625,18.125,False,False,59,48
+1,42, by, mixed,10.125,11.875,False,False,59,48
+1,43, the, with,0.292969,21.625,False,False,59,48
+1,44, time, his,3.53125,22.75,False,False,59,48
+1,45, it, widow,0.000607,11.9375,False,False,59,48
+1,46, reached,'s,6.09375,33.75,False,False,59,48
+1,47, ly, flesh,7.875,13.75,False,False,59,48
+1,48,nde,<|im_end|>,7.46875,32.75,False,False,59,48
+1,49,'s,<|im_end|>,0.460938,18.75,False,False,59,48
+1,50, hollow,"
+",11.0625,28.125,False,False,59,48
+1,51, it, ,0.005585,28.375,False,False,59,48
+1,52, was, ```,4.65625,8.4375,False,False,59,48
+1,53, a,<|im_end|>,1.148438,17.75,False,False,59,48
+1,54, quiet,"
+",11.875,36.0,False,False,59,48
+1,55, well, ,17.5,29.875,False,False,59,48
+1,56, conducted,<|im_end|>,15.625,19.375,False,False,59,48
+1,57, little,"
+",14.1875,36.75,False,False,59,48
+1,58, stream,<|im_start|>,10.625,32.25,False,False,59,48
+1,59,<|im_end|>,"
+",0.010376,5.28125,False,True,59,48
+2,0,for,the,5.09375,4.90625,True,False,53,47
+2,1, not, police,12.1875,15.375,False,False,53,47
+2,2, even, would,10.875,16.5,False,False,53,47
+2,3, a, not,7.5,18.25,False,False,53,47
+2,4, bro, send,15.5625,11.5,False,False,53,47
+2,5,ok, a,5.6875,19.75,False,False,53,47
+2,6, could, team,13.75,18.5,False,False,53,47
+2,7, run, to,26.375,16.5,False,False,53,47
+2,8, past, investigate,10.9375,15.0625,False,False,53,47
+2,9, miss, because,12.5,9.1875,False,False,53,47
+2,10,us, a,0.021484,21.25,False,False,53,47
+2,11, r, man,10.75,10.875,False,False,53,47
+2,12,achel, in,9.875,23.5,False,False,53,47
+2,13, ly, a,19.5,20.5,False,False,53,47
+2,14,nde, better,15.1875,15.75,False,False,53,47
+2,15,'s, off,16.75,14.625,False,False,53,47
+2,16, door, district,5.9375,17.0,False,False,53,47
+2,17, without, would,0.036133,14.5625,False,False,53,47
+2,18, due, never,21.5,21.375,False,False,53,47
+2,19, regard, fall,1.75,12.875,False,False,53,47
+2,20, for, into,5.0,8.75,False,False,53,47
+2,21, decency, the,25.375,24.0,False,False,53,47
+2,22, and, trap,6.4375,12.875,False,False,53,47
+2,23, decor, even,15.5625,16.75,False,False,53,47
+2,24,um, if,0.000401,32.5,False,False,53,47
+2,25, it, the,13.1875,7.3125,False,False,53,47
+2,26, probably, truth,20.875,14.3125,False,False,53,47
+2,27, was, was,6.5,0.523438,False,False,53,47
+2,28, conscious, under,19.5,20.25,False,False,53,47
+2,29, that, their,25.625,10.0625,False,False,53,47
+2,30, miss, watch,18.0,14.125,False,False,53,47
+2,31,us,pro,0.066895,10.0625,False,False,53,47
+2,32, r,vision,3.96875,17.5,False,False,53,47
+2,33,achel, of,0.289062,21.875,False,False,53,47
+2,34, was, g,1.351562,10.25,False,False,53,47
+2,35, sitting,arter,8.5625,18.0,False,False,53,47
+2,36, at, beach,5.28125,9.4375,False,False,53,47
+2,37, her, mine,6.8125,13.25,False,False,53,47
+2,38, window, one,6.96875,15.4375,False,False,53,47
+2,39, keeping, of,9.9375,25.25,False,False,53,47
+2,40, a, the,9.25,8.875,False,False,53,47
+2,41, sharp, most,8.5,17.375,False,False,53,47
+2,42, eye, dangerous,0.012268,12.875,False,False,53,47
+2,43, on, mines,1.382812,15.9375,False,False,53,47
+2,44, everything, in,12.625,25.75,False,False,53,47
+2,45, that, the,7.28125,10.625,False,False,53,47
+2,46, passed, world,10.25,24.375,False,False,53,47
+2,47, from,<|im_end|>,10.8125,20.0,False,False,53,47
+2,48, bro,"
+",15.125,33.25,False,False,53,47
+2,49,oks,<|im_start|>,4.90625,35.0,False,False,53,47
+2,50, and,"
+",17.625,21.875,False,False,53,47
+2,51, children,\n,14.75,24.625,False,False,53,47
+2,52, up,\n,10.6875,20.0,False,False,53,47
+2,53,<|im_end|>,</think>,5.5,2.421875,False,True,53,47
+3,0,and,they,3.390625,2.796875,True,False,59,46
+3,1, that, are,10.0,14.4375,False,False,59,46
+3,2, if, not,10.8125,16.375,False,False,59,46
+3,3, she, troubled,0.636719,9.375,False,False,59,46
+3,4, noticed, by,19.5,31.0,False,False,59,46
+3,5, anything, the,0.667969,7.90625,False,False,59,46
+3,6, odd, title,11.625,13.75,False,False,59,46
+3,7, or, of,13.625,16.5,False,False,59,46
+3,8, out, the,16.75,15.625,False,False,59,46
+3,9, of, chapter,0.001465,14.625,False,False,59,46
+3,10, place, however,0.008606,22.125,False,False,59,46
+3,11, she, as,9.5,11.9375,False,False,59,46
+3,12, would, i,0.001205,16.25,False,False,59,46
+3,13, never, said,10.875,23.125,False,False,59,46
+3,14, rest, above,12.5625,11.4375,False,False,59,46
+3,15, until, rem,0.019897,7.28125,False,False,59,46
+3,16, she,itt,6e-05,20.375,False,False,59,46
+3,17, had,ents,4.9375,30.25,False,False,59,46
+3,18, fer, are,15.0625,20.5,False,False,59,46
+3,19,ret, not,2.265625,30.125,False,False,59,46
+3,20,ed, always,0.024048,14.0,False,False,59,46
+3,21, out, received,1.703125,15.0,False,False,59,46
+3,22, the, in,3.875,7.875,False,False,59,46
+3,23, wh, the,13.0,12.5625,False,False,59,46
+3,24,ys, open,0.660156,18.375,False,False,59,46
+3,25, and, it,0.00235,8.6875,False,False,59,46
+3,26, where, is,0.018677,22.625,False,False,59,46
+3,27,fo, necessary,7.125,25.625,False,False,59,46
+3,28,res, to,0.002777,27.5,False,False,59,46
+3,29, thereof, remind,7.125,18.625,False,False,59,46
+3,30, there, him,6.53125,11.875,False,False,59,46
+3,31, are, that,2.59375,19.625,False,False,59,46
+3,32, plenty, his,6.53125,14.0,False,False,59,46
+3,33, of, title,0.043945,13.75,False,False,59,46
+3,34, people, does,11.625,18.375,False,False,59,46
+3,35, in, not,0.796875,21.125,False,False,59,46
+3,36, av, imply,15.3125,16.25,False,False,59,46
+3,37,on, a,0.285156,17.75,False,False,59,46
+3,38,lea, closed,6.28125,18.625,False,False,59,46
+3,39, and, shop,14.0,13.0,False,False,59,46
+3,40, out, at,8.3125,16.5,False,False,59,46
+3,41, of, the,0.300781,22.0,False,False,59,46
+3,42, it, end,12.125,20.375,False,False,59,46
+3,43, who, of,0.011475,25.125,False,False,59,46
+3,44, can, each,16.25,18.375,False,False,59,46
+3,45, attend, chapter,0.921875,24.875,False,False,59,46
+3,46, closely,<|im_end|>,18.375,20.375,False,False,59,46
+3,47, to,"
+
+",5e-06,17.75,False,False,59,46
+3,48, their,2,0.125,17.375,False,False,59,46
+3,49, neighbor,.,8.375,17.5,False,False,59,46
+3,50,'s, the,0.353516,13.75,False,False,59,46
+3,51, business, principles,11.4375,11.4375,False,False,59,46
+3,52, by, of,8.5,7.09375,False,False,59,46
+3,53, dint, the,11.25,14.125,False,False,59,46
+3,54, of, remote,4e-06,11.5625,False,False,59,46
+3,55, neglect, past,14.875,10.5,False,False,59,46
+3,56,ing, are,3.953125,14.625,False,False,59,46
+3,57, their, not,0.21582,14.75,False,False,59,46
+3,58, own, entirely,0.006256,19.125,False,False,59,46
+3,59,<|im_end|>, absent,0.033203,13.4375,False,True,59,46
+4,0,but,i,13.4375,13.375,True,False,46,13
+4,1, miss, gave,23.25,14.1875,False,False,46,13
+4,2,us, you,0.875,24.625,False,False,46,13
+4,3, r, this,18.625,15.6875,False,False,46,13
+4,4,achel, in,6.125,20.375,False,False,46,13
+4,5, ly, a,15.75,20.875,False,False,46,13
+4,6,nde, time,5.90625,21.375,False,False,46,13
+4,7, was, when,10.8125,18.5,False,False,46,13
+4,8, one, it,13.0625,8.875,False,False,46,13
+4,9, of, was,7.375,14.5,False,False,46,13
+4,10, those, table,1.710938,13.1875,False,False,46,13
+4,11, capable, talk,11.875,11.25,False,False,46,13
+4,12, creatures, and,10.625,19.5,False,False,46,13
+4,13, who,<|im_end|>,6.09375,14.875,False,False,46,13
+4,14, can,"
+",8.3125,33.25,False,False,46,13
+4,15, manage,<|im_start|>,10.9375,29.375,False,False,46,13
+4,16, their,op,5.59375,16.375,False,False,46,13
+4,17, own,ah,9.8125,12.0625,False,False,46,13
+4,18, concerns, again,9.9375,11.8125,False,False,46,13
+4,19, and, a,0.925781,9.5,False,False,46,13
+4,20, those, fellow,10.6875,12.9375,False,False,46,13
+4,21, of, with,0.009399,5.25,False,False,46,13
+4,22, other, the,5.84375,14.875,False,False,46,13
+4,23, folks, same,10.375,16.375,False,False,46,13
+4,24, into, name,13.5,20.75,False,False,46,13
+4,25, the, and,6.125,9.875,False,False,46,13
+4,26, bargain, I,16.75,30.0,False,False,46,13
+4,27, she, can,11.9375,17.25,False,False,46,13
+4,28, was,'t,7.90625,17.25,False,False,46,13
+4,29, a, tell,7.78125,18.125,False,False,46,13
+4,30, notable, if,11.125,27.25,False,False,46,13
+4,31, house, he,9.625,26.875,False,False,46,13
+4,32,wife, is,4.59375,26.375,False,False,46,13
+4,33, her, a,17.75,20.875,False,False,46,13
+4,34, work, better,5.03125,12.875,False,False,46,13
+4,35, was, or,1.492188,18.5,False,False,46,13
+4,36, always, worse,4.21875,20.75,False,False,46,13
+4,37, done, man,1.054688,15.625,False,False,46,13
+4,38, and, than,14.4375,16.125,False,False,46,13
+4,39, well, I,8.875,19.0,False,False,46,13
+4,40, done, but,0.059326,17.25,False,False,46,13
+4,41, she, since,6.28125,16.125,False,False,46,13
+4,42, ran, your,15.875,23.375,False,False,46,13
+4,43, the, kind,0.147461,9.1875,False,False,46,13
+4,44, sewing,ness,10.5,14.75,False,False,46,13
+4,45, circle, you,6.90625,21.5,False,False,46,13
+4,46,<|im_end|>, may,1.085938,20.25,False,True,46,13
+5,0,help,help,0.014343,0.011658,True,False,51,51
+5,1,ed,ed,0.001335,0.000999,False,False,51,51
+5,2, run, run,0.023071,0.023193,False,False,51,51
+5,3, the, the,0.00025,0.000237,False,False,51,51
+5,4, sunday, sunday,0.072266,0.075684,False,False,51,51
+5,5, school, school,0.000336,0.000326,False,False,51,51
+5,6, and, and,0.000397,0.000401,False,False,51,51
+5,7, was, was,0.000591,0.000526,False,False,51,51
+5,8, the, the,0.002243,0.002289,False,False,51,51
+5,9, strongest, strongest,0.015259,0.014648,False,False,51,51
+5,10, prop, prop,0.02417,0.028931,False,False,51,51
+5,11, of, of,0.011108,0.015991,False,False,51,51
+5,12, the, the,0.006042,0.005615,False,False,51,51
+5,13, church, church,0.018066,0.02002,False,False,51,51
+5,14, aid, aid,0.04834,0.045654,False,False,51,51
+5,15, society, society,0.007324,0.007751,False,False,51,51
+5,16, and, and,0.000206,0.000188,False,False,51,51
+5,17, foreign, foreign,0.031128,0.023682,False,False,51,51
+5,18, missions, missions,0.029907,0.028931,False,False,51,51
+5,19, auxiliary, auxiliary,0.120605,0.125,False,False,51,51
+5,20, yet, yet,0.033447,0.027954,False,False,51,51
+5,21, with, with,0.00082,0.000889,False,False,51,51
+5,22, all, all,0.008362,0.002838,False,False,51,51
+5,23, this, this,0.000771,0.000942,False,False,51,51
+5,24, miss, miss,0.012573,0.01001,False,False,51,51
+5,25,us,us,0.007416,0.005737,False,False,51,51
+5,26, r, r,0.01532,0.01532,False,False,51,51
+5,27,achel,achel,0.025635,0.025635,False,False,51,51
+5,28, found, found,0.019043,0.019043,False,False,51,51
+5,29, abundant, abundant,0.071289,0.071289,False,False,51,51
+5,30, time, time,0.015442,0.015442,False,False,51,51
+5,31, to, to,9e-06,9e-06,False,False,51,51
+5,32, sit, sit,0.012695,0.012695,False,False,51,51
+5,33, for, for,0.001572,0.001572,False,False,51,51
+5,34, hours, hours,0.00946,0.00946,False,False,51,51
+5,35, at, at,0.007355,0.007355,False,False,51,51
+5,36, her, her,0.005951,0.005951,False,False,51,51
+5,37, kitchen, kitchen,0.024292,0.024292,False,False,51,51
+5,38, window, window,0.018433,0.018433,False,False,51,51
+5,39, knitting, knitting,0.068848,0.068848,False,False,51,51
+5,40, cotton, cotton,0.049805,0.049805,False,False,51,51
+5,41, warp, warp,0.236328,0.236328,False,False,51,51
+5,42, quil, quil,0.062988,0.062988,False,False,51,51
+5,43,ts,ts,7.6e-05,7.6e-05,False,False,51,51
+5,44, she, she,0.004547,0.004547,False,False,51,51
+5,45, had, had,0.000425,0.000425,False,False,51,51
+5,46, kn, kn,0.068359,0.068359,False,False,51,51
+5,47,itted,itted,0.002625,0.002625,False,False,51,51
+5,48, sixteen, sixteen,0.167969,0.167969,False,False,51,51
+5,49, of, of,0.006256,0.006256,False,False,51,51
+5,50, them, them,0.001289,0.001289,False,False,51,51
+5,51,<|im_end|>,<|im_end|>,0.000385,0.000385,False,True,51,51
+6,0,as,he,14.0,13.875,True,False,35,27
+6,1, av, serves,17.875,12.9375,False,False,35,27
+6,2,on, as,3.265625,25.875,False,False,35,27
+6,3,lea, a,4.25,30.375,False,False,35,27
+6,4, house, model,23.0,18.5,False,False,35,27
+6,5,keepers, for,14.875,29.625,False,False,35,27
+6,6, were, all,7.125,22.375,False,False,35,27
+6,7, wont, male,8.0625,13.25,False,False,35,27
+6,8, to,f,2.5e-05,13.875,False,False,35,27
+6,9, tell,actors,9.1875,24.125,False,False,35,27
+6,10, in, in,11.6875,0.126953,False,False,35,27
+6,11, aw, fl,18.0,16.625,False,False,35,27
+6,12,ed,int,4.25,14.4375,False,False,35,27
+6,13, voices,ville,14.0625,17.25,False,False,35,27
+6,14, and, there,11.0,1.835938,False,False,35,27
+6,15, keeping, are,14.375,33.0,False,False,35,27
+6,16, a, many,8.9375,9.375,False,False,35,27
+6,17, sharp, villagers,6.78125,13.8125,False,False,35,27
+6,18, eye, who,0.710938,21.25,False,False,35,27
+6,19, on, go,0.101074,20.25,False,False,35,27
+6,20, the, visit,0.224609,10.75,False,False,35,27
+6,21, main, the,14.6875,28.375,False,False,35,27
+6,22, road, corpse,10.125,13.0625,False,False,35,27
+6,23, that, and,7.71875,13.25,False,False,35,27
+6,24, crossed, give,8.4375,22.0,False,False,35,27
+6,25, the, them,0.049072,16.0,False,False,35,27
+6,26, hollow, money,14.25,13.25,False,False,35,27
+6,27, and,<|im_end|>,7.75,2.65625,False,False,35,27
+6,28, wound,"
+",13.875,34.75,False,False,35,27
+6,29, up,<|im_start|>,7.3125,34.25,False,False,35,27
+6,30, the,cut,0.828125,21.625,False,False,35,27
+6,31, steep, out,12.8125,12.6875,False,False,35,27
+6,32, red, the,9.875,12.375,False,False,35,27
+6,33, hill, audio,1.234375,14.8125,False,False,35,27
+6,34, beyond, snippets,6.40625,12.75,False,False,35,27
+6,35,<|im_end|>, that,4.875,10.6875,False,True,35,27
+7,0,any,not,13.875,13.6875,True,False,54,46
+7,1,body, merely,5.28125,23.375,False,False,54,46
+7,2, who, that,0.515625,11.3125,False,False,54,46
+7,3, went, he,11.8125,14.1875,False,False,54,46
+7,4, out, began,2.46875,19.0,False,False,54,46
+7,5, of, to,10.875,18.75,False,False,54,46
+7,6, it, look,11.125,17.125,False,False,54,46
+7,7, or, rather,10.0,11.4375,False,False,54,46
+7,8, into, d,5.59375,12.4375,False,False,54,46
+7,9, it,ashing,0.632812,17.125,False,False,54,46
+7,10, had, than,10.6875,19.125,False,False,54,46
+7,11, to, comfortable,7.65625,10.625,False,False,54,46
+7,12, pass, as,10.875,17.5,False,False,54,46
+7,13, over, the,10.375,17.5,False,False,54,46
+7,14, that, fashion,12.8125,14.875,False,False,54,46
+7,15, hill, of,3.8125,17.375,False,False,54,46
+7,16, road, dressing,22.5,16.75,False,False,54,46
+7,17, and, in,10.6875,11.6875,False,False,54,46
+7,18, so, that,7.28125,15.0,False,False,54,46
+7,19, run, summer,13.125,18.125,False,False,54,46
+7,20, the, had,7.375,14.875,False,False,54,46
+7,21, unseen, suddenly,18.875,18.875,False,False,54,46
+7,22, ga, turned,8.75,21.375,False,False,54,46
+7,23,untlet, towards,0.122559,23.25,False,False,54,46
+7,24, of, him,1.320312,15.8125,False,False,54,46
+7,25, miss, and,16.125,14.9375,False,False,54,46
+7,26,us, taken,5.8125,18.0,False,False,54,46
+7,27, r, hold,8.5625,14.875,False,False,54,46
+7,28,achel, upon,2.78125,24.875,False,False,54,46
+7,29,'s, him,0.535156,29.875,False,False,54,46
+7,30, all, as,12.875,9.3125,False,False,54,46
+7,31, seeing, if,12.5,28.125,False,False,54,46
+7,32, eye, by,8.5625,28.375,False,False,54,46
+7,33, she, a,14.25,17.125,False,False,54,46
+7,34, was, spell,2.515625,13.6875,False,False,54,46
+7,35, sitting, He,4.75,17.25,False,False,54,46
+7,36, there, had,10.4375,17.375,False,False,54,46
+7,37, one, perhaps,9.5,13.1875,False,False,54,46
+7,38, afternoon, been,17.0,18.0,False,False,54,46
+7,39, in, a,0.01001,11.125,False,False,54,46
+7,40, early, bit,10.875,22.875,False,False,54,46
+7,41, j, rash,5.3125,9.0625,False,False,54,46
+7,42,une, in,2.703125,32.75,False,False,54,46
+7,43, the, pursuing,10.125,13.5625,False,False,54,46
+7,44, sun, that,15.0625,17.5,False,False,54,46
+7,45, was, walk,1.492188,13.9375,False,False,54,46
+7,46, coming,<|im_end|>,5.75,16.25,False,False,54,46
+7,47, in,"
+",9.8125,31.0,False,False,54,46
+7,48, at,<|im_start|>,6.90625,20.25,False,False,54,46
+7,49, the,push,0.078125,18.125,False,False,54,46
+7,50, window,ing,7.0625,19.0,False,False,54,46
+7,51, warm, off,6.3125,12.25,False,False,54,46
+7,52, and, from,2.171875,8.9375,False,False,54,46
+7,53, bright, the,5.8125,20.5,False,False,54,46
+7,54,<|im_end|>, bench,10.3125,12.75,False,True,54,46
+8,0,the,the,0.000847,0.000938,True,False,63,52
+8,1, orch, weight,13.1875,13.0,False,False,63,52
+8,2,ard, was,0.018433,21.25,False,False,63,52
+8,3, on, again,10.9375,9.0,False,False,63,52
+8,4, the, upon,0.000259,8.9375,False,False,63,52
+8,5, slope, the,9.6875,26.0,False,False,63,52
+8,6, below, patient,7.21875,15.0,False,False,63,52
+8,7, the,'s,4.375,25.375,False,False,63,52
+8,8, house, neck,7.28125,10.875,False,False,63,52
+8,9, was, and,5.4375,20.375,False,False,63,52
+8,10, in, throat,2.53125,12.125,False,False,63,52
+8,11, a, the,0.302734,9.875,False,False,63,52
+8,12, bridal, same,13.3125,12.0625,False,False,63,52
+8,13, flush, time,16.25,16.75,False,False,63,52
+8,14, of, as,2.9375,18.75,False,False,63,52
+8,15, pink, the,6.90625,24.625,False,False,63,52
+8,16,y, next,25.5,18.625,False,False,63,52
+8,17, white, scene,5.21875,12.8125,False,False,63,52
+8,18, bloom, and,17.75,20.5,False,False,63,52
+8,19, hum, again,23.625,19.5,False,False,63,52
+8,20,med, the,3.296875,30.625,False,False,63,52
+8,21, over, double,4.15625,13.6875,False,False,63,52
+8,22, by, ejaculation,7.375,12.0625,False,False,63,52
+8,23, a, of,1.8125,5.125,False,False,63,52
+8,24, myriad, the,8.375,26.125,False,False,63,52
+8,25, of, monster,0.001823,11.625,False,False,63,52
+8,26, bees, forth,9.875,14.25,False,False,63,52
+8,27, th, str,12.125,11.75,False,False,63,52
+8,28,omas,angled,10.25,15.5,False,False,63,52
+8,29, ly, it,12.8125,18.5,False,False,63,52
+8,30,nde, forth,5.5,20.0,False,False,63,52
+8,31, a, str,0.028564,12.625,False,False,63,52
+8,32, me,angled,13.1875,17.25,False,False,63,52
+8,33,ek, it,0.449219,32.75,False,False,63,52
+8,34, little, i,0.036621,12.25,False,False,63,52
+8,35, man, say,6.84375,14.625,False,False,63,52
+8,36, whom, forth,10.4375,11.0,False,False,63,52
+8,37, av, str,10.0,33.25,False,False,63,52
+8,38,on,angled,3.65625,17.125,False,False,63,52
+8,39,lea, it,12.9375,31.625,False,False,63,52
+8,40, people, forth,15.3125,13.1875,False,False,63,52
+8,41, called, it,18.25,15.125,False,False,63,52
+8,42, r, out,17.625,15.875,False,False,63,52
+8,43,achel, like,6.03125,24.375,False,False,63,52
+8,44, ly, a,19.375,29.5,False,False,63,52
+8,45,nde, frog,0.349609,17.625,False,False,63,52
+8,46,'s, i,17.25,15.75,False,False,63,52
+8,47, husband, say,7.375,19.125,False,False,63,52
+8,48, was, forth,6.90625,19.875,False,False,63,52
+8,49, s, like,16.0,16.0,False,False,63,52
+8,50,owing, a,5.25,32.25,False,False,63,52
+8,51, his, frog,1.15625,22.375,False,False,63,52
+8,52, late,<|im_end|>,9.125,15.5625,False,False,63,52
+8,53, turn,"
+",11.875,29.375,False,False,63,52
+8,54,ip,<think>,2.828125,11.9375,False,False,63,52
+8,55, seed,"
+
+",9.4375,25.125,False,False,63,52
+8,56, on,</think>,8.25,27.25,False,False,63,52
+8,57, the,"
+
+",0.006104,21.875,False,False,63,52
+8,58, hill,**,8.5625,20.25,False,False,63,52
+8,59, field,Warning,18.5,21.625,False,False,63,52
+8,60, beyond,:**,7.375,20.25,False,False,63,52
+8,61, the, I,4.25,12.25,False,False,63,52
+8,62, barn, cannot,10.25,25.125,False,False,63,52
+8,63,<|im_end|>, generate,0.022217,17.0,False,True,63,52
+9,0,miss,and,13.1875,13.0,True,False,46,33
+9,1,us, to,10.9375,23.375,False,False,46,33
+9,2, r, save,8.6875,17.625,False,False,46,33
+9,3,achel, the,2.03125,16.875,False,False,46,33
+9,4, knew, point,12.0,13.4375,False,False,46,33
+9,5, that, of,13.0625,16.125,False,False,46,33
+9,6, he, her,9.125,9.4375,False,False,46,33
+9,7, ought, conversation,8.25,12.875,False,False,46,33
+9,8, because, with,19.75,8.3125,False,False,46,33
+9,9, she, jun,0.009949,9.625,False,False,46,33
+9,10, had,iper,5.03125,22.375,False,False,46,33
+9,11, heard, by,9.4375,14.375,False,False,46,33
+9,12, him, the,10.8125,10.9375,False,False,46,33
+9,13, tell, appearance,10.0,18.5,False,False,46,33
+9,14, peter, of,21.125,28.875,False,False,46,33
+9,15, mor, mor,9.4375,1.4375,False,False,46,33
+9,16,r,ris,0.699219,3.984375,False,False,46,33
+9,17,ison, with,0.039551,18.75,False,False,46,33
+9,18, the, an,0.030762,8.9375,False,False,46,33
+9,19, evening, open,10.875,10.1875,False,False,46,33
+9,20, before, and,0.002167,17.75,False,False,46,33
+9,21, in, honest,13.1875,15.0,False,False,46,33
+9,22, will, heart,16.0,11.6875,False,False,46,33
+9,23,iam, mor,0.53125,14.875,False,False,46,33
+9,24, j,ris,10.125,28.875,False,False,46,33
+9,25, bl, returned,12.6875,11.9375,False,False,46,33
+9,26,air, home,5.625,21.375,False,False,46,33
+9,27,'s, with,0.000534,19.125,False,False,46,33
+9,28, store, a,10.5625,17.5,False,False,46,33
+9,29, over, paper,14.625,12.25,False,False,46,33
+9,30, at, he,11.25,10.5625,False,False,46,33
+9,31, car, had,10.5,22.0,False,False,46,33
+9,32,m, found,9.4375,27.5,False,False,46,33
+9,33,ody,<|im_end|>,5.3125,23.625,False,False,46,33
+9,34, that,"
+",12.25,31.25,False,False,46,33
+9,35, he,<|im_start|>,2.828125,27.125,False,False,46,33
+9,36, meant,python,12.625,13.375,False,False,46,33
+9,37, to,"
+",2.3e-05,10.4375,False,False,46,33
+9,38, sow,j,12.6875,17.25,False,False,46,33
+9,39, his,ude,7.90625,16.375,False,False,46,33
+9,40, turn, thought,16.875,13.1875,False,False,46,33
+9,41,ip, that,2.125,20.25,False,False,46,33
+9,42, seed, her,4.8125,14.5,False,False,46,33
+9,43, the, father,14.1875,18.25,False,False,46,33
+9,44, next,'s,0.210938,21.375,False,False,46,33
+9,45, afternoon, words,11.25,19.875,False,False,46,33
+9,46,<|im_end|>, were,0.191406,10.0625,False,True,46,33
+10,0,p,by,13.1875,12.625,True,False,57,42
+10,1,eter, a,8.875,16.5,False,False,57,42
+10,2, had, single,5.9375,11.5,False,False,57,42
+10,3, asked, nod,10.875,19.0,False,False,57,42
+10,4, him, at,6.15625,20.625,False,False,57,42
+10,5, of, the,14.8125,14.9375,False,False,57,42
+10,6, course, director,4.21875,17.25,False,False,57,42
+10,7, for, which,11.4375,15.875,False,False,57,42
+10,8, mat, is,14.875,18.625,False,False,57,42
+10,9,thew, perhaps,3.203125,15.875,False,False,57,42
+10,10, c, the,9.0,21.375,False,False,57,42
+10,11,uth, fastest,7.5,22.75,False,False,57,42
+10,12,bert, way,0.010132,20.5,False,False,57,42
+10,13, had, to,17.0,23.75,False,False,57,42
+10,14, never, get,9.0,17.375,False,False,57,42
+10,15, been, away,0.228516,17.25,False,False,57,42
+10,16, known, with,6.53125,26.625,False,False,57,42
+10,17, to, the,0.000301,15.125,False,False,57,42
+10,18, volunteer, cup,12.8125,13.125,False,False,57,42
+10,19, information, showing,22.125,13.6875,False,False,57,42
+10,20, about, int,10.875,13.5,False,False,57,42
+10,21, anything,ently,5.3125,16.375,False,False,57,42
+10,22, in, at,12.4375,14.0625,False,False,57,42
+10,23, his, him,6.53125,4.03125,False,False,57,42
+10,24, whole, was,10.75,14.6875,False,False,57,42
+10,25, life, how,0.088379,17.25,False,False,57,42
+10,26, and, long,7.03125,11.6875,False,False,57,42
+10,27, yet, he,7.875,10.25,False,False,57,42
+10,28, here, could,8.125,10.3125,False,False,57,42
+10,29, was, delay,13.875,21.25,False,False,57,42
+10,30, mat, his,27.375,26.0,False,False,57,42
+10,31,thew, detection,0.003906,20.125,False,False,57,42
+10,32, c, in,0.000207,21.75,False,False,57,42
+10,33,uth, the,5.7e-05,18.375,False,False,57,42
+10,34,bert, fur,0.005554,17.625,False,False,57,42
+10,35, at,thest,7.0625,22.875,False,False,57,42
+10,36, half, outer,10.625,12.0,False,False,57,42
+10,37, past, turn,9.5625,16.625,False,False,57,42
+10,38, three, of,2.359375,23.75,False,False,57,42
+10,39, on, the,6.28125,29.5,False,False,57,42
+10,40, the, dancing,9.875,15.625,False,False,57,42
+10,41, afternoon, floor,6.25,11.625,False,False,57,42
+10,42, of,<|im_end|>,0.000196,14.3125,False,False,57,42
+10,43, a,"
+",17.75,35.25,False,False,57,42
+10,44, busy,<|im_start|>,7.84375,29.75,False,False,57,42
+10,45, day,bat,0.302734,22.0,False,False,57,42
+10,46, plac,um,18.375,14.875,False,False,57,42
+10,47,id,atu,0.132812,10.125,False,False,57,42
+10,48,ly,'s,8e-05,18.5,False,False,57,42
+10,49, driving, voice,13.6875,13.25,False,False,57,42
+10,50, over,<|im_end|>,8.0,5.90625,False,False,57,42
+10,51, the,"
+",0.464844,34.25,False,False,57,42
+10,52, hollow,<|im_start|>,14.0,33.75,False,False,57,42
+10,53, and,	,12.75,16.0,False,False,57,42
+10,54, up,<think>,12.8125,22.625,False,False,57,42
+10,55, the,"
+
+",1.203125,22.75,False,False,57,42
+10,56, hill,</think>,1.679688,22.0,False,False,57,42
+10,57,<|im_end|>,"
+
+",1.75,20.25,False,True,57,42
+11,0,and,present,7.90625,7.75,True,False,55,43
+11,1, his,ed,4.25,22.75,False,False,55,43
+11,2, best, to,12.625,18.5,False,False,55,43
+11,3, suit, the,14.25,16.875,False,False,55,43
+11,4, of, house,7.8125,16.0,False,False,55,43
+11,5, clothes, for,1.765625,24.25,False,False,55,43
+11,6, which, a,10.875,15.9375,False,False,55,43
+11,7, was, demonstration,11.5,16.625,False,False,55,43
+11,8, plain, of,11.125,24.375,False,False,55,43
+11,9, proof, real,18.25,8.875,False,False,55,43
+11,10, that, sympathy,0.386719,14.125,False,False,55,43
+11,11, he, a,0.199219,8.375,False,False,55,43
+11,12, was, performance,0.089355,15.4375,False,False,55,43
+11,13, going, that,11.75,18.25,False,False,55,43
+11,14, out, did,15.25,22.625,False,False,55,43
+11,15, of, not,0.001526,27.625,False,False,55,43
+11,16, av, occur,25.75,16.625,False,False,55,43
+11,17,on, in,0.90625,24.5,False,False,55,43
+11,18,lea, our,9.5625,20.625,False,False,55,43
+11,19, and, royal,0.410156,13.8125,False,False,55,43
+11,20, he, palace,9.875,14.5625,False,False,55,43
+11,21, had, too,5.5625,11.4375,False,False,55,43
+11,22, the, many,7.09375,14.0625,False,False,55,43
+11,23, buggy, times,18.125,16.125,False,False,55,43
+11,24, and, to,11.5625,9.125,False,False,55,43
+11,25, the, be,3.71875,18.75,False,False,55,43
+11,26, sor, forgotten,17.875,17.125,False,False,55,43
+11,27,rel, for,0.101562,25.0,False,False,55,43
+11,28, mare, some,8.25,18.625,False,False,55,43
+11,29, which, time,12.125,21.25,False,False,55,43
+11,30, bet, however,18.375,13.3125,False,False,55,43
+11,31,oken,，,3.734375,19.5,False,False,55,43
+11,32,ed,',0.000117,3.609375,False,False,55,43
+11,33, that,bed,5.375,18.875,False,False,55,43
+11,34, he,ford,2.8e-05,13.5,False,False,55,43
+11,35, was, was,0.000131,0.01709,False,False,55,43
+11,36, going, rescued,0.683594,16.5,False,False,55,43
+11,37, a, by,11.375,11.125,False,False,55,43
+11,38, considerable, a,10.4375,22.0,False,False,55,43
+11,39, distance, sudden,0.005737,20.875,False,False,55,43
+11,40, now, and,10.3125,19.875,False,False,55,43
+11,41, where, violent,8.5,18.75,False,False,55,43
+11,42, was, collapse,7.21875,17.5,False,False,55,43
+11,43, mat,<|im_end|>,22.875,21.125,False,False,55,43
+11,44,thew," 
+ 
+",5.6875,21.5,False,False,55,43
+11,45, c," 
+",8.9375,16.375,False,False,55,43
+11,46,uth,```,6.625,15.1875,False,False,55,43
+11,47,bert,<|im_end|>,0.059082,25.875,False,False,55,43
+11,48, going,"
+",14.3125,37.0,False,False,55,43
+11,49, and,<|im_start|>,12.375,22.375,False,False,55,43
+11,50, why,p,0.628906,19.25,False,False,55,43
+11,51, was,arker,1.75,14.875,False,False,55,43
+11,52, he,<|im_end|>,2.5e-05,14.0,False,False,55,43
+11,53, going,"
+",4.25,39.0,False,False,55,43
+11,54, there,<|im_start|>,6.09375,30.125,False,False,55,43
+11,55,<|im_end|>,part,8.6875,8.75,False,True,55,43
+12,0,had,this,11.0625,11.4375,True,False,53,29
+12,1, it, was,10.6875,15.6875,False,False,53,29
+12,2, been, naturally,7.65625,15.625,False,False,53,29
+12,3, any, the,19.875,19.75,False,False,53,29
+12,4, other, words,1.28125,13.375,False,False,53,29
+12,5, man, of,15.375,20.75,False,False,53,29
+12,6, in, caution,16.125,12.4375,False,False,53,29
+12,7, av, which,16.25,17.5,False,False,53,29
+12,8,on, should,1.90625,25.25,False,False,53,29
+12,9,lea, be,3.5625,23.625,False,False,53,29
+12,10, miss, kept,18.625,20.875,False,False,53,29
+12,11,us, before,9.0625,17.75,False,False,53,29
+12,12, r, any,10.75,17.125,False,False,53,29
+12,13,achel, reading,2.328125,16.25,False,False,53,29
+12,14, def, from,12.125,21.0,False,False,53,29
+12,15,t, the,8.75,26.625,False,False,53,29
+12,16,ly, past,0.001488,28.375,False,False,53,29
+12,17, putting, toward,10.8125,15.6875,False,False,53,29
+12,18, this, the,10.9375,16.25,False,False,53,29
+12,19, and, conclusion,16.25,15.875,False,False,53,29
+12,20, that, of,7.875,28.0,False,False,53,29
+12,21, together, the,2.25,25.0,False,False,53,29
+12,22, might, survey,18.625,19.5,False,False,53,29
+12,23, have, however,0.001289,16.75,False,False,53,29
+12,24, given, interesting,11.3125,17.5,False,False,53,29
+12,25, a, the,0.9375,16.75,False,False,53,29
+12,26, pretty, affair,6.6875,20.125,False,False,53,29
+12,27, good, might,15.0625,29.625,False,False,53,29
+12,28, guess, appear,13.75,17.875,False,False,53,29
+12,29, as,<|im_end|>,0.902344,12.4375,False,False,53,29
+12,30, to,"
+",1.523438,18.875,False,False,53,29
+12,31, both,<|im_start|>,15.875,26.25,False,False,53,29
+12,32, questions,<|im_end|>,23.875,15.25,False,False,53,29
+12,33, but,"
+",0.125977,26.875,False,False,53,29
+12,34, mat,<|endoftext|>,17.875,23.25,False,False,53,29
+12,35,thew,<|im_start|>,0.878906,13.8125,False,False,53,29
+12,36, so,<|im_start|>,10.25,18.75,False,False,53,29
+12,37, rarely,<|im_start|>,10.0,21.5,False,False,53,29
+12,38, went,<|im_start|>,12.1875,22.125,False,False,53,29
+12,39, from,"
+",9.6875,22.875,False,False,53,29
+12,40, home,the,10.375,24.125,False,False,53,29
+12,41, that, foundation,6.5,14.0625,False,False,53,29
+12,42, it, of,0.714844,14.75,False,False,53,29
+12,43, must, the,7.3125,14.25,False,False,53,29
+12,44, be, institution,0.000828,14.8125,False,False,53,29
+12,45, something, was,3.265625,21.625,False,False,53,29
+12,46, pressing, laid,15.5,16.75,False,False,53,29
+12,47, and, in,15.3125,12.3125,False,False,53,29
+12,48, unusual, j,3.625,14.125,False,False,53,29
+12,49, which,une,11.125,17.375,False,False,53,29
+12,50, was, of,5.40625,15.5625,False,False,53,29
+12,51, taking, one,17.875,19.5,False,False,53,29
+12,52, him, thousand,3.1875,23.625,False,False,53,29
+12,53,<|im_end|>, eight,4.46875,16.75,False,True,53,29
+13,0,he,he,0.000553,0.000565,True,False,58,58
+13,1, was, was,0.003738,0.00531,False,False,58,58
+13,2, the, the,0.000675,0.000626,False,False,58,58
+13,3, shy, shy,0.007172,0.010254,False,False,58,58
+13,4,est,est,9e-06,1.3e-05,False,False,58,58
+13,5, man, man,0.001846,0.001701,False,False,58,58
+13,6, alive, alive,0.020752,0.021484,False,False,58,58
+13,7, and, and,0.00013,0.000205,False,False,58,58
+13,8, hated, hated,0.018188,0.013977,False,False,58,58
+13,9, to, to,8e-06,7e-06,False,False,58,58
+13,10, have, have,0.000359,0.000448,False,False,58,58
+13,11, to, to,0.0,0.0,False,False,58,58
+13,12, go, go,0.004852,0.003738,False,False,58,58
+13,13, among, among,0.014038,0.018555,False,False,58,58
+13,14, strangers, strangers,0.011353,0.010132,False,False,58,58
+13,15, or, or,0.002869,0.002686,False,False,58,58
+13,16, to, to,0.001511,0.001648,False,False,58,58
+13,17, any, any,0.00383,0.0047,False,False,58,58
+13,18, place, place,0.003357,0.003143,False,False,58,58
+13,19, where, where,4.9e-05,5.5e-05,False,False,58,58
+13,20, he, he,0.002274,0.003372,False,False,58,58
+13,21, might, might,0.006012,0.004181,False,False,58,58
+13,22, have, have,0.002029,0.002853,False,False,58,58
+13,23, to, to,0.0,0.0,False,False,58,58
+13,24, talk, talk,0.009277,0.011353,False,False,58,58
+13,25, mat, mat,0.015991,0.015991,False,False,58,58
+13,26,thew,thew,0.020996,0.020996,False,False,58,58
+13,27, dressed, dressed,0.009521,0.009521,False,False,58,58
+13,28, up, up,0.001862,0.001862,False,False,58,58
+13,29, with, with,0.010071,0.010071,False,False,58,58
+13,30, a, a,1.2e-05,1.2e-05,False,False,58,58
+13,31, white, white,0.006378,0.006378,False,False,58,58
+13,32, collar, collar,0.046631,0.046631,False,False,58,58
+13,33, and, and,0.000595,0.000595,False,False,58,58
+13,34, driving, driving,0.002502,0.002502,False,False,58,58
+13,35, in, in,0.000221,0.000221,False,False,58,58
+13,36, a, a,2e-05,2e-05,False,False,58,58
+13,37, buggy, buggy,0.025146,0.025146,False,False,58,58
+13,38, was, was,0.002411,0.002411,False,False,58,58
+13,39, something, something,0.002991,0.002991,False,False,58,58
+13,40, that, that,0.000119,0.000119,False,False,58,58
+13,41, didn, didn,0.012512,0.012512,False,False,58,58
+13,42,'t,'t,8.5e-05,8.5e-05,False,False,58,58
+13,43, happen, happen,0.005005,0.005005,False,False,58,58
+13,44, often, often,0.000809,0.000809,False,False,58,58
+13,45, miss, miss,0.016602,0.016602,False,False,58,58
+13,46,us,us,0.003494,0.003494,False,False,58,58
+13,47, r, r,0.004669,0.004669,False,False,58,58
+13,48,achel,achel,0.018188,0.018188,False,False,58,58
+13,49, ponder, ponder,0.009521,0.009521,False,False,58,58
+13,50, as, as,0.001114,0.001114,False,False,58,58
+13,51, she, she,2.4e-05,2.4e-05,False,False,58,58
+13,52, might, might,0.011658,0.011658,False,False,58,58
+13,53, could, could,0.01709,0.01709,False,False,58,58
+13,54, make, make,0.000725,0.000725,False,False,58,58
+13,55, nothing, nothing,0.009094,0.009094,False,False,58,58
+13,56, of, of,2.2e-05,2.2e-05,False,False,58,58
+13,57, it, it,0.001541,0.001541,False,False,58,58
+13,58,<|im_end|>,<|im_end|>,0.000607,0.000607,False,True,58,58
+14,0,and,in,9.625,9.5625,True,False,50,43
+14,1, her, any,14.625,8.125,False,False,50,43
+14,2, afternoon, case,12.6875,13.1875,False,False,50,43
+14,3,'s, he,9.75,14.0,False,False,50,43
+14,4, enjoyment, ought,12.0,26.625,False,False,50,43
+14,5, was, to,6.625,19.75,False,False,50,43
+14,6, spoiled, have,17.25,33.5,False,False,50,43
+14,7, i, been,25.25,23.875,False,False,50,43
+14,8,'ll, told,11.1875,19.0,False,False,50,43
+14,9, just, that,10.625,14.3125,False,False,50,43
+14,10, step, there,14.5625,15.3125,False,False,50,43
+14,11, over, was,1.28125,22.625,False,False,50,43
+14,12, to, a,10.0625,15.0625,False,False,50,43
+14,13, green, difference,16.375,13.6875,False,False,50,43
+14,14, g, between,14.625,35.5,False,False,50,43
+14,15,ables, a,0.636719,23.625,False,False,50,43
+14,16, after, great,14.9375,15.3125,False,False,50,43
+14,17, tea, and,11.125,16.0,False,False,50,43
+14,18, and, small,0.191406,21.125,False,False,50,43
+14,19, find, probability,10.8125,12.625,False,False,50,43
+14,20, out, in,2.421875,13.125,False,False,50,43
+14,21, from, such,8.5625,16.625,False,False,50,43
+14,22, mar, cases,11.75,22.75,False,False,50,43
+14,23,illa, it,7.34375,26.125,False,False,50,43
+14,24, where, was,7.84375,22.0,False,False,50,43
+14,25, he, i,5.59375,12.0625,False,False,50,43
+14,26,'s, think,3.453125,22.375,False,False,50,43
+14,27, gone, a,4.3125,10.6875,False,False,50,43
+14,28, and, custom,6.34375,17.625,False,False,50,43
+14,29, why, of,17.5,13.25,False,False,50,43
+14,30, the, the,13.5625,0.001587,False,False,50,43
+14,31, worthy, priests,11.9375,9.625,False,False,50,43
+14,32, woman, that,2.96875,22.125,False,False,50,43
+14,33, finally, he,12.875,14.625,False,False,50,43
+14,34, concluded, ought,9.625,11.9375,False,False,50,43
+14,35, he, to,4.03125,18.125,False,False,50,43
+14,36, doesn, have,14.3125,38.5,False,False,50,43
+14,37,'t, been,0.001923,20.375,False,False,50,43
+14,38, generally, more,19.25,16.0,False,False,50,43
+14,39, go, careful,8.9375,16.5,False,False,50,43
+14,40, to, with,7.03125,5.25,False,False,50,43
+14,41, town, this,11.1875,18.375,False,False,50,43
+14,42, this, one,16.0,22.25,False,False,50,43
+14,43, time,<|im_end|>,8.0625,15.3125,False,False,50,43
+14,44, of,"
+",8.125,19.625,False,False,50,43
+14,45, year,<|im_start|>,13.8125,24.125,False,False,50,43
+14,46, and,assistant,2.078125,18.875,False,False,50,43
+14,47, he,"
+
+",11.125,15.0,False,False,50,43
+14,48, never,<think>,9.4375,23.5,False,False,50,43
+14,49, visits,"
+
+",5.15625,30.625,False,False,50,43
+14,50,<|im_end|>,</think>,9.0625,21.125,False,True,50,43
+15,0,if,that,17.375,17.5,True,False,22,
+15,1, he, he,1.328125,0.052734,False,False,22,
+15,2,'d, had,10.4375,17.75,False,False,22,
+15,3, run, no,8.5,12.5,False,False,22,
+15,4, out, wife,4.59375,13.25,False,False,22,
+15,5, of, and,0.060547,14.8125,False,False,22,
+15,6, turn, no,14.9375,17.875,False,False,22,
+15,7,ip, children,3.0625,28.125,False,False,22,
+15,8, seed, to,12.625,18.5,False,False,22,
+15,9, he, take,3.390625,10.125,False,False,22,
+15,10, wouldn, care,8.4375,18.625,False,False,22,
+15,11,'t, of,0.000504,26.25,False,False,22,
+15,12, dress, him,14.375,24.5,False,False,22,
+15,13, up, in,6.9375,13.375,False,False,22,
+15,14, and, the,9.3125,13.0,False,False,22,
+15,15, take, house,4.375,14.75,False,False,22,
+15,16, the,"
+",3.421875,12.5,False,False,22,
+15,17, buggy,a,12.1875,16.125,False,False,22,
+15,18, to, large,4.625,14.3125,False,False,22,
+15,19, go, quantity,8.8125,11.125,False,False,22,
+15,20, for, of,6.0,15.1875,False,False,22,
+15,21, more, mercury,8.0625,11.375,False,False,22,
+15,22,<|im_end|>, was,0.275391,14.125,False,True,22,
+16,0,yet,i,5.6875,5.8125,True,False,64,36
+16,1, something, feel,10.5,16.0,False,False,64,36
+16,2, must, as,12.1875,26.375,False,False,64,36
+16,3, have, if,8.75,20.625,False,False,64,36
+16,4, happened, you,5.78125,21.0,False,False,64,36
+16,5, since, were,13.0625,24.125,False,False,64,36
+16,6, last, seeing,17.5,19.5,False,False,64,36
+16,7, night, me,7.3125,24.375,False,False,64,36
+16,8, to, for,5.125,18.0,False,False,64,36
+16,9, start, the,12.75,36.25,False,False,64,36
+16,10, him, first,10.5,22.75,False,False,64,36
+16,11, off, time,12.5,28.5,False,False,64,36
+16,12, i, there,21.375,5.46875,False,False,64,36
+16,13,'m, is,11.875,10.9375,False,False,64,36
+16,14, clean, a,22.125,32.75,False,False,64,36
+16,15, puzzled, difference,6.59375,16.0,False,False,64,36
+16,16, that, between,15.5,13.75,False,False,64,36
+16,17,'s, what,8.125,22.0,False,False,64,36
+16,18, what, i,7.3125,18.25,False,False,64,36
+16,19, and, have,16.375,23.625,False,False,64,36
+16,20, i, been,8.0,21.125,False,False,64,36
+16,21, won, and,13.4375,14.625,False,False,64,36
+16,22,'t, what,0.324219,37.0,False,False,64,36
+16,23, know, you,9.5625,24.625,False,False,64,36
+16,24, a, are,14.125,20.25,False,False,64,36
+16,25, minute, you,7.46875,21.125,False,False,64,36
+16,26,'s, no,9.875,14.4375,False,False,64,36
+16,27, peace, more,13.75,19.0,False,False,64,36
+16,28, of, the,13.8125,9.625,False,False,64,36
+16,29, mind, same,18.5,17.75,False,False,64,36
+16,30, or, man,7.875,15.1875,False,False,64,36
+16,31, conscience,&#,22.25,18.625,False,False,64,36
+16,32, until,1,0.722656,22.25,False,False,64,36
+16,33, i,4,0.050293,33.75,False,False,64,36
+16,34, know,4,0.00592,41.5,False,False,64,36
+16,35, what,;,4.53125,29.875,False,False,64,36
+16,36, has,<|im_end|>,16.25,13.75,False,False,64,36
+16,37, taken,"
+",11.125,21.0,False,False,64,36
+16,38, mat,<|im_start|>,22.5,31.375,False,False,64,36
+16,39,thew,"
+",4.3125,28.875,False,False,64,36
+16,40, c,<|im_end|>,10.6875,23.625,False,False,64,36
+16,41,uth,"
+",8.3125,34.75,False,False,64,36
+16,42,bert,<|im_start|>,0.824219,35.0,False,False,64,36
+16,43, out,>,4.53125,19.875,False,False,64,36
+16,44, of,<|im_end|>,2.9e-05,22.375,False,False,64,36
+16,45, av,"
+",20.75,36.75,False,False,64,36
+16,46,on,<|im_start|>,1.539062,34.75,False,False,64,36
+16,47,lea,assistant,4.6875,16.875,False,False,64,36
+16,48, today,"
+",14.8125,22.0,False,False,64,36
+16,49, accordingly,<think>,13.9375,15.8125,False,False,64,36
+16,50, after,"
+
+",14.5625,22.625,False,False,64,36
+16,51, tea,</think>,20.75,24.0,False,False,64,36
+16,52, miss,"
+
+",13.5,22.875,False,False,64,36
+16,53,us,You,10.5,18.125,False,False,64,36
+16,54, r, are,7.28125,15.5625,False,False,64,36
+16,55,achel, not,8.125,22.375,False,False,64,36
+16,56, set, the,19.125,20.125,False,False,64,36
+16,57, out, same,12.0,18.875,False,False,64,36
+16,58, she, man,15.3125,17.625,False,False,64,36
+16,59, had,.,3.1875,15.9375,False,False,64,36
+16,60, not, There,4.5625,14.5,False,False,64,36
+16,61, far, is,10.125,16.25,False,False,64,36
+16,62, to, a,8.2e-05,15.0,False,False,64,36
+16,63, go, profound,6.5e-05,17.125,False,False,64,36
+16,64,<|im_end|>, difference,0.691406,15.1875,False,True,64,36
+17,0,the,and,10.0625,10.125,True,False,59,52
+17,1, big, now,13.375,17.875,False,False,59,52
+17,2, ram, there,13.0,17.875,False,False,59,52
+17,3,bling, is,3.28125,28.75,False,False,59,52
+17,4, orch, no,16.5,31.5,False,False,59,52
+17,5,ard, going,0.001076,22.0,False,False,59,52
+17,6, emb, back,15.8125,21.875,False,False,59,52
+17,7,owered, upon,1.5625,16.875,False,False,59,52
+17,8, house, it,24.125,26.875,False,False,59,52
+17,9, where, said,10.1875,13.5,False,False,59,52
+17,10, the, the,0.034912,0.84375,False,False,59,52
+17,11, c, brain,14.8125,12.1875,False,False,59,52
+17,12,uth, or,11.5625,14.625,False,False,59,52
+17,13,bert, the,2.953125,19.25,False,False,59,52
+17,14,s, mind,0.009216,19.375,False,False,59,52
+17,15, lived,when,0.112305,14.0,False,False,59,52
+17,16, was, the,16.25,21.75,False,False,59,52
+17,17, a, feelings,1.554688,12.3125,False,False,59,52
+17,18, scant, have,8.25,31.625,False,False,59,52
+17,19, quarter, been,9.5,18.25,False,False,59,52
+17,20, of, made,0.000793,21.125,False,False,59,52
+17,21, a, into,0.062012,9.0,False,False,59,52
+17,22, mile, memories,0.000412,15.6875,False,False,59,52
+17,23, up, and,16.0,22.875,False,False,59,52
+17,24, the, the,0.126953,0.023315,False,False,59,52
+17,25, road, memories,3.734375,17.25,False,False,59,52
+17,26, from, into,0.476562,15.5,False,False,59,52
+17,27, ly, f,24.5,20.0,False,False,59,52
+17,28,nde,ancies,5.78125,19.5,False,False,59,52
+17,29,'s, and,0.006989,21.125,False,False,59,52
+17,30, hollow, f,8.875,19.375,False,False,59,52
+17,31, to,ancies,18.875,21.875,False,False,59,52
+17,32, be, into,0.007996,24.875,False,False,59,52
+17,33, sure, f,9.9375,11.6875,False,False,59,52
+17,34, the,ables,13.4375,15.125,False,False,59,52
+17,35, long, and,7.875,23.75,False,False,59,52
+17,36, lane, so,9.25,18.25,False,False,59,52
+17,37, made, on,8.25,19.625,False,False,59,52
+17,38, it, and,0.208008,8.375,False,False,59,52
+17,39, a, so,2.046875,10.6875,False,False,59,52
+17,40, good, on,3.09375,16.375,False,False,59,52
+17,41, deal, and,0.006348,23.375,False,False,59,52
+17,42, further, the,9.375,14.375,False,False,59,52
+17,43, mat, little,17.375,14.5,False,False,59,52
+17,44,thew, bits,0.765625,18.625,False,False,59,52
+17,45, c, of,9.625,11.25,False,False,59,52
+17,46,uth, things,0.005432,13.0625,False,False,59,52
+17,47,bert, get,0.061279,18.75,False,False,59,52
+17,48,'s, very,14.6875,13.0,False,False,59,52
+17,49, father,",",1.898438,18.0,False,False,59,52
+17,50, as, very,10.5,16.375,False,False,59,52
+17,51, shy, big,14.6875,12.625,False,False,59,52
+17,52, and,<|im_end|>,5.875,5.0625,False,False,59,52
+17,53, silent,"
+",7.03125,25.25,False,False,59,52
+17,54, as,<|im_start|>,0.002228,21.5,False,False,59,52
+17,55, his,user,3.15625,16.25,False,False,59,52
+17,56, son,"
+",8.125,18.0,False,False,59,52
+17,57, after,And,10.875,19.5,False,False,59,52
+17,58, him, now,8.0,14.25,False,False,59,52
+17,59,<|im_end|>,<|im_end|>,7.90625,0.294922,False,True,59,52
+18,0,had,had,0.017456,0.018433,True,False,47,47
+18,1, got, got,0.007324,0.007446,False,False,47,47
+18,2, as, as,0.000729,0.000874,False,False,47,47
+18,3, far, far,0.019043,0.020264,False,False,47,47
+18,4, away, away,0.000561,0.000813,False,False,47,47
+18,5, as, as,0.004883,0.005432,False,False,47,47
+18,6, he, he,0.006287,0.007233,False,False,47,47
+18,7, possibly, possibly,0.077148,0.074707,False,False,47,47
+18,8, could, could,0.029175,0.020874,False,False,47,47
+18,9, from, from,0.009827,0.008667,False,False,47,47
+18,10, his, his,0.000576,0.000553,False,False,47,47
+18,11, fellow, fellow,0.031738,0.039795,False,False,47,47
+18,12, men, men,0.018188,0.017456,False,False,47,47
+18,13, without, without,0.002869,0.003662,False,False,47,47
+18,14, actually, actually,0.044678,0.058594,False,False,47,47
+18,15, ret, ret,0.040771,0.033447,False,False,47,47
+18,16,reating,reating,0.001686,0.001717,False,False,47,47
+18,17, into, into,0.000607,0.000641,False,False,47,47
+18,18, the, the,0.000143,0.000122,False,False,47,47
+18,19, woods, woods,0.026001,0.024414,False,False,47,47
+18,20, when, when,0.02478,0.031982,False,False,47,47
+18,21, he, he,0.012451,0.009094,False,False,47,47
+18,22, founded, founded,0.050293,0.04541,False,False,47,47
+18,23, his, his,0.000252,0.000341,False,False,47,47
+18,24, hom, hom,0.013672,0.012939,False,False,47,47
+18,25,estead,estead,0.010315,0.010437,False,False,47,47
+18,26, green, green,0.009827,0.009033,False,False,47,47
+18,27, g, g,0.005066,0.00592,False,False,47,47
+18,28,ables,ables,0.05957,0.055908,False,False,47,47
+18,29, was, was,0.020752,0.019897,False,False,47,47
+18,30, built, built,0.019653,0.019653,False,False,47,47
+18,31, at, at,0.003906,0.003906,False,False,47,47
+18,32, the, the,0.003738,0.003738,False,False,47,47
+18,33, fur, fur,0.046631,0.046631,False,False,47,47
+18,34,thest,thest,0.000546,0.000546,False,False,47,47
+18,35, edge, edge,0.016357,0.016357,False,False,47,47
+18,36, of, of,4.1e-05,4.1e-05,False,False,47,47
+18,37, his, his,0.000155,0.000155,False,False,47,47
+18,38, cleared, cleared,0.043213,0.043213,False,False,47,47
+18,39, land, land,0.015747,0.015747,False,False,47,47
+18,40, and, and,0.0019,0.0019,False,False,47,47
+18,41, there, there,0.000954,0.000954,False,False,47,47
+18,42, it, it,0.000652,0.000652,False,False,47,47
+18,43, was, was,0.010254,0.010254,False,False,47,47
+18,44, to, to,0.000866,0.000866,False,False,47,47
+18,45, this, this,0.002884,0.002884,False,False,47,47
+18,46, day, day,0.000216,0.000216,False,False,47,47
+18,47,<|im_end|>,<|im_end|>,0.00148,0.00148,False,True,47,47
+19,0,bare,a,16.375,16.125,True,False,58,43
+19,1,ly, lost,2.7e-05,19.375,False,False,58,43
+19,2, visible, horse,8.625,16.0,False,False,58,43
+19,3, from, that,4.71875,12.4375,False,False,58,43
+19,4, the, wouldn,2.828125,13.9375,False,False,58,43
+19,5, main,'t,12.9375,40.5,False,False,58,43
+19,6, road, get,10.0,15.125,False,False,58,43
+19,7, along, off,10.625,7.0625,False,False,58,43
+19,8, which, the,13.8125,17.375,False,False,58,43
+19,9, all, hoof,9.5625,14.8125,False,False,58,43
+19,10, the, and,3.90625,15.625,False,False,58,43
+19,11, other, that,7.21875,13.4375,False,False,58,43
+19,12, av,'s,14.6875,16.375,False,False,58,43
+19,13,on, got,1.71875,16.5,False,False,58,43
+19,14,lea, a,10.75,17.75,False,False,58,43
+19,15, houses, hawk,6.6875,14.25,False,False,58,43
+19,16, were, for,4.8125,14.25,False,False,58,43
+19,17, so, a,16.125,14.9375,False,False,58,43
+19,18, soci, master,17.375,18.875,False,False,58,43
+19,19,ably, in,1.71875,28.625,False,False,58,43
+19,20, situated, there,9.375,16.5,False,False,58,43
+19,21, miss, i,16.625,16.125,False,False,58,43
+19,22,us, promised,2.34375,21.75,False,False,58,43
+19,23, r, to,7.53125,16.375,False,False,58,43
+19,24,achel, catch,5.03125,23.125,False,False,58,43
+19,25, ly, him,18.625,22.625,False,False,58,43
+19,26,nde, the,12.5625,24.625,False,False,58,43
+19,27, did, mod,2.84375,8.0,False,False,58,43
+19,28, not,esty,1.2e-05,12.3125,False,False,58,43
+19,29, call, of,12.4375,30.875,False,False,58,43
+19,30, living, --,16.25,13.5625,False,False,58,43
+19,31, in, don,8.5,9.0,False,False,58,43
+19,32, such,'t,9.0625,16.75,False,False,58,43
+19,33, a, worry,0.527344,17.25,False,False,58,43
+19,34, place, he,0.291016,14.875,False,False,58,43
+19,35, living,'ll,10.875,18.875,False,False,58,43
+19,36, at, be,8.3125,21.75,False,False,58,43
+19,37, all, no,8.3125,11.5625,False,False,58,43
+19,38, it, bigger,7.1875,20.0,False,False,58,43
+19,39,'s, than,14.1875,24.625,False,False,58,43
+19,40, just, a,6.34375,17.125,False,False,58,43
+19,41, staying, house,23.5,15.875,False,False,58,43
+19,42, that, pigeon,12.6875,14.8125,False,False,58,43
+19,43,'s,<|im_end|>,0.988281,19.5,False,False,58,43
+19,44, what,"
+",7.5,36.75,False,False,58,43
+19,45, she,<|im_start|>,0.181641,34.75,False,False,58,43
+19,46, said,"
+",0.476562,17.375,False,False,58,43
+19,47, as,<|endoftext|>,12.1875,27.75,False,False,58,43
+19,48, she,The,2.15625,13.75,False,False,58,43
+19,49, stepped, story,5.71875,13.125,False,False,58,43
+19,50, along, of,7.90625,14.5625,False,False,58,43
+19,51, the, the,0.210938,1.945312,False,False,58,43
+19,52, deep, Three,12.625,10.9375,False,False,58,43
+19,53, rut, Musk,10.3125,22.0,False,False,58,43
+19,54,ted,ete,0.049805,24.875,False,False,58,43
+19,55, grass,ers,13.375,21.125,False,False,58,43
+19,56,y,",",1.148438,15.375,False,False,58,43
+19,57, lane, a,0.585938,18.5,False,False,58,43
+19,58,<|im_end|>, popular,0.000387,14.125,False,True,58,43
+20,0,border,let,16.875,16.75,True,False,53,37
+20,1,ed, the,0.000218,18.5,False,False,53,37
+20,2, with, marks,19.25,10.375,False,False,53,37
+20,3, wild, of,10.5,25.875,False,False,53,37
+20,4, rose, your,6.25,20.75,False,False,53,37
+20,5, bushes, hands,4.4375,13.3125,False,False,53,37
+20,6, it, show,21.25,26.375,False,False,53,37
+20,7,'s, that,12.8125,21.75,False,False,53,37
+20,8, no, you,9.875,32.25,False,False,53,37
+20,9, wonder, have,0.601562,18.0,False,False,53,37
+20,10, mat, truly,21.375,28.0,False,False,53,37
+20,11,thew, been,6.65625,19.125,False,False,53,37
+20,12, and, formed,6.5625,13.125,False,False,53,37
+20,13, mar, by,10.1875,23.625,False,False,53,37
+20,14,illa, me,15.0625,17.0,False,False,53,37
+20,15, are, and,9.4375,17.875,False,False,53,37
+20,16, both, let,8.9375,15.4375,False,False,53,37
+20,17, a, the,11.1875,23.375,False,False,53,37
+20,18, little, eyes,8.375,9.9375,False,False,53,37
+20,19, odd, of,12.625,30.75,False,False,53,37
+20,20, living, your,15.75,21.125,False,False,53,37
+20,21, away, eyes,12.4375,22.625,False,False,53,37
+20,22, back,     ,22.5,8.0,False,False,53,37
+20,23, here, that,9.375,4.46875,False,False,53,37
+20,24, by, is,11.875,24.5,False,False,53,37
+20,25, themselves, here,3.671875,9.625,False,False,53,37
+20,26, trees,   ,18.5,20.75,False,False,53,37
+20,27, aren, confirm,24.25,23.5,False,False,53,37
+20,28,'t, that,0.000102,19.75,False,False,53,37
+20,29, much, you,7.09375,37.5,False,False,53,37
+20,30, company, have,13.1875,33.75,False,False,53,37
+20,31, though, been,10.9375,18.625,False,False,53,37
+20,32, dear, effectively,15.25,22.875,False,False,53,37
+20,33, knows, assim,17.375,16.125,False,False,53,37
+20,34, if,ilated,12.375,31.875,False,False,53,37
+20,35, they, to,7.0,26.75,False,False,53,37
+20,36, were, me,1.414062,24.875,False,False,53,37
+20,37, there,<|im_end|>,11.375,18.375,False,False,53,37
+20,38,'d,"
+",11.4375,30.25,False,False,53,37
+20,39, be,1,0.000152,29.5,False,False,53,37
+20,40, enough,8,13.6875,21.875,False,False,53,37
+20,41, of,7,1.15625,26.25,False,False,53,37
+20,42, them,5,0.570312,40.25,False,False,53,37
+20,43, i,.,19.5,19.125,False,False,53,37
+20,44,'d,0,6.5,23.125,False,False,53,37
+20,45, r,5,9.875,32.5,False,False,53,37
+20,46,uther,.,8.5,26.5,False,False,53,37
+20,47, look,1,11.625,31.75,False,False,53,37
+20,48, at,8,0.002502,35.75,False,False,53,37
+20,49, people,:,25.0,18.125,False,False,53,37
+20,50, to, they,12.125,2.953125,False,False,53,37
+20,51, be, were,6.78125,19.375,False,False,53,37
+20,52, sure, told,3.71875,8.4375,False,False,53,37
+20,53,<|im_end|>, that,0.012573,15.5,False,True,53,37
+21,0,they,but,6.78125,6.78125,True,False,59,43
+21,1, seem, he,10.9375,13.375,False,False,59,43
+21,2, content, denied,11.5625,12.125,False,False,59,43
+21,3,ed, he,0.183594,20.75,False,False,59,43
+21,4, enough, admitted,12.375,19.25,False,False,59,43
+21,5, but, he,7.03125,20.25,False,False,59,43
+21,6, then, had,10.25,21.625,False,False,59,43
+21,7, i, a,15.5625,17.375,False,False,59,43
+21,8, suppose, master,10.125,16.5,False,False,59,43
+21,9, they, in,0.001465,11.5,False,False,59,43
+21,10,'re, practical,13.5,15.25,False,False,59,43
+21,11, used, matter,11.3125,10.0,False,False,59,43
+21,12, to, he,0.141602,14.9375,False,False,59,43
+21,13, it, confessed,2.265625,17.25,False,False,59,43
+21,14, a, he,9.125,24.0,False,False,59,43
+21,15, body, was,11.0,20.75,False,False,59,43
+21,16, can, a,9.375,16.375,False,False,59,43
+21,17, get, person,7.8125,9.375,False,False,59,43
+21,18, used, of,0.000429,15.3125,False,False,59,43
+21,19, to, simple,0.000256,12.5625,False,False,59,43
+21,20, anything, feelings,2.484375,20.25,False,False,59,43
+21,21, even, did,9.875,9.1875,False,False,59,43
+21,22, to, not,18.75,19.625,False,False,59,43
+21,23, being, he,7.75,18.125,False,False,59,43
+21,24, h, have,10.75,17.625,False,False,59,43
+21,25,anged, a,2.640625,20.0,False,False,59,43
+21,26, as, home,6.5625,18.25,False,False,59,43
+21,27, the, in,9.1875,15.0,False,False,59,43
+21,28, ir, the,12.8125,18.75,False,False,59,43
+21,29,ish, mind,0.832031,20.625,False,False,59,43
+21,30,man, he,15.4375,28.75,False,False,59,43
+21,31, said, confessed,4.28125,1.734375,False,False,59,43
+21,32, with, he,2.546875,19.25,False,False,59,43
+21,33, this, was,16.75,18.0,False,False,59,43
+21,34, miss, an,21.375,21.375,False,False,59,43
+21,35,us, advanced,1.554688,21.5,False,False,59,43
+21,36, r, man,15.0625,20.5,False,False,59,43
+21,37,achel, does,3.3125,20.125,False,False,59,43
+21,38, stepped, not,16.625,27.125,False,False,59,43
+21,39, out, he,10.25,17.75,False,False,59,43
+21,40, of, have,2.984375,17.125,False,False,59,43
+21,41, the, a,3.03125,10.25,False,False,59,43
+21,42, lane, age,9.0,12.5625,False,False,59,43
+21,43, into,<|im_end|>,13.125,11.8125,False,False,59,43
+21,44, the,"
+",5.90625,33.5,False,False,59,43
+21,45, backyard,<|im_start|>,11.4375,24.625,False,False,59,43
+21,46, of,bird,10.6875,19.5,False,False,59,43
+21,47, green,<|im_end|>,12.8125,23.75,False,False,59,43
+21,48, g,"
+",18.625,44.25,False,False,59,43
+21,49,ables,<|im_start|>,2.984375,40.25,False,False,59,43
+21,50, very,p,14.5,27.125,False,False,59,43
+21,51, green,enny,19.125,19.25,False,False,59,43
+21,52, and,<|im_end|>,11.3125,11.625,False,False,59,43
+21,53, neat,"
+",6.1875,41.75,False,False,59,43
+21,54, and,<|im_start|>,12.1875,33.25,False,False,59,43
+21,55, precise,the,11.9375,24.125,False,False,59,43
+21,56, was, writing,15.9375,14.1875,False,False,59,43
+21,57, that,<|im_end|>,15.4375,10.6875,False,False,59,43
+21,58, yard,"
+",11.25,39.75,False,False,59,43
+21,59,<|im_end|>,<|im_start|>,0.085938,22.5,False,True,59,43
+22,0,set,set,0.012756,0.013672,True,False,65,65
+22,1, about, about,0.002167,0.001953,False,False,65,65
+22,2, on, on,0.000713,0.001694,False,False,65,65
+22,3, one, one,7.3e-05,7.3e-05,False,False,65,65
+22,4, side, side,1.3e-05,1.2e-05,False,False,65,65
+22,5, with, with,5e-06,6e-06,False,False,65,65
+22,6, great, great,0.005341,0.007507,False,False,65,65
+22,7, patriarch, patriarch,0.021729,0.018799,False,False,65,65
+22,8,al,al,0.00053,0.000507,False,False,65,65
+22,9, will, will,0.00267,0.002884,False,False,65,65
+22,10,ows,ows,0.010498,0.006592,False,False,65,65
+22,11, and, and,1.4e-05,1.6e-05,False,False,65,65
+22,12, the, the,5e-06,5e-06,False,False,65,65
+22,13, other, other,1.1e-05,1.2e-05,False,False,65,65
+22,14, with, with,2e-06,1e-06,False,False,65,65
+22,15, prim, prim,0.013611,0.012573,False,False,65,65
+22,16, lomb, lomb,0.016357,0.016968,False,False,65,65
+22,17,ard,ard,0.054932,0.048584,False,False,65,65
+22,18,ies,ies,0.002563,0.002563,False,False,65,65
+22,19, not, not,0.012329,0.012329,False,False,65,65
+22,20, a, a,0.000488,0.000488,False,False,65,65
+22,21, stray, stray,0.002747,0.002747,False,False,65,65
+22,22, stick, stick,0.010071,0.010071,False,False,65,65
+22,23, nor, nor,0.006226,0.006226,False,False,65,65
+22,24, stone, stone,0.010437,0.010437,False,False,65,65
+22,25, was, was,9.5e-05,9.5e-05,False,False,65,65
+22,26, to, to,0.000641,0.000641,False,False,65,65
+22,27, be, be,0.000123,0.000123,False,False,65,65
+22,28, seen, seen,0.003937,0.003937,False,False,65,65
+22,29, for, for,2.6e-05,2.6e-05,False,False,65,65
+22,30, miss, miss,0.013062,0.013062,False,False,65,65
+22,31,us,us,0.001633,0.001633,False,False,65,65
+22,32, r, r,0.007996,0.007996,False,False,65,65
+22,33,achel,achel,0.006042,0.006042,False,False,65,65
+22,34, would, would,0.00034,0.00034,False,False,65,65
+22,35, have, have,0.002289,0.002289,False,False,65,65
+22,36, seen, seen,0.000664,0.000664,False,False,65,65
+22,37, it, it,9.5e-05,9.5e-05,False,False,65,65
+22,38, if, if,0.001045,0.001045,False,False,65,65
+22,39, there, there,0.003433,0.003433,False,False,65,65
+22,40, had, had,0.000706,0.000706,False,False,65,65
+22,41, been, been,0.000755,0.000755,False,False,65,65
+22,42, privately, privately,0.005859,0.005859,False,False,65,65
+22,43, she, she,0.002289,0.002289,False,False,65,65
+22,44, was, was,0.000984,0.000984,False,False,65,65
+22,45, of, of,6e-05,6e-05,False,False,65,65
+22,46, the, the,9.7e-05,9.7e-05,False,False,65,65
+22,47, opinion, opinion,0.006927,0.006927,False,False,65,65
+22,48, that, that,0.000252,0.000252,False,False,65,65
+22,49, mar, mar,0.007019,0.007019,False,False,65,65
+22,50,illa,illa,0.029663,0.029663,False,False,65,65
+22,51, c, c,0.001465,0.001465,False,False,65,65
+22,52,uth,uth,0.009888,0.009888,False,False,65,65
+22,53,bert,bert,0.029541,0.029541,False,False,65,65
+22,54, swept, swept,0.007721,0.007721,False,False,65,65
+22,55, that, that,3e-05,3e-05,False,False,65,65
+22,56, yard, yard,0.025146,0.025146,False,False,65,65
+22,57, over, over,0.00177,0.00177,False,False,65,65
+22,58, as, as,7.9e-05,7.9e-05,False,False,65,65
+22,59, often, often,0.005035,0.005035,False,False,65,65
+22,60, as, as,1e-06,1e-06,False,False,65,65
+22,61, she, she,0.002945,0.002945,False,False,65,65
+22,62, swept, swept,0.003174,0.003174,False,False,65,65
+22,63, her, her,0.001595,0.001595,False,False,65,65
+22,64, house, house,0.005402,0.005402,False,False,65,65
+22,65,<|im_end|>,<|im_end|>,0.004364,0.004364,False,True,65,65
+23,0,one,the,9.375,9.5625,True,False,51,48
+23,1, could, tumult,14.75,12.8125,False,False,51,48
+23,2, have, had,8.4375,13.5625,False,False,51,48
+23,3, eaten, been,14.75,11.3125,False,False,51,48
+23,4, a, very,8.625,14.4375,False,False,51,48
+23,5, meal, wild,0.792969,15.8125,False,False,51,48
+23,6, off, the,17.625,11.375,False,False,51,48
+23,7, the, houses,0.02832,12.6875,False,False,51,48
+23,8, ground, had,12.875,19.0,False,False,51,48
+23,9, without, been,6.125,19.75,False,False,51,48
+23,10, over, r,20.125,13.75,False,False,51,48
+23,11,br,ans,19.0,17.0,False,False,51,48
+23,12,imming,acked,4.125,33.0,False,False,51,48
+23,13, the, the,4.59375,0.003159,False,False,51,48
+23,14, proverb, principal,10.4375,15.0,False,False,51,48
+23,15,ial, merchant,13.0,21.375,False,False,51,48
+23,16, pe, gold,16.25,17.125,False,False,51,48
+23,17,ck,smith,7.5625,20.625,False,False,51,48
+23,18, of, copper,1.28125,10.6875,False,False,51,48
+23,19, dirt, worker,9.3125,17.625,False,False,51,48
+23,20, miss, and,18.375,21.0,False,False,51,48
+23,21,us, dealer,6.15625,18.0,False,False,51,48
+23,22, r, had,10.1875,16.5,False,False,51,48
+23,23,achel, been,3.015625,30.125,False,False,51,48
+23,24, r, pushed,18.5,11.8125,False,False,51,48
+23,25,apped, out,7.40625,17.875,False,False,51,48
+23,26, smart, of,10.25,26.0,False,False,51,48
+23,27,ly, his,0.000935,25.875,False,False,51,48
+23,28, at, post,4.40625,17.0,False,False,51,48
+23,29, the, the,9.6875,0.064941,False,False,51,48
+23,30, kitchen, place,10.375,10.75,False,False,51,48
+23,31, door, of,6.46875,17.25,False,False,51,48
+23,32, and, director,2.265625,13.125,False,False,51,48
+23,33, stepped, had,15.5,14.75,False,False,51,48
+23,34, in, gone,2.734375,18.625,False,False,51,48
+23,35, when, to,7.53125,18.0,False,False,51,48
+23,36, b, a,18.625,18.125,False,False,51,48
+23,37,idden, labour,15.125,16.75,False,False,51,48
+23,38, to,er,7.84375,32.0,False,False,51,48
+23,39, do, from,10.375,26.875,False,False,51,48
+23,40, so, the,4.5625,19.5,False,False,51,48
+23,41, the, labour,7.25,13.8125,False,False,51,48
+23,42, kitchen,er,11.5625,20.125,False,False,51,48
+23,43, at,'s,13.4375,23.75,False,False,51,48
+23,44, green, reply,16.5,14.1875,False,False,51,48
+23,45, g, was,8.5625,19.0,False,False,51,48
+23,46,ables, characteristic,4.96875,19.5,False,False,51,48
+23,47, was, enough,0.582031,19.375,False,False,51,48
+23,48, a,<|im_end|>,0.239258,22.375,False,False,51,48
+23,49, cheerful,"
+",7.875,32.0,False,False,51,48
+23,50, apartment,<|im_start|>,12.6875,29.75,False,False,51,48
+23,51,<|im_end|>,user,0.002533,6.1875,False,True,51,48
+24,0,or,he,13.9375,14.0,True,False,55,41
+24,1, would, came,7.875,12.0,False,False,55,41
+24,2, have, out,21.125,23.875,False,False,55,41
+24,3, been, of,2.484375,40.5,False,False,55,41
+24,4, cheerful, those,10.3125,18.625,False,False,55,41
+24,5, if, chamber,11.8125,17.0,False,False,55,41
+24,6, it,ed,14.625,15.1875,False,False,55,41
+24,7, had, cells,0.047119,17.125,False,False,55,41
+24,8, not, to,13.0,9.5625,False,False,55,41
+24,9, been, cheer,2.8e-05,13.25,False,False,55,41
+24,10, so, the,19.125,23.75,False,False,55,41
+24,11, painfully, rejo,8.5625,16.75,False,False,55,41
+24,12, clean,ic,12.0625,25.75,False,False,55,41
+24,13, as,ings,6.28125,26.5,False,False,55,41
+24,14, to, then,4.375,11.5,False,False,55,41
+24,15, give, generally,7.84375,13.4375,False,False,55,41
+24,16, it, characteristic,3.78125,14.1875,False,False,55,41
+24,17, something, of,19.125,21.5,False,False,55,41
+24,18, of, the,0.000107,11.6875,False,False,55,41
+24,19, the, last,5.25,15.25,False,False,55,41
+24,20, appearance, forty,6.15625,15.375,False,False,55,41
+24,21, of, minutes,1.3e-05,16.75,False,False,55,41
+24,22, an, of,14.6875,21.375,False,False,55,41
+24,23, unused, the,11.625,29.875,False,False,55,41
+24,24, par, third,20.875,16.75,False,False,55,41
+24,25,lor, act,3.109375,26.125,False,False,55,41
+24,26, its, of,9.75,21.75,False,False,55,41
+24,27, windows, our,9.25,20.875,False,False,55,41
+24,28, looked, dramas,19.875,18.0,False,False,55,41
+24,29, east, he,18.625,14.875,False,False,55,41
+24,30, and, went,0.000755,11.5,False,False,55,41
+24,31, west, about,0.001701,18.875,False,False,55,41
+24,32, through, ar,9.75,13.1875,False,False,55,41
+24,33, the,ming,8.6875,19.5,False,False,55,41
+24,34, west, the,11.9375,20.0,False,False,55,41
+24,35, one, reg,10.5625,13.4375,False,False,55,41
+24,36, looking,iments,14.1875,20.75,False,False,55,41
+24,37, out, i,0.114746,18.875,False,False,55,41
+24,38, on, think,3.140625,20.25,False,False,55,41
+24,39, the, said,0.008179,13.5625,False,False,55,41
+24,40, back, he,10.625,11.6875,False,False,55,41
+24,41, yard,<|im_end|>,1.007812,19.25,False,False,55,41
+24,42, came,"
+",12.625,41.5,False,False,55,41
+24,43, a,<|im_start|>,4.84375,27.25,False,False,55,41
+24,44, flood,"
+",12.875,19.5,False,False,55,41
+24,45, of,<|im_end|>,5.4e-05,23.125,False,False,55,41
+24,46, m,"
+",10.375,34.5,False,False,55,41
+24,47,ellow,<|im_start|>,3.171875,32.0,False,False,55,41
+24,48, j,"
+",19.125,28.0,False,False,55,41
+24,49,une,<|im_end|>,1.773438,16.25,False,False,55,41
+24,50, sunlight,"
+",7.25,34.0,False,False,55,41
+24,51, but,<|im_start|>,0.172852,31.125,False,False,55,41
+24,52, the,"
+",0.345703,25.625,False,False,55,41
+24,53, east,<|im_end|>,1.25,20.375,False,False,55,41
+24,54, one,"
+",13.5625,32.75,False,False,55,41
+24,55,<|im_end|>,<|im_start|>,0.335938,13.125,False,True,55,41
+25,0,wh,in,7.40625,7.0,True,False,59,48
+25,1,ence, the,0.898438,19.625,False,False,59,48
+25,2, you, year,20.875,19.25,False,False,59,48
+25,3, got, ,4.90625,17.875,False,False,59,48
+25,4, a,1,17.125,14.5625,False,False,59,48
+25,5, glimpse,8,5.3125,28.0,False,False,59,48
+25,6, of,1,0.0,21.25,False,False,59,48
+25,7, the,2,3.015625,29.25,False,False,59,48
+25,8, bloom,when,9.9375,20.75,False,False,59,48
+25,9, white, the,24.875,20.625,False,False,59,48
+25,10, cherry, french,9.75,11.9375,False,False,59,48
+25,11, trees, ships,13.4375,13.5,False,False,59,48
+25,12, in, approached,9.3125,5.6875,False,False,59,48
+25,13, the, can,5.8e-05,3.03125,False,False,59,48
+25,14, left,ella,16.625,21.125,False,False,59,48
+25,15, orch,'s,12.75,14.4375,False,False,59,48
+25,16,ard, harbor,0.017334,14.0625,False,False,59,48
+25,17, and, it,9.5625,17.625,False,False,59,48
+25,18, nod, was,17.625,32.75,False,False,59,48
+25,19,ding, the,1.054688,25.75,False,False,59,48
+25,20, slender, last,14.375,12.0625,False,False,59,48
+25,21, bir, time,7.46875,26.625,False,False,59,48
+25,22,ches, i,0.219727,26.5,False,False,59,48
+25,23, down, lived,14.9375,19.25,False,False,59,48
+25,24, in, the,10.1875,5.53125,False,False,59,48
+25,25, the, next,0.145508,9.875,False,False,59,48
+25,26, hollow, was,9.1875,17.125,False,False,59,48
+25,27, by, a,8.0625,11.875,False,False,59,48
+25,28, the, dream,0.002502,19.625,False,False,59,48
+25,29, bro, my,5.15625,31.375,False,False,59,48
+25,30,ok, soul,1.539062,25.75,False,False,59,48
+25,31, was, suffered,14.5,7.46875,False,False,59,48
+25,32, green, a,17.5,20.5,False,False,59,48
+25,33,ed, v,14.4375,14.625,False,False,59,48
+25,34, over,ilen,15.875,11.125,False,False,59,48
+25,35, by,ess,10.3125,16.875,False,False,59,48
+25,36, a, greater,16.5,13.75,False,False,59,48
+25,37, t, than,13.125,23.5,False,False,59,48
+25,38,angle, any,3.53125,26.125,False,False,59,48
+25,39, of, real,2e-06,4.28125,False,False,59,48
+25,40, vines, one,6.78125,20.25,False,False,59,48
+25,41, here, yet,8.875,6.6875,False,False,59,48
+25,42, sat, i,12.5,21.125,False,False,59,48
+25,43, mar, remained,18.5,13.4375,False,False,59,48
+25,44,illa, until,9.0,20.125,False,False,59,48
+25,45, c, the,12.0,18.375,False,False,59,48
+25,46,uth, seventh,4.28125,17.5,False,False,59,48
+25,47,bert, month,0.202148,25.125,False,False,59,48
+25,48, when,<|im_end|>,19.5,13.375,False,False,59,48
+25,49, she,<|im_end|>,6.0625,23.75,False,False,59,48
+25,50, sat,"
+",11.75,33.0,False,False,59,48
+25,51, at, ,2.25,22.25,False,False,59,48
+25,52, all,<|im_end|>,10.125,13.125,False,False,59,48
+25,53, always,"
+",15.125,35.5,False,False,59,48
+25,54, slightly, ,18.375,23.0,False,False,59,48
+25,55, distrust,<|im_end|>,18.375,22.5,False,False,59,48
+25,56,ful,"
+",0.00132,38.25,False,False,59,48
+25,57, of, ,7.8125,22.0,False,False,59,48
+25,58, sunshine,<|im_end|>,13.75,20.375,False,False,59,48
+25,59,<|im_end|>,"
+",0.000751,9.625,False,True,59,48
+26,0,and,and,0.00019,0.000199,True,False,26,
+26,1, here, indeed,12.6875,12.75,False,False,26,
+26,2, she, in,14.375,9.125,False,False,26,
+26,3, sat, that,15.3125,17.0,False,False,26,
+26,4, now, state,16.625,14.75,False,False,26,
+26,5, knitting, of,11.8125,28.0,False,False,26,
+26,6, and, existence,10.8125,19.625,False,False,26,
+26,7, the, i,2.28125,10.5,False,False,26,
+26,8, table, felt,13.8125,19.75,False,False,26,
+26,9, behind, quite,16.625,20.0,False,False,26,
+26,10, her, similar,0.004211,18.25,False,False,26,
+26,11, was, to,6.1875,29.25,False,False,26,
+26,12, laid, a,9.5625,16.0,False,False,26,
+26,13, for, sheep,0.384766,13.25,False,False,26,
+26,14, supper, which,8.6875,18.5,False,False,26,
+26,15, miss, has,11.125,19.625,False,False,26,
+26,16,us, been,7.8125,21.75,False,False,26,
+26,17, r, sheep,12.9375,10.4375,False,False,26,
+26,18,achel,ishly,9.0,28.625,False,False,26,
+26,19, before, br,16.25,12.8125,False,False,26,
+26,20, she,icked,0.140625,13.9375,False,False,26,
+26,21, had, up,0.009644,26.75,False,False,26,
+26,22, fairly, in,19.5,20.0,False,False,26,
+26,23, closed, a,16.5,12.5625,False,False,26,
+26,24, the, corner,10.0,16.5,False,False,26,
+26,25, door, of,0.412109,18.125,False,False,26,
+26,26,<|im_end|>, my,4.53125,8.125,False,True,26,
+27,0,there,the,5.28125,4.9375,True,False,49,
+27,1, were, asym,8.75,13.875,False,False,49,
+27,2, three,metry,13.875,22.125,False,False,49,
+27,3, plates, of,14.75,28.375,False,False,49,
+27,4, laid, the,18.5,16.125,False,False,49,
+27,5, so, neum,19.5,11.6875,False,False,49,
+27,6, that,arch,10.375,17.0,False,False,49,
+27,7, mar, had,23.125,22.25,False,False,49,
+27,8,illa, however,6.375,19.875,False,False,49,
+27,9, must, produced,15.5,11.9375,False,False,49,
+27,10, be, its,14.625,33.0,False,False,49,
+27,11, expecting, necessary,14.25,19.0,False,False,49,
+27,12, some, tensions,9.0,15.625,False,False,49,
+27,13, one, and,14.8125,19.25,False,False,49,
+27,14, home, the,17.25,17.25,False,False,49,
+27,15, with, sudden,6.3125,11.5625,False,False,49,
+27,16, mat, break,16.875,17.0,False,False,49,
+27,17,thew, in,6.9375,21.5,False,False,49,
+27,18, to, flow,7.03125,13.1875,False,False,49,
+27,19, tea, of,15.5,32.25,False,False,49,
+27,20, but, affairs,2.59375,22.375,False,False,49,
+27,21, the, was,12.0,17.125,False,False,49,
+27,22, dishes, felt,13.0625,23.0,False,False,49,
+27,23, were, rather,1.507812,19.0,False,False,49,
+27,24, everyday, than,18.625,23.0,False,False,49,
+27,25, dishes, seen,5.78125,19.0,False,False,49,
+27,26, and, maybe,12.375,7.78125,False,False,49,
+27,27, there, when,13.75,12.875,False,False,49,
+27,28, was, we,0.000515,10.25,False,False,49,
+27,29, only, were,12.0,15.9375,False,False,49,
+27,30, crab, to,19.0,19.375,False,False,49,
+27,31, apple, begin,5.375,20.375,False,False,49,
+27,32, preserves, the,15.5,17.125,False,False,49,
+27,33, and, interview,9.6875,13.0,False,False,49,
+27,34, one, with,8.125,12.4375,False,False,49,
+27,35, kind, a,5.3125,28.0,False,False,49,
+27,36, of, woman,3.1e-05,15.1875,False,False,49,
+27,37, cake, head,9.375,17.0,False,False,49,
+27,38, so, turned,10.125,8.375,False,False,49,
+27,39, that, to,13.1875,11.6875,False,False,49,
+27,40, the, our,3.84375,1.820312,False,False,49,
+27,41, expected, left,4.1875,19.75,False,False,49,
+27,42, company, and,14.375,16.25,False,False,49,
+27,43, could, then,10.125,20.0,False,False,49,
+27,44, not, suddenly,0.582031,13.6875,False,False,49,
+27,45, be, to,2.390625,10.5625,False,False,49,
+27,46, any, our,14.5625,12.5625,False,False,49,
+27,47, particular, right,11.4375,24.875,False,False,49,
+27,48, company, we,12.9375,17.625,False,False,49,
+27,49,<|im_end|>, passed,0.515625,8.9375,False,True,49,
+28,0,yet,but,3.59375,3.328125,True,False,55,32
+28,1, what, our,19.375,15.25,False,False,55,32
+28,2, of, emotions,12.875,15.0625,False,False,55,32
+28,3, mat, are,21.125,23.875,False,False,55,32
+28,4,thew, far,12.25,18.625,False,False,55,32
+28,5,'s, less,10.5,19.0,False,False,55,32
+28,6, white, heroic,15.875,20.125,False,False,55,32
+28,7, collar, than,11.75,23.75,False,False,55,32
+28,8, and, theirs,14.25,31.125,False,False,55,32
+28,9, the, and,15.6875,7.3125,False,False,55,32
+28,10, sor, we,12.1875,28.375,False,False,55,32
+28,11,rel, lose,15.25,12.75,False,False,55,32
+28,12, mare, the,18.75,24.625,False,False,55,32
+28,13, miss, height,21.625,20.125,False,False,55,32
+28,14,us, of,0.769531,34.0,False,False,55,32
+28,15, r, a,12.9375,23.375,False,False,55,32
+28,16,achel, towering,3.390625,17.25,False,False,55,32
+28,17, was, peak,11.5,13.1875,False,False,55,32
+28,18, getting, for,14.4375,23.5,False,False,55,32
+28,19, fairly, every,13.125,26.75,False,False,55,32
+28,20, dizzy, stair,21.25,16.75,False,False,55,32
+28,21, with, we,6.9375,17.5,False,False,55,32
+28,22, this, require,10.3125,20.25,False,False,55,32
+28,23, unusual, to,6.40625,31.75,False,False,55,32
+28,24, mystery, climb,10.625,22.375,False,False,55,32
+28,25, about, in,14.9375,14.6875,False,False,55,32
+28,26, quiet, our,24.375,20.75,False,False,55,32
+28,27, unm, thoughts,16.125,18.875,False,False,55,32
+28,28,ysterious, to,7.40625,18.375,False,False,55,32
+28,29, green, reach,17.25,22.5,False,False,55,32
+28,30, g, her,0.582031,25.625,False,False,55,32
+28,31,ables, height,0.203125,20.375,False,False,55,32
+28,32, good,<|im_end|>,20.25,19.125,False,False,55,32
+28,33, evening,"
+",15.25,29.625,False,False,55,32
+28,34, r,<|im_start|>,14.9375,29.75,False,False,55,32
+28,35,achel,You,0.017456,19.375,False,False,55,32
+28,36, mar,<|im_end|>,25.375,20.125,False,False,55,32
+28,37,illa,"
+",14.0625,38.0,False,False,55,32
+28,38, said,<|im_start|>,14.8125,33.25,False,False,55,32
+28,39, brisk,"
+",12.9375,15.3125,False,False,55,32
+28,40,ly,<|im_end|>,0.000338,16.75,False,False,55,32
+28,41, this,"
+",18.75,31.875,False,False,55,32
+28,42, is,<|im_start|>,0.062988,35.25,False,False,55,32
+28,43, a,"
+",3.09375,19.75,False,False,55,32
+28,44, real,<think>,11.9375,23.375,False,False,55,32
+28,45, fine,"
+
+",8.0625,19.5,False,False,55,32
+28,46, evening,</think>,13.875,31.125,False,False,55,32
+28,47, isn,"
+
+",14.375,28.625,False,False,55,32
+28,48,'t,Based,0.000198,12.3125,False,False,55,32
+28,49, it, on,3e-06,23.25,False,False,55,32
+28,50, won, the,17.125,18.875,False,False,55,32
+28,51,'t, text,0.078613,17.75,False,False,55,32
+28,52, you, provided,3.75,1.492188,False,False,55,32
+28,53, sit,",",12.0625,23.875,False,False,55,32
+28,54, down, here,2.859375,15.1875,False,False,55,32
+28,55,<|im_end|>, is,1.953125,20.25,False,True,55,32
+29,0,how,i,11.4375,12.1875,True,False,49,
+29,1, are, thought,14.875,18.625,False,False,49,
+29,2, all, i,8.5,14.9375,False,False,49,
+29,3, your,’d,23.125,19.75,False,False,49,
+29,4, folks, leave,11.3125,18.25,False,False,49,
+29,5, something, ev,13.625,12.0625,False,False,49,
+29,6, that,an,6.875,21.5,False,False,49,
+29,7, for,ics,17.375,8.6875,False,False,49,
+29,8, lack, when,10.375,14.0,False,False,49,
+29,9, of, i,0.0,17.875,False,False,49,
+29,10, any, was,14.375,19.0,False,False,49,
+29,11, other, as,9.9375,11.25,False,False,49,
+29,12, name, close,12.8125,18.125,False,False,49,
+29,13, might, as,8.375,19.875,False,False,49,
+29,14, be, to,0.195312,15.0625,False,False,49,
+29,15, called, personal,0.005127,16.75,False,False,49,
+29,16, friendship, trouble,17.25,4.6875,False,False,49,
+29,17, existed, i,13.5625,22.25,False,False,49,
+29,18, and, thought,16.0,23.75,False,False,49,
+29,19, always, i,16.25,24.875,False,False,49,
+29,20, had,’d,3.296875,14.1875,False,False,49,
+29,21, existed, go,0.328125,27.375,False,False,49,
+29,22, between, to,0.482422,23.5,False,False,49,
+29,23, mar, a,7.53125,19.0,False,False,49,
+29,24,illa, school,10.9375,24.375,False,False,49,
+29,25, c, or,27.625,17.5,False,False,49,
+29,26,uth, something,7.625,26.625,False,False,49,
+29,27,bert, in,0.128906,27.0,False,False,49,
+29,28, and, another,0.000106,10.875,False,False,49,
+29,29, miss, **,9.8125,10.875,False,False,49,
+29,30,us, north,3.625,13.625,False,False,49,
+29,31, r, or,6.78125,18.125,False,False,49,
+29,32,achel, **,5.875,23.875,False,False,49,
+29,33, in, south,10.3125,23.625,False,False,49,
+29,34, spite, making,5.65625,10.875,False,False,49,
+29,35, of, ev,7.2e-05,14.6875,False,False,49,
+29,36, or,an,15.375,27.875,False,False,49,
+29,37, perhaps,ics,7.375,12.3125,False,False,49,
+29,38, because, just,0.008423,17.125,False,False,49,
+29,39, of, an,7.0,23.125,False,False,49,
+29,40, their, old,13.0625,22.0,False,False,49,
+29,41, diss, **,18.375,14.75,False,False,49,
+29,42,im, black,2.703125,19.25,False,False,49,
+29,43,ilarity, letter,0.072754,22.25,False,False,49,
+29,44, mar, book,18.375,16.5,False,False,49,
+29,45,illa, stuck,1.148438,16.75,False,False,49,
+29,46, was, in,5.5,19.75,False,False,49,
+29,47, a, the,10.25,10.25,False,False,49,
+29,48, tall, wall,11.8125,11.625,False,False,49,
+29,49,<|im_end|>, of,8.75,27.125,False,True,49,
+30,0,thin,and,28.875,29.125,True,False,49,46
+30,1, woman, finally,13.0,21.25,False,False,49,46
+30,2, with, (,7.21875,19.0,False,False,49,46
+30,3, angles,as,10.25,22.0,False,False,49,46
+30,4, and, he,4.03125,14.75,False,False,49,46
+30,5, without, often,16.0,20.5,False,False,49,46
+30,6, curves, enough,15.75,20.5,False,False,49,46
+30,7, her, does,14.9375,20.125,False,False,49,46
+30,8, dark,),4.21875,22.75,False,False,49,46
+30,9, hair,"
+",10.25,16.625,False,False,49,46
+30,10, showed,and,16.875,25.5,False,False,49,46
+30,11, some, finally,16.125,11.4375,False,False,49,46
+30,12, gray, came,10.375,15.25,False,False,49,46
+30,13, streak, to,11.6875,27.375,False,False,49,46
+30,14,s, your,0.001686,25.25,False,False,49,46
+30,15, and, defense,3.546875,14.0,False,False,49,46
+30,16, was, after,4.34375,8.5625,False,False,49,46
+30,17, always, having,8.625,14.0625,False,False,49,46
+30,18, twisted, been,14.0,20.125,False,False,49,46
+30,19, up, attacked,7.625,16.5,False,False,49,46
+30,20, in, by,5e-06,10.0625,False,False,49,46
+30,21, a, those,5.625,4.15625,False,False,49,46
+30,22, hard, who,11.25,16.625,False,False,49,46
+30,23, little, said,9.4375,14.9375,False,False,49,46
+30,24, knot, he,4.125,33.0,False,False,49,46
+30,25, behind, was,11.0625,27.375,False,False,49,46
+30,26, with, too,16.25,13.1875,False,False,49,46
+30,27, two, much,10.8125,14.4375,False,False,49,46
+30,28, wire, imp,9.4375,13.8125,False,False,49,46
+30,29, hair,ulsive,12.875,17.25,False,False,49,46
+30,30,pins, and,2.671875,25.75,False,False,49,46
+30,31, stuck, imp,9.125,20.0,False,False,49,46
+30,32, aggressively,et,25.0,21.75,False,False,49,46
+30,33, through,uous,15.0625,23.875,False,False,49,46
+30,34, it, in,5.4e-05,14.875,False,False,49,46
+30,35, she, his,12.5625,24.5,False,False,49,46
+30,36, looked, actions,2.46875,22.0,False,False,49,46
+30,37, like, and,9.5,14.5625,False,False,49,46
+30,38, a, opinions,4.625,10.9375,False,False,49,46
+30,39, woman, by,14.4375,17.875,False,False,49,46
+30,40, of, that,0.013672,12.0,False,False,49,46
+30,41, narrow, young,15.25,11.375,False,False,49,46
+30,42, experience, mad,10.8125,17.875,False,False,49,46
+30,43, and,man,15.625,13.5,False,False,49,46
+30,44, rigid, of,12.5,15.6875,False,False,49,46
+30,45, conscience, hers,11.75,16.125,False,False,49,46
+30,46, which,<|im_end|>,19.625,8.375,False,False,49,46
+30,47, she,<|im_end|>,9.6875,21.75,False,False,49,46
+30,48, was,"
+",0.757812,36.25,False,False,49,46
+30,49,<|im_end|>,<|im_start|>,0.001358,22.5,False,True,49,46
+31,0,but,i,4.75,5.0,True,False,65,53
+31,1, there, knew,11.0625,12.625,False,False,65,53
+31,2, was, you,0.029785,13.4375,False,False,65,53
+31,3, a, they,3.5625,4.34375,False,False,65,53
+31,4, saving, said,12.625,20.625,False,False,65,53
+31,5, something, they,12.75,12.375,False,False,65,53
+31,6, about, know,10.375,15.3125,False,False,65,53
+31,7, her, what,7.09375,15.75,False,False,65,53
+31,8, mouth, they,14.0625,14.0,False,False,65,53
+31,9, which, should,9.0625,14.4375,False,False,65,53
+31,10, if, not,14.5625,26.75,False,False,65,53
+31,11, it, know,1.515625,13.9375,False,False,65,53
+31,12, had, i,0.010132,12.6875,False,False,65,53
+31,13, been, wouldn,0.175781,8.9375,False,False,65,53
+31,14, ever,'t,9.75,19.875,False,False,65,53
+31,15, so, dare,11.0,10.75,False,False,65,53
+31,16, slightly, be,2.203125,16.25,False,False,65,53
+31,17, developed, old,10.75,13.3125,False,False,65,53
+31,18, might, enough,9.8125,19.375,False,False,65,53
+31,19, have, i,0.016235,5.15625,False,False,65,53
+31,20, been, have,0.075684,7.28125,False,False,65,53
+31,21, considered, eight,18.125,17.875,False,False,65,53
+31,22, indicative, years,18.375,21.125,False,False,65,53
+31,23, of, their,0.000134,9.125,False,False,65,53
+31,24, a, children,2.984375,15.6875,False,False,65,53
+31,25, sense, are,11.5,16.5,False,False,65,53
+31,26, of, young,2.3e-05,10.6875,False,False,65,53
+31,27, humor, enough,7.46875,14.25,False,False,65,53
+31,28, we, yes,14.125,8.875,False,False,65,53
+31,29,'re, yes,8.1875,20.875,False,False,65,53
+31,30, all, i,3.140625,15.375,False,False,65,53
+31,31, pretty, will,8.625,21.0,False,False,65,53
+31,32, well, not,4.8125,18.125,False,False,65,53
+31,33, said, be,8.9375,10.4375,False,False,65,53
+31,34, miss, talked,9.375,10.125,False,False,65,53
+31,35,us, into,9.625,21.875,False,False,65,53
+31,36, r, being,9.25,16.25,False,False,65,53
+31,37,achel, too,2.109375,16.5,False,False,65,53
+31,38, i, close,8.0625,10.75,False,False,65,53
+31,39, was, to,7.53125,21.125,False,False,65,53
+31,40, kind, them,13.0625,22.375,False,False,65,53
+31,41, of, too,5.34375,10.6875,False,False,65,53
+31,42, afraid, young,10.0,5.8125,False,False,65,53
+31,43, you, to,6.34375,10.0625,False,False,65,53
+31,44, weren, understand,11.5625,20.75,False,False,65,53
+31,45,'t, the,0.000257,16.625,False,False,65,53
+31,46, though, situation,14.5625,13.9375,False,False,65,53
+31,47, when, i,8.25,10.125,False,False,65,53
+31,48, i, am,9.875,21.375,False,False,65,53
+31,49, saw, too,6.78125,17.0,False,False,65,53
+31,50, mat, young,22.375,18.625,False,False,65,53
+31,51,thew, old,1.835938,26.625,False,False,65,53
+31,52, starting, enough,15.8125,19.75,False,False,65,53
+31,53, off,<|im_end|>,10.5,14.5625,False,False,65,53
+31,54, today,"
+",4.96875,25.625,False,False,65,53
+31,55, i, ,13.6875,22.0,False,False,65,53
+31,56, thought,<think>,7.21875,17.0,False,False,65,53
+31,57, maybe,"
+
+",17.125,20.0,False,False,65,53
+31,58, he,</think>,6.71875,27.25,False,False,65,53
+31,59, was,"
+
+",0.058838,23.125,False,False,65,53
+31,60, going,I,7.84375,21.25,False,False,65,53
+31,61, to, was,1.320312,13.9375,False,False,65,53
+31,62, the, a,13.8125,9.3125,False,False,65,53
+31,63, doctor, year,6.65625,12.1875,False,False,65,53
+31,64,'s, older,19.875,12.4375,False,False,65,53
+31,65,<|im_end|>, than,0.018799,17.125,False,True,65,53
+32,0,mar,div,8.4375,8.625,True,False,56,49
+32,1,illa,ined,11.75,21.25,False,False,56,49
+32,2,'s, that,13.6875,17.5,False,False,56,49
+32,3, lips, a,12.125,26.875,False,False,56,49
+32,4, twitch, sudden,8.0625,13.8125,False,False,56,49
+32,5,ed, jump,0.000216,15.375,False,False,56,49
+32,6, understanding, would,24.25,25.625,False,False,56,49
+32,7,ly, cause,18.25,21.125,False,False,56,49
+32,8, she, a,5.9375,18.75,False,False,56,49
+32,9, had, shock,0.011414,11.125,False,False,56,49
+32,10, expected, of,10.8125,20.0,False,False,56,49
+32,11, miss, water,30.25,15.4375,False,False,56,49
+32,12,us, had,4.84375,24.0,False,False,56,49
+32,13, r, he,13.875,22.75,False,False,56,49
+32,14,achel, heard,5.65625,24.625,False,False,56,49
+32,15, up, of,14.5625,22.25,False,False,56,49
+32,16, she, his,16.875,23.875,False,False,56,49
+32,17, had, descent,0.878906,16.75,False,False,56,49
+32,18, known, but,7.34375,15.5,False,False,56,49
+32,19, that, before,16.125,8.75,False,False,56,49
+32,20, the, he,4.28125,12.625,False,False,56,49
+32,21, sight, could,12.625,29.5,False,False,56,49
+32,22, of, do,4e-06,13.375,False,False,56,49
+32,23, mat, anything,22.375,20.125,False,False,56,49
+32,24,thew, he,3.59375,18.25,False,False,56,49
+32,25, ja, was,19.5,18.5,False,False,56,49
+32,26,unting, over,10.625,17.125,False,False,56,49
+32,27, off,thrown,5.40625,23.125,False,False,56,49
+32,28, so, by,7.75,17.375,False,False,56,49
+32,29, un, a,10.25,16.875,False,False,56,49
+32,30,account, sound,11.25,19.5,False,False,56,49
+32,31,ably, of,2.578125,29.25,False,False,56,49
+32,32, would, thunder,2.75,11.625,False,False,56,49
+32,33, be, which,11.8125,20.625,False,False,56,49
+32,34, too, seemed,9.125,13.0,False,False,56,49
+32,35, much, to,2.421875,18.625,False,False,56,49
+32,36, for, bring,7.9e-05,14.0625,False,False,56,49
+32,37, her, with,3.4e-05,22.0,False,False,56,49
+32,38, neighbor, it,25.0,33.0,False,False,56,49
+32,39,'s, such,10.375,22.875,False,False,56,49
+32,40, curiosity, a,10.5,17.5,False,False,56,49
+32,41, oh, shock,16.5,16.625,False,False,56,49
+32,42, no, as,9.0625,24.5,False,False,56,49
+32,43, i, had,28.375,4.25,False,False,56,49
+32,44,'m, not,11.875,28.75,False,False,56,49
+32,45, quite, been,10.9375,18.125,False,False,56,49
+32,46, well, felt,11.5,20.25,False,False,56,49
+32,47, although, for,8.125,14.375,False,False,56,49
+32,48, i, generations,3.453125,19.125,False,False,56,49
+32,49, had,<|im_end|>,9.5,17.875,False,False,56,49
+32,50, a,"
+",0.507812,23.875,False,False,56,49
+32,51, bad,<|im_start|>,8.3125,27.125,False,False,56,49
+32,52, headache,"
+",2.25,20.75,False,False,56,49
+32,53, yesterday,<|im_end|>,6.15625,25.875,False,False,56,49
+32,54, she,"
+",13.875,22.75,False,False,56,49
+32,55, said,<|im_start|>,2.25,30.5,False,False,56,49
+32,56,<|im_end|>,"
+",9.4375,10.5,False,True,56,49
+33,0,mat,have,25.25,25.625,True,False,59,47
+33,1,thew, not,2.84375,21.875,False,False,59,47
+33,2, went, seen,10.25,13.6875,False,False,59,47
+33,3, to, the,5.1875,19.5,False,False,59,47
+33,4, bright, end,14.3125,18.75,False,False,59,47
+33,5, river, of,19.5,29.75,False,False,59,47
+33,6, we, the,11.625,13.4375,False,False,59,47
+33,7,'re, war,10.0,17.75,False,False,59,47
+33,8, getting, and,7.03125,20.625,False,False,59,47
+33,9, a, still,6.6875,12.625,False,False,59,47
+33,10, little, here,2.734375,11.0625,False,False,59,47
+33,11, boy, are,16.75,13.625,False,False,59,47
+33,12, from, princess,12.125,14.25,False,False,59,47
+33,13, an, Alexandra,3.34375,7.875,False,False,59,47
+33,14, orphan, and,16.625,21.375,False,False,59,47
+33,15, asylum, the,12.25,27.375,False,False,59,47
+33,16, in, prince,7.0,16.875,False,False,59,47
+33,17, nova, to,18.5,16.25,False,False,59,47
+33,18, sc, represent,2.203125,24.0,False,False,59,47
+33,19,ot, the,1.046875,29.75,False,False,59,47
+33,20,ia, French,0.00145,18.75,False,False,59,47
+33,21, and, and,0.001633,0.029175,False,False,59,47
+33,22, he, if,11.5625,13.75,False,False,59,47
+33,23,'s, they,0.052002,21.5,False,False,59,47
+33,24, coming, are,6.5625,21.25,False,False,59,47
+33,25, on, able,12.4375,11.6875,False,False,59,47
+33,26, the, to,7.40625,27.25,False,False,59,47
+33,27, train, solve,8.8125,19.75,False,False,59,47
+33,28, tonight, the,20.0,22.25,False,False,59,47
+33,29, if, paradox,11.3125,18.375,False,False,59,47
+33,30, mar, of,22.625,28.375,False,False,59,47
+33,31,illa, love,8.1875,20.5,False,False,59,47
+33,32, had, and,12.8125,26.125,False,False,59,47
+33,33, said, war,15.0625,22.25,False,False,59,47
+33,34, that, to,8.3125,7.5,False,False,59,47
+33,35, mat, solve,12.875,20.0,False,False,59,47
+33,36,thew, it,1.484375,21.75,False,False,59,47
+33,37, had, should,6.09375,12.125,False,False,59,47
+33,38, gone, be,8.375,14.5625,False,False,59,47
+33,39, to, easy,0.194336,14.0,False,False,59,47
+33,40, bright, enough,5.28125,28.375,False,False,59,47
+33,41, river, for,0.001213,26.75,False,False,59,47
+33,42, to, the,6.5,11.625,False,False,59,47
+33,43, meet, princess,3.078125,13.6875,False,False,59,47
+33,44, a, to,0.119141,13.125,False,False,59,47
+33,45, kang, be,14.875,23.875,False,False,59,47
+33,46,aroo, released,0.000824,20.0,False,False,59,47
+33,47, from,<|im_end|>,11.6875,6.375,False,False,59,47
+33,48, australia,"
+",2.90625,33.25,False,False,59,47
+33,49, miss,<|endoftext|>,18.875,19.875,False,False,59,47
+33,50,us,1,7.28125,13.0625,False,False,59,47
+33,51, r, &,10.75,14.6875,False,False,59,47
+33,52,achel,amp,0.945312,25.625,False,False,59,47
+33,53, could,;,13.1875,32.25,False,False,59,47
+33,54, not, ,10.9375,13.9375,False,False,59,47
+33,55, have,2,1.445312,16.0,False,False,59,47
+33,56, been, of,7.84375,12.0,False,False,59,47
+33,57, more, ,3.375,7.75,False,False,59,47
+33,58, astonished,2,14.1875,24.375,False,False,59,47
+33,59,<|im_end|>,<|im_end|>,0.000286,0.359375,False,True,59,47
+34,0,she,and,16.75,17.625,True,False,49,
+34,1, was, in,9.9375,11.9375,False,False,49,
+34,2, actually, that,13.5625,18.125,False,False,49,
+34,3, str, case,10.375,20.125,False,False,49,
+34,4,icken, the,4.65625,24.875,False,False,49,
+34,5, dumb, grey,16.125,10.5625,False,False,49,
+34,6, for, cell,1.046875,12.625,False,False,49,
+34,7, five, was,6.5,19.625,False,False,49,
+34,8, seconds, full,12.75,20.5,False,False,49,
+34,9, it, of,7.375,17.25,False,False,49,
+34,10, was, whims,0.001282,14.25,False,False,49,
+34,11, uns,ical,15.125,22.875,False,False,49,
+34,12,up, ideas,12.6875,26.875,False,False,49,
+34,13,posable, the,9.4375,28.125,False,False,49,
+34,14, that, lion,5.6875,13.875,False,False,49,
+34,15, mar, seemed,25.625,15.9375,False,False,49,
+34,16,illa, to,9.75,29.5,False,False,49,
+34,17, was, have,4.0,21.25,False,False,49,
+34,18, making, infinite,18.625,20.5,False,False,49,
+34,19, fun, life,9.3125,9.75,False,False,49,
+34,20, of, in,5.1e-05,9.875,False,False,49,
+34,21, her, the,1.445312,12.25,False,False,49,
+34,22, but, orange,3.71875,12.0,False,False,49,
+34,23, miss, woods,20.25,11.875,False,False,49,
+34,24,us, the,9.9375,28.625,False,False,49,
+34,25, r, lion,8.6875,9.25,False,False,49,
+34,26,achel, was,4.28125,25.375,False,False,49,
+34,27, was, patient,4.3125,16.25,False,False,49,
+34,28, almost, in,11.625,12.0625,False,False,49,
+34,29, forced, the,10.75,17.25,False,False,49,
+34,30, to, fish,9.2e-05,11.4375,False,False,49,
+34,31, suppose,pool,10.0625,18.625,False,False,49,
+34,32, it, but,3.65625,8.1875,False,False,49,
+34,33, are, there,9.5625,13.875,False,False,49,
+34,34, you, was,0.070801,11.8125,False,False,49,
+34,35, in, one,18.75,11.5,False,False,49,
+34,36, earnest, thing,8.0625,13.375,False,False,49,
+34,37, mar, he,12.5625,15.625,False,False,49,
+34,38,illa, didn,0.120605,23.375,False,False,49,
+34,39, she,'t,10.25,33.0,False,False,49,
+34,40, demanded, want,2.953125,26.625,False,False,49,
+34,41, when, to,9.25,7.6875,False,False,49,
+34,42, voice, know,18.125,14.125,False,False,49,
+34,43, returned, that,13.125,19.25,False,False,49,
+34,44, to, he,5.625,20.0,False,False,49,
+34,45, her, didn,2.25,19.875,False,False,49,
+34,46, yes,'t,8.9375,31.625,False,False,49,
+34,47, of, want,9.9375,20.0,False,False,49,
+34,48, course, to,0.000435,22.875,False,False,49,
+34,49,<|im_end|>, hide,7.9375,18.25,False,True,49,
+35,0,said,said,0.00415,0.004425,True,False,58,58
+35,1, mar, mar,0.022949,0.02124,False,False,58,58
+35,2,illa,illa,0.063965,0.070312,False,False,58,58
+35,3, as, as,9.5e-05,8.8e-05,False,False,58,58
+35,4, if, if,0.000633,0.000557,False,False,58,58
+35,5, getting, getting,0.008057,0.010986,False,False,58,58
+35,6, boys, boys,0.005493,0.006195,False,False,58,58
+35,7, from, from,3.6e-05,4.5e-05,False,False,58,58
+35,8, orphan, orphan,0.002182,0.002991,False,False,58,58
+35,9, asyl, asyl,0.039551,0.032471,False,False,58,58
+35,10,ums,ums,0.001587,0.001129,False,False,58,58
+35,11, in, in,8e-06,1.1e-05,False,False,58,58
+35,12, nova, nova,0.047363,0.041992,False,False,58,58
+35,13, sc, sc,0.022949,0.022461,False,False,58,58
+35,14,ot,ot,0.068848,0.07373,False,False,58,58
+35,15,ia,ia,0.000414,0.000467,False,False,58,58
+35,16, were, were,0.004791,0.004608,False,False,58,58
+35,17, part, part,0.000961,0.001007,False,False,58,58
+35,18, of, of,2e-06,2e-06,False,False,58,58
+35,19, the, the,0.004486,0.00354,False,False,58,58
+35,20, usual, usual,0.056885,0.056885,False,False,58,58
+35,21, spring, spring,0.004852,0.004852,False,False,58,58
+35,22, work, work,0.020142,0.020142,False,False,58,58
+35,23, on, on,1.6e-05,1.6e-05,False,False,58,58
+35,24, any, any,0.000313,0.000313,False,False,58,58
+35,25, well, well,0.003784,0.003784,False,False,58,58
+35,26, regulated, regulated,0.084961,0.084961,False,False,58,58
+35,27, av, av,0.00885,0.00885,False,False,58,58
+35,28,on,on,0.021362,0.021362,False,False,58,58
+35,29,lea,lea,0.064453,0.064453,False,False,58,58
+35,30, farm, farm,0.009949,0.009949,False,False,58,58
+35,31, instead, instead,0.017822,0.017822,False,False,58,58
+35,32, of, of,0.000145,0.000145,False,False,58,58
+35,33, being, being,2.7e-05,2.7e-05,False,False,58,58
+35,34, an, an,0.001045,0.001045,False,False,58,58
+35,35, unheard, unheard,0.029785,0.029785,False,False,58,58
+35,36, of, of,0.013,0.013,False,False,58,58
+35,37, innovation, innovation,0.021729,0.021729,False,False,58,58
+35,38, miss, miss,0.057129,0.057129,False,False,58,58
+35,39,us,us,7.2e-05,7.2e-05,False,False,58,58
+35,40, r, r,0.051758,0.051758,False,False,58,58
+35,41,achel,achel,0.008423,0.008423,False,False,58,58
+35,42, felt, felt,0.018799,0.018799,False,False,58,58
+35,43, that, that,0.001228,0.001228,False,False,58,58
+35,44, she, she,0.004242,0.004242,False,False,58,58
+35,45, had, had,0.008484,0.008484,False,False,58,58
+35,46, received, received,0.004303,0.004303,False,False,58,58
+35,47, a, a,0.006378,0.006378,False,False,58,58
+35,48, severe, severe,0.047119,0.047119,False,False,58,58
+35,49, mental, mental,0.100098,0.100098,False,False,58,58
+35,50, j, j,0.030029,0.030029,False,False,58,58
+35,51,olt,olt,0.052002,0.052002,False,False,58,58
+35,52, she, she,0.003128,0.003128,False,False,58,58
+35,53, thought, thought,0.022705,0.022705,False,False,58,58
+35,54, in, in,1e-05,1e-05,False,False,58,58
+35,55, ex, ex,0.030762,0.030762,False,False,58,58
+35,56,clamation,clamation,0.057861,0.057861,False,False,58,58
+35,57, points, points,0.143555,0.143555,False,False,58,58
+35,58,<|im_end|>,<|im_end|>,0.003006,0.003006,False,True,58,58
+36,0,mar,i,12.6875,12.8125,True,False,35,
+36,1,illa, addressed,12.0,18.0,False,False,35,
+36,2, and, him,9.125,15.0,False,False,35,
+36,3, mat, repeatedly,12.75,17.75,False,False,35,
+36,4,thew, about,5.4375,22.125,False,False,35,
+36,5, c, returning,17.25,16.25,False,False,35,
+36,6,uth, to,9.5,30.875,False,False,35,
+36,7,bert, l,0.229492,20.75,False,False,35,
+36,8, of,ond,14.25,12.9375,False,False,35,
+36,9, all, for,10.5625,13.375,False,False,35,
+36,10, people, the,13.3125,21.125,False,False,35,
+36,11, adopting, money,29.375,20.25,False,False,35,
+36,12, a, of,7.0625,15.0,False,False,35,
+36,13, boy, a,11.75,12.6875,False,False,35,
+36,14, from, healthy,15.9375,14.125,False,False,35,
+36,15, an, and,6.03125,20.875,False,False,35,
+36,16, orphan, happy,0.90625,19.75,False,False,35,
+36,17, asylum, dog,1.09375,15.75,False,False,35,
+36,18, well, and,20.125,14.9375,False,False,35,
+36,19, the, he,12.9375,14.125,False,False,35,
+36,20, world, ev,10.3125,15.125,False,False,35,
+36,21, was,as,4.125,21.875,False,False,35,
+36,22, certainly,ively,9.1875,27.125,False,False,35,
+36,23, turning, replied,9.25,16.875,False,False,35,
+36,24, upside, that,2.234375,29.0,False,False,35,
+36,25, down, he,0.000614,21.875,False,False,35,
+36,26, she, had,17.25,24.875,False,False,35,
+36,27, would, been,7.625,17.375,False,False,35,
+36,28, be, injured,2.453125,16.25,False,False,35,
+36,29, surprised, during,5.65625,21.75,False,False,35,
+36,30, at, the,8.5625,13.375,False,False,35,
+36,31, nothing, crossing,6.1875,19.625,False,False,35,
+36,32, after, and,9.625,13.4375,False,False,35,
+36,33, this, was,6.5625,14.5625,False,False,35,
+36,34, nothing, unable,13.4375,14.375,False,False,35,
+36,35,<|im_end|>, to,8.6875,18.75,False,True,35,
+37,0,what,what,0.001076,0.001579,True,False,49,49
+37,1, on, on,0.00032,0.000225,False,False,49,49
+37,2, earth, earth,0.027466,0.042969,False,False,49,49
+37,3, put, put,0.016846,0.023682,False,False,49,49
+37,4, such, such,0.033691,0.024048,False,False,49,49
+37,5, a, a,8e-05,0.000118,False,False,49,49
+37,6, notion, notion,0.043213,0.039062,False,False,49,49
+37,7, into, into,0.001099,0.001312,False,False,49,49
+37,8, your, your,0.000999,0.001579,False,False,49,49
+37,9, head, head,0.000557,0.000538,False,False,49,49
+37,10, she, she,0.040527,0.040039,False,False,49,49
+37,11, demanded, demanded,0.010986,0.017212,False,False,49,49
+37,12, dis, dis,0.057129,0.050781,False,False,49,49
+37,13,appro,appro,0.096191,0.086426,False,False,49,49
+37,14,ving,ving,3.3e-05,2.5e-05,False,False,49,49
+37,15,ly,ly,0.000538,0.000481,False,False,49,49
+37,16, this, this,0.003616,0.005127,False,False,49,49
+37,17, had, had,0.003754,0.005798,False,False,49,49
+37,18, been, been,0.002487,0.005249,False,False,49,49
+37,19, done, done,7.5e-05,6.4e-05,False,False,49,49
+37,20, without, without,0.001709,0.001602,False,False,49,49
+37,21, her, her,0.000237,0.000205,False,False,49,49
+37,22, advice, advice,0.020996,0.022705,False,False,49,49
+37,23, being, being,0.00238,0.003754,False,False,49,49
+37,24, asked, asked,0.005127,0.004272,False,False,49,49
+37,25, and, and,0.003479,0.001915,False,False,49,49
+37,26, must, must,0.018555,0.016113,False,False,49,49
+37,27, per, per,0.002426,0.004089,False,False,49,49
+37,28,force,force,0.046387,0.046387,False,False,49,49
+37,29, be, be,1e-05,1e-05,False,False,49,49
+37,30, dis, dis,0.017212,0.017212,False,False,49,49
+37,31,approved,approved,0.013428,0.013428,False,False,49,49
+37,32, well, well,0.006195,0.006195,False,False,49,49
+37,33, we, we,0.001175,0.001175,False,False,49,49
+37,34,'ve,'ve,0.016602,0.016602,False,False,49,49
+37,35, been, been,0.004089,0.004089,False,False,49,49
+37,36, thinking, thinking,0.007568,0.007568,False,False,49,49
+37,37, about, about,0.01239,0.01239,False,False,49,49
+37,38, it, it,0.014648,0.014648,False,False,49,49
+37,39, for, for,0.03418,0.03418,False,False,49,49
+37,40, some, some,0.004486,0.004486,False,False,49,49
+37,41, time, time,4.8e-05,4.8e-05,False,False,49,49
+37,42, all, all,0.016235,0.016235,False,False,49,49
+37,43, winter, winter,0.025024,0.025024,False,False,49,49
+37,44, in, in,0.001564,0.001564,False,False,49,49
+37,45, fact, fact,0.001259,0.001259,False,False,49,49
+37,46, returned, returned,0.014648,0.014648,False,False,49,49
+37,47, mar, mar,0.003998,0.003998,False,False,49,49
+37,48,illa,illa,0.015137,0.015137,False,False,49,49
+37,49,<|im_end|>,<|im_end|>,0.001556,0.001556,False,True,49,49
+38,0,miss,everyone,11.125,11.25,True,False,34,34
+38,1,us, would,0.071289,17.5,False,False,34,34
+38,2, alex, think,8.75,26.375,False,False,34,34
+38,3,ander, of,0.062988,22.875,False,False,34,34
+38,4, sp, it,11.5625,23.125,False,False,34,34
+38,5,encer, thus,4.625,21.0,False,False,34,34
+38,6, was, others,8.9375,13.625,False,False,34,34
+38,7, up, might,12.3125,20.375,False,False,34,34
+38,8, here, think,9.625,14.75,False,False,34,34
+38,9, one, otherwise,14.1875,16.0,False,False,34,34
+38,10, day, but,2.890625,15.875,False,False,34,34
+38,11, before, you,19.875,12.5625,False,False,34,34
+38,12, christmas, are,10.5625,16.75,False,False,34,34
+38,13, and, not,0.080078,16.375,False,False,34,34
+38,14, she, like,12.6875,12.625,False,False,34,34
+38,15, said, that,0.116211,19.625,False,False,34,34
+38,16, she, nice,0.106934,10.0,False,False,34,34
+38,17, was, gentle,14.0625,16.625,False,False,34,34
+38,18, going, lady,0.400391,13.25,False,False,34,34
+38,19, to, we,0.005463,7.84375,False,False,34,34
+38,20, get, thought,11.375,18.375,False,False,34,34
+38,21, a, of,9.0625,18.25,False,False,34,34
+38,22, little, it,1.53125,9.375,False,False,34,34
+38,23, girl, with,8.625,18.75,False,False,34,34
+38,24, from, you,7.09375,16.625,False,False,34,34
+38,25, the, in,9.25,14.4375,False,False,34,34
+38,26, asylum, mind,8.5,21.875,False,False,34,34
+38,27, over, we,12.25,20.5,False,False,34,34
+38,28, in, should,0.453125,17.0,False,False,34,34
+38,29, hop, not,9.4375,13.3125,False,False,34,34
+38,30,eton, have,7.5625,21.75,False,False,34,34
+38,31, in, been,8.3125,11.1875,False,False,34,34
+38,32, the, so,4.9375,12.375,False,False,34,34
+38,33, spring, surprised,9.25,16.0,False,False,34,34
+38,34,<|im_end|>,<|im_end|>,12.3125,0.160156,False,True,34,34
+39,0,so,i,12.125,11.8125,True,False,66,46
+39,1, mat, was,23.625,18.875,False,False,66,46
+39,2,thew, surprised,1.257812,16.875,False,False,66,46
+39,3, and, to,8e-05,5.6875,False,False,66,46
+39,4, i, find,4.9375,15.5,False,False,66,46
+39,5, have, my,14.8125,19.125,False,False,66,46
+39,6, talked, whole,9.4375,14.875,False,False,66,46
+39,7, it, sl,12.0,13.8125,False,False,66,46
+39,8, over,umber,12.0,21.5,False,False,66,46
+39,9, off, broken,16.5,14.9375,False,False,66,46
+39,10, and, a,8.75,7.40625,False,False,66,46
+39,11, on, dozen,7.71875,12.4375,False,False,66,46
+39,12, ever, times,7.71875,14.375,False,False,66,46
+39,13, since, a,8.4e-05,8.3125,False,False,66,46
+39,14, we, region,0.05127,12.75,False,False,66,46
+39,15, thought, of,22.625,12.875,False,False,66,46
+39,16, we, pan,17.5,11.875,False,False,66,46
+39,17,'d,em,10.0625,13.4375,False,False,66,46
+39,18, get, absolute,12.9375,11.125,False,False,66,46
+39,19, a, inund,8.5625,9.0625,False,False,66,46
+39,20, boy,ated,15.1875,37.5,False,False,66,46
+39,21, mat, with,20.875,30.375,False,False,66,46
+39,22,thew, activity,0.00024,24.375,False,False,66,46
+39,23, is, i,21.25,11.625,False,False,66,46
+39,24, getting, heard,12.5,16.25,False,False,66,46
+39,25, up, the,6.40625,14.125,False,False,66,46
+39,26, in, shouts,2.6875,13.25,False,False,66,46
+39,27, years, of,1.625,24.875,False,False,66,46
+39,28, you, thy,12.5625,12.4375,False,False,66,46
+39,29, know,go,5.71875,16.0,False,False,66,46
+39,30, he, d,0.337891,12.25,False,False,66,46
+39,31,'s,ind,15.0625,6.8125,False,False,66,46
+39,32, sixty,ot,10.4375,16.875,False,False,66,46
+39,33, and,'s,13.75,8.125,False,False,66,46
+39,34, he, shouts,6.5625,14.0625,False,False,66,46
+39,35, isn, of,14.3125,33.25,False,False,66,46
+39,36,'t, excitement,0.000334,16.5,False,False,66,46
+39,37, so, my,11.5,12.25,False,False,66,46
+39,38, spr, mother,9.875,16.5,False,False,66,46
+39,39,y,'s,0.570312,29.5,False,False,66,46
+39,40, as, excited,1e-06,11.6875,False,False,66,46
+39,41, he, talks,5.5,16.125,False,False,66,46
+39,42, once, about,17.625,15.75,False,False,66,46
+39,43, was, ery,0.000511,12.5625,False,False,66,46
+39,44, his,th,10.125,22.25,False,False,66,46
+39,45, heart,rum,13.625,20.125,False,False,66,46
+39,46, troubles,<|im_end|>,16.625,15.75,False,False,66,46
+39,47, him,"
+",14.5,24.625,False,False,66,46
+39,48, a, ii,6.1875,3.78125,False,False,66,46
+39,49, good, ii,0.007416,12.625,False,False,66,46
+39,50, deal, ii,5.4e-05,18.125,False,False,66,46
+39,51, and, ii,9.3125,7.21875,False,False,66,46
+39,52, you, ii,7.375,9.9375,False,False,66,46
+39,53, know, ii,6.75,13.3125,False,False,66,46
+39,54, how,<|im_end|>,8.0625,10.3125,False,False,66,46
+39,55, desperate,"
+",15.5625,26.625,False,False,66,46
+39,56, hard, ,29.875,17.875,False,False,66,46
+39,57, it,<|im_end|>,6.59375,12.4375,False,False,66,46
+39,58,'s,"
+",9.25,26.75,False,False,66,46
+39,59, got, {,6.5,23.875,False,False,66,46
+39,60, to, post,0.002792,5.34375,False,False,66,46
+39,61, be,script,3e-06,19.5,False,False,66,46
+39,62, to, },20.25,7.34375,False,False,66,46
+39,63, get, in,3.5,19.25,False,False,66,46
+39,64, hired, this,20.5,23.125,False,False,66,46
+39,65, help, sleep,12.6875,15.6875,False,False,66,46
+39,66,<|im_end|>,less,0.24707,12.0,False,True,66,46
+40,0,there,little,8.5625,8.75,True,False,60,44
+40,1,'s, heap,22.75,11.8125,False,False,60,44
+40,2, never, of,21.125,28.375,False,False,60,44
+40,3, anybody, toys,19.375,17.625,False,False,60,44
+40,4, to, on,0.186523,12.0625,False,False,60,44
+40,5, be, the,8.1875,25.125,False,False,60,44
+40,6, had, table,7.46875,22.875,False,False,60,44
+40,7, but, in,17.125,15.75,False,False,60,44
+40,8, those, the,11.1875,20.125,False,False,60,44
+40,9, stupid, hall,18.375,15.5625,False,False,60,44
+40,10, half, here,14.625,12.8125,False,False,60,44
+40,11, grown, by,10.0,17.375,False,False,60,44
+40,12, little, here,10.0625,8.1875,False,False,60,44
+40,13, french, a,23.125,22.75,False,False,60,44
+40,14, boys, toy,5.09375,13.875,False,False,60,44
+40,15, and, sword,4.1875,13.0,False,False,60,44
+40,16, as, a,15.4375,13.25,False,False,60,44
+40,17, soon, toy,9.8125,11.875,False,False,60,44
+40,18, as, sheep,2.3e-05,12.8125,False,False,60,44
+40,19, you, and,13.0,14.375,False,False,60,44
+40,20, do, a,13.25,22.5,False,False,60,44
+40,21, get, very,17.125,13.75,False,False,60,44
+40,22, one, dis,4.3125,9.8125,False,False,60,44
+40,23, broke,fig,19.25,15.625,False,False,60,44
+40,24, into,ured,10.3125,34.25,False,False,60,44
+40,25, your, little,2.78125,15.375,False,False,60,44
+40,26, ways, toy,12.1875,14.8125,False,False,60,44
+40,27, and, cross,4.28125,8.5,False,False,60,44
+40,28, taught, not,11.3125,16.625,False,False,60,44
+40,29, something, to,14.5,16.875,False,False,60,44
+40,30, he, be,12.625,17.625,False,False,60,44
+40,31,'s, left,6.8125,20.5,False,False,60,44
+40,32, up, behind,7.53125,14.6875,False,False,60,44
+40,33, and, i,1.703125,3.1875,False,False,60,44
+40,34, off, will,11.625,13.75,False,False,60,44
+40,35, to, go,16.375,11.75,False,False,60,44
+40,36, the, down,2.546875,17.25,False,False,60,44
+40,37, lobster, and,16.25,29.375,False,False,60,44
+40,38, can, see,12.875,21.375,False,False,60,44
+40,39,ner, them,22.25,29.625,False,False,60,44
+40,40,ies, all,21.25,20.875,False,False,60,44
+40,41, or, off,6.03125,7.90625,False,False,60,44
+40,42, the, she,4.0625,9.0625,False,False,60,44
+40,43, states, began,18.125,17.875,False,False,60,44
+40,44, at,<|im_end|>,10.9375,10.9375,False,False,60,44
+40,45, first,"
+",10.6875,29.625,False,False,60,44
+40,46, mat,<|im_start|>,15.25,23.5,False,False,60,44
+40,47,thew,"
+",3.65625,19.0,False,False,60,44
+40,48, suggested,```,14.25,21.25,False,False,60,44
+40,49, getting,<|endoftext|>,11.3125,16.75,False,False,60,44
+40,50, a,<|im_start|>,5.84375,23.125,False,False,60,44
+40,51, home,away,4.84375,18.375,False,False,60,44
+40,52, boy,",",7.4375,18.625,False,False,60,44
+40,53, but, i,11.875,12.625,False,False,60,44
+40,54, i, took,5.75,12.5625,False,False,60,44
+40,55, said, a,13.5,14.0,False,False,60,44
+40,56, no, short,8.3125,9.6875,False,False,60,44
+40,57, flat, stroll,15.5625,13.9375,False,False,60,44
+40,58, to, through,6.59375,3.859375,False,False,60,44
+40,59, that, the,3.875,10.5625,False,False,60,44
+40,60,<|im_end|>, back,0.003967,8.1875,False,True,60,44
+41,0,they,they,0.005249,0.00473,True,False,59,59
+41,1, may, may,0.001213,0.001099,False,False,59,59
+41,2, be, be,9.8e-05,6.7e-05,False,False,59,59
+41,3, all, all,0.003006,0.002197,False,False,59,59
+41,4, right, right,0.001228,0.000893,False,False,59,59
+41,5, i, i,0.001244,0.001137,False,False,59,59
+41,6,'m,'m,0.009888,0.009827,False,False,59,59
+41,7, not, not,0.001701,0.001541,False,False,59,59
+41,8, saying, saying,0.011658,0.011841,False,False,59,59
+41,9, they, they,0.001762,0.001701,False,False,59,59
+41,10,'re,'re,0.000145,0.000166,False,False,59,59
+41,11, not, not,0.000177,0.000169,False,False,59,59
+41,12, but, but,0.001717,0.002289,False,False,59,59
+41,13, no, no,0.002808,0.003204,False,False,59,59
+41,14, london, london,0.024902,0.0271,False,False,59,59
+41,15, street, street,0.005066,0.005463,False,False,59,59
+41,16, ar, ar,0.003265,0.002991,False,False,59,59
+41,17,abs,abs,0.023926,0.02478,False,False,59,59
+41,18, for, for,0.000252,0.000167,False,False,59,59
+41,19, me, me,0.018066,0.01001,False,False,59,59
+41,20, i, i,0.000483,0.000355,False,False,59,59
+41,21, said, said,0.001091,0.001389,False,False,59,59
+41,22, give, give,0.00238,0.002625,False,False,59,59
+41,23, me, me,0.000372,0.000349,False,False,59,59
+41,24, a, a,0.002029,0.001953,False,False,59,59
+41,25, native, native,0.005737,0.00531,False,False,59,59
+41,26, born, born,0.005676,0.004486,False,False,59,59
+41,27, at, at,0.000542,0.000496,False,False,59,59
+41,28, least, least,0.000227,0.000216,False,False,59,59
+41,29, there, there,0.001999,0.001953,False,False,59,59
+41,30,'ll,'ll,0.003571,0.002594,False,False,59,59
+41,31, be, be,0.000104,0.000104,False,False,59,59
+41,32, a, a,0.000927,0.000454,False,False,59,59
+41,33, risk, risk,0.019165,0.018311,False,False,59,59
+41,34, no, no,0.007263,0.005005,False,False,59,59
+41,35, matter, matter,0.009521,0.008362,False,False,59,59
+41,36, who, who,0.005585,0.005585,False,False,59,59
+41,37, we, we,0.000275,0.000275,False,False,59,59
+41,38, get, get,0.001984,0.001984,False,False,59,59
+41,39, but, but,0.000641,0.000641,False,False,59,59
+41,40, i, i,1.3e-05,1.3e-05,False,False,59,59
+41,41,'ll,'ll,0.004974,0.004974,False,False,59,59
+41,42, feel, feel,0.005798,0.005798,False,False,59,59
+41,43, easier, easier,0.039062,0.039062,False,False,59,59
+41,44, in, in,0.000471,0.000471,False,False,59,59
+41,45, my, my,0.002869,0.002869,False,False,59,59
+41,46, mind, mind,0.005615,0.005615,False,False,59,59
+41,47, and, and,0.002136,0.002136,False,False,59,59
+41,48, sleep, sleep,0.007935,0.007935,False,False,59,59
+41,49, sound, sound,0.049805,0.049805,False,False,59,59
+41,50,er,er,0.012451,0.012451,False,False,59,59
+41,51, at, at,0.008179,0.008179,False,False,59,59
+41,52, nights, nights,0.013184,0.013184,False,False,59,59
+41,53, if, if,0.00238,0.00238,False,False,59,59
+41,54, we, we,0.000725,0.000725,False,False,59,59
+41,55, get, get,0.000383,0.000383,False,False,59,59
+41,56, a, a,3.1e-05,3.1e-05,False,False,59,59
+41,57, born, born,0.014404,0.014404,False,False,59,59
+41,58, canadian, canadian,0.078613,0.078613,False,False,59,59
+41,59,<|im_end|>,<|im_end|>,0.000145,0.000145,False,True,59,59
+42,0,so,and,18.0,18.0,True,False,69,51
+42,1, in, although,15.125,10.4375,False,False,69,51
+42,2, the, she,0.871094,13.5,False,False,69,51
+42,3, end, had,7.75,23.375,False,False,69,51
+42,4, we, never,11.9375,20.5,False,False,69,51
+42,5, decided, been,9.3125,14.8125,False,False,69,51
+42,6, to, long,5.6875,6.71875,False,False,69,51
+42,7, ask, in,11.1875,22.75,False,False,69,51
+42,8, miss, known,20.375,15.6875,False,False,69,51
+42,9,us, adversity,0.964844,19.5,False,False,69,51
+42,10, sp, she,13.5625,23.125,False,False,69,51
+42,11,encer, had,2.90625,27.375,False,False,69,51
+42,12, to, received,2.578125,9.75,False,False,69,51
+42,13, pick, a,24.75,21.375,False,False,69,51
+42,14, us, great,12.0625,18.0,False,False,69,51
+42,15, out, benefit,9.875,9.1875,False,False,69,51
+42,16, one, in,7.0,19.375,False,False,69,51
+42,17, when, the,8.75,13.5,False,False,69,51
+42,18, she, father,5.59375,14.25,False,False,69,51
+42,19, went, love,3.515625,16.125,False,False,69,51
+42,20, over, which,7.0625,11.4375,False,False,69,51
+42,21, to, she,2.1875,14.8125,False,False,69,51
+42,22, get, felt,12.8125,21.125,False,False,69,51
+42,23, her, not,3.96875,14.0625,False,False,69,51
+42,24, little, though,3.0,15.125,False,False,69,51
+42,25, girl, she,2.546875,22.375,False,False,69,51
+42,26, we, knew,9.8125,15.875,False,False,69,51
+42,27, heard, not,11.75,21.75,False,False,69,51
+42,28, last, how,25.375,30.125,False,False,69,51
+42,29, week, the,4.46875,23.75,False,False,69,51
+42,30, she, got,4.5625,16.875,False,False,69,51
+42,31, was, i,0.458984,13.3125,False,False,69,51
+42,32, going, leave,13.3125,19.375,False,False,69,51
+42,33, so, my,22.25,14.9375,False,False,69,51
+42,34, we, small,0.408203,10.3125,False,False,69,51
+42,35, sent, savings,18.5,15.875,False,False,69,51
+42,36, her, thus,0.013245,14.75,False,False,69,51
+42,37, word, as,18.0,27.375,False,False,69,51
+42,38, by, to,4.5,11.5,False,False,69,51
+42,39, rich, give,11.1875,17.875,False,False,69,51
+42,40,ard, you,0.145508,19.375,False,False,69,51
+42,41, sp, a,16.375,27.125,False,False,69,51
+42,42,encer, better,0.03064,16.375,False,False,69,51
+42,43,'s, memory,13.6875,17.625,False,False,69,51
+42,44, folks, of,12.5,31.375,False,False,69,51
+42,45, at, me,17.25,19.25,False,False,69,51
+42,46, car, than,11.0625,22.0,False,False,69,51
+42,47,m, love,12.6875,18.75,False,False,69,51
+42,48,ody, would,1.171875,20.625,False,False,69,51
+42,49, to, keep,9.3125,8.9375,False,False,69,51
+42,50, bring,\n,12.75,19.875,False,False,69,51
+42,51, us,<|im_end|>,6.3125,21.75,False,False,69,51
+42,52, a,"
+",17.125,29.875,False,False,69,51
+42,53, smart,<|im_start|>,7.46875,37.75,False,False,69,51
+42,54, likely,"
+",17.0,16.875,False,False,69,51
+42,55, boy,<|im_start|>,2.953125,29.875,False,False,69,51
+42,56, of,"
+",3.6875,31.75,False,False,69,51
+42,57, about, ,7.78125,26.75,False,False,69,51
+42,58, ten,2,7.6875,18.25,False,False,69,51
+42,59, or,<|im_end|>,11.875,12.5,False,False,69,51
+42,60, eleven,"
+",0.511719,37.25,False,False,69,51
+42,61, we,<|im_start|>,13.9375,31.75,False,False,69,51
+42,62, decided,"
+",11.25,30.375,False,False,69,51
+42,63, that,<|im_start|>,16.25,18.375,False,False,69,51
+42,64, would,"
+",6.40625,23.5,False,False,69,51
+42,65, be,<think>,0.004517,14.625,False,False,69,51
+42,66, the,"
+
+",11.0625,25.25,False,False,69,51
+42,67, best,</think>,5.9375,27.125,False,False,69,51
+42,68, age,"
+
+",12.0625,28.75,False,False,69,51
+42,69,<|im_end|>,Based,0.002396,12.3125,False,True,69,51
+43,0,old,he,12.6875,12.5625,True,False,60,48
+43,1, enough, was,7.71875,17.0,False,False,60,48
+43,2, to, not,0.004089,14.9375,False,False,60,48
+43,3, be, sure,0.000105,17.25,False,False,60,48
+43,4, of, that,14.875,4.875,False,False,60,48
+43,5, some, his,11.0625,10.1875,False,False,60,48
+43,6, use, ancient,11.875,13.125,False,False,60,48
+43,7, in, custom,13.0625,14.4375,False,False,60,48
+43,8, doing, had,14.75,20.375,False,False,60,48
+43,9, chores, been,13.4375,20.625,False,False,60,48
+43,10, right, followed,28.375,14.125,False,False,60,48
+43,11, off, these,12.125,18.25,False,False,60,48
+43,12, and, thoughts,12.125,10.0,False,False,60,48
+43,13, young, were,10.5625,18.75,False,False,60,48
+43,14, enough, too,7.71875,8.0,False,False,60,48
+43,15, to, earnest,0.017212,14.6875,False,False,60,48
+43,16, be, for,0.960938,26.0,False,False,60,48
+43,17, trained, a,11.125,28.375,False,False,60,48
+43,18, up, simple,12.9375,28.75,False,False,60,48
+43,19, proper, pl,10.4375,14.0625,False,False,60,48
+43,20, we,ough,14.625,19.125,False,False,60,48
+43,21, mean,man,12.5625,28.75,False,False,60,48
+43,22, to, pl,8.625,5.03125,False,False,60,48
+43,23, give,ente,19.0,14.75,False,False,60,48
+43,24, him,ous,2.453125,21.125,False,False,60,48
+43,25, a, domestic,0.166016,13.125,False,False,60,48
+43,26, good,ity,7.9375,12.375,False,False,60,48
+43,27, home, and,10.875,15.0625,False,False,60,48
+43,28, and, extensive,7.2e-05,12.6875,False,False,60,48
+43,29, schooling, office,15.1875,13.875,False,False,60,48
+43,30, we, employment,10.5625,15.25,False,False,60,48
+43,31, had, gave,7.4375,5.59375,False,False,60,48
+43,32, a, them,4.5625,6.96875,False,False,60,48
+43,33, telegram, substance,15.625,20.625,False,False,60,48
+43,34, from, the,0.132812,13.1875,False,False,60,48
+43,35, miss, first,16.625,11.9375,False,False,60,48
+43,36,us, min,12.75,16.875,False,False,60,48
+43,37, alex,st,16.875,16.125,False,False,60,48
+43,38,ander,rels,0.196289,18.75,False,False,60,48
+43,39, sp, were,13.4375,20.125,False,False,60,48
+43,40,encer, first,11.75,20.25,False,False,60,48
+43,41, today, bowed,16.5,13.3125,False,False,60,48
+43,42, the, and,9.8125,10.6875,False,False,60,48
+43,43, mail, turned,12.25,15.875,False,False,60,48
+43,44, man, the,8.375,20.5,False,False,60,48
+43,45, brought, page,3.265625,18.375,False,False,60,48
+43,46, it, of,0.008484,13.125,False,False,60,48
+43,47, from, history,7.71875,16.875,False,False,60,48
+43,48, the,<|im_end|>,0.006378,11.4375,False,False,60,48
+43,49, station,<|im_end|>,14.5,29.625,False,False,60,48
+43,50, saying,"
+",16.0,19.375,False,False,60,48
+43,51, they,<|im_start|>,11.75,34.0,False,False,60,48
+43,52, were,assistant,1.234375,14.9375,False,False,60,48
+43,53, coming,"
+",3.375,22.375,False,False,60,48
+43,54, on,<think>,9.625,29.75,False,False,60,48
+43,55, the,"
+
+",0.020142,21.0,False,False,60,48
+43,56, five,</think>,10.875,28.5,False,False,60,48
+43,57, thirty,"
+
+",10.3125,35.0,False,False,60,48
+43,58, train,That,3.484375,19.625,False,False,60,48
+43,59, tonight, is,9.4375,15.1875,False,False,60,48
+43,60,<|im_end|>, a,0.302734,11.0625,False,True,60,48
+44,0,so,but,8.4375,8.6875,True,False,58,45
+44,1, mat, in,20.125,17.375,False,False,58,45
+44,2,thew, the,1.929688,15.75,False,False,58,45
+44,3, went, midst,16.5,15.0625,False,False,58,45
+44,4, to, of,2.6875,21.75,False,False,58,45
+44,5, bright, the,26.625,30.5,False,False,58,45
+44,6, river, wandering,5.53125,7.5,False,False,58,45
+44,7, to, clouds,7.3125,14.75,False,False,58,45
+44,8, meet, and,5.0,25.625,False,False,58,45
+44,9, him, mist,6.28125,15.0,False,False,58,45
+44,10, miss, of,11.375,30.125,False,False,58,45
+44,11,us, monsters,0.671875,19.75,False,False,58,45
+44,12, sp, and,10.8125,31.875,False,False,58,45
+44,13,encer, serp,0.287109,18.625,False,False,58,45
+44,14, will,ents,12.5,34.5,False,False,58,45
+44,15, drop, and,12.0,36.5,False,False,58,45
+44,16, him, other,1.617188,12.625,False,False,58,45
+44,17, off, strange,9.0625,13.5625,False,False,58,45
+44,18, there, and,0.242188,19.125,False,False,58,45
+44,19, of, wonderful,10.75,17.0,False,False,58,45
+44,20, course, creatures,0.000107,21.0,False,False,58,45
+44,21, she, one,6.125,14.375,False,False,58,45
+44,22, goes, can,22.0,18.25,False,False,58,45
+44,23, on, trace,10.1875,12.375,False,False,58,45
+44,24, to, the,7.1875,14.25,False,False,58,45
+44,25, white, course,13.125,17.25,False,False,58,45
+44,26, sands, of,11.125,41.0,False,False,58,45
+44,27, station, the,17.25,17.875,False,False,58,45
+44,28, herself, fug,18.5,12.5625,False,False,58,45
+44,29, miss,itive,20.75,23.0,False,False,58,45
+44,30,us, band,6.5e-05,19.875,False,False,58,45
+44,31, r, of,11.375,30.625,False,False,58,45
+44,32,achel, men,2.234375,18.375,False,False,58,45
+44,33, pr, and,14.5625,20.5,False,False,58,45
+44,34,ided, women,8.1875,28.375,False,False,58,45
+44,35, herself, who,0.002518,26.75,False,False,58,45
+44,36, on, came,0.000267,8.9375,False,False,58,45
+44,37, always, out,11.8125,27.375,False,False,58,45
+44,38, speaking, after,6.40625,19.0,False,False,58,45
+44,39, her, the,17.375,8.6875,False,False,58,45
+44,40, mind, mountain,5.0,12.6875,False,False,58,45
+44,41, she, pass,12.875,11.9375,False,False,58,45
+44,42, proceeded,\n,10.25,21.25,False,False,58,45
+44,43, to,\n,0.000366,20.625,False,False,58,45
+44,44, speak,\n,7.125,25.125,False,False,58,45
+44,45, it,<|im_end|>,11.75,21.75,False,False,58,45
+44,46, now,"
+",11.8125,38.0,False,False,58,45
+44,47, having,<|im_start|>,22.875,28.625,False,False,58,45
+44,48, adjusted,"
+",11.9375,21.125,False,False,58,45
+44,49, her,<|im_end|>,4.3125,20.25,False,False,58,45
+44,50, mental,"
+",15.875,38.0,False,False,58,45
+44,51, attitude,<|im_start|>,11.8125,27.125,False,False,58,45
+44,52, to,"
+",3.65625,26.0,False,False,58,45
+44,53, this,in,3.984375,21.25,False,False,58,45
+44,54, amazing, the,6.59375,23.0,False,False,58,45
+44,55, piece, fields,9.8125,20.625,False,False,58,45
+44,56, of, and,0.000166,4.625,False,False,58,45
+44,57, news, me,15.0625,20.75,False,False,58,45
+44,58,<|im_end|>,adows,0.001213,19.5,False,True,58,45
+45,0,well,and,12.1875,11.75,True,False,67,59
+45,1, mar, had,10.5625,17.375,False,False,67,59
+45,2,illa, he,9.5,22.5,False,False,67,59
+45,3, i, lived,23.75,12.5625,False,False,67,59
+45,4,'ll, see,12.0,24.125,False,False,67,59
+45,5, just, how,13.5625,12.875,False,False,67,59
+45,6, tell, they,14.5,18.125,False,False,67,59
+45,7, you, had,2.71875,16.75,False,False,67,59
+45,8, plain, fun,19.0,16.5,False,False,67,59
+45,9, that,!,11.375,17.0,False,False,67,59
+45,10, i,�,2.0625,15.375,False,False,67,59
+45,11, think,�,28.0,20.0,False,False,67,59
+45,12, you, sighed,5.78125,9.1875,False,False,67,59
+45,13,'re, b,8.3125,17.0,False,False,67,59
+45,14, doing,illy,8.9375,16.375,False,False,67,59
+45,15, a, g,3.65625,9.0625,False,False,67,59
+45,16, mighty,ory,7.875,13.5,False,False,67,59
+45,17, foolish, then,4.90625,10.125,False,False,67,59
+45,18, thing, came,0.008667,12.9375,False,False,67,59
+45,19, a, a,12.3125,0.435547,False,False,67,59
+45,20, risky, word,16.875,21.25,False,False,67,59
+45,21, thing, that,3.3125,27.75,False,False,67,59
+45,22, that, put,9.875,14.875,False,False,67,59
+45,23,'s, an,15.4375,18.75,False,False,67,59
+45,24, what, end,9.0,25.25,False,False,67,59
+45,25, you, to,8.8125,31.875,False,False,67,59
+45,26, don, their,18.875,26.5,False,False,67,59
+45,27,'t, m,0.001984,21.375,False,False,67,59
+45,28, know,err,0.007233,19.25,False,False,67,59
+45,29, what,iment,6.40625,20.625,False,False,67,59
+45,30, you, after,0.085938,9.0625,False,False,67,59
+45,31,'re, had,0.796875,15.125,False,False,67,59
+45,32, getting, been,15.6875,21.0,False,False,67,59
+45,33, you, sent,19.25,13.6875,False,False,67,59
+45,34,'re, for,8.8125,16.5,False,False,67,59
+45,35, bringing, unst,14.0625,13.875,False,False,67,59
+45,36, a,opp,0.259766,14.0,False,False,67,59
+45,37, strange,ably,12.0625,29.0,False,False,67,59
+45,38, child, ab,9.0625,14.6875,False,False,67,59
+45,39, into,ril,0.298828,18.625,False,False,67,59
+45,40, your, came,0.022339,15.0625,False,False,67,59
+45,41, house, up,8.8125,27.25,False,False,67,59
+45,42, and, to,8.4375,7.5625,False,False,67,59
+45,43, home, th,16.25,12.625,False,False,67,59
+45,44, and,omas,9.4375,12.3125,False,False,67,59
+45,45, you, then,7.75,10.8125,False,False,67,59
+45,46, don, came,0.031494,23.5,False,False,67,59
+45,47,'t, the,0.000326,17.75,False,False,67,59
+45,48, know, other,0.000561,20.5,False,False,67,59
+45,49, a, and,20.25,11.9375,False,False,67,59
+45,50, single, in,3.875,18.25,False,False,67,59
+45,51, thing, a,0.037842,20.375,False,False,67,59
+45,52, about, minute,8.625,18.0,False,False,67,59
+45,53, him, or,0.087402,14.125,False,False,67,59
+45,54, nor, two,12.875,24.5,False,False,67,59
+45,55, what, both,1.960938,16.125,False,False,67,59
+45,56, his, were,8.0,18.25,False,False,67,59
+45,57, disposition, home,10.875,27.875,False,False,67,59
+45,58, is, again,0.000687,24.0,False,False,67,59
+45,59, like,<|im_end|>,18.625,23.5,False,False,67,59
+45,60, nor,"
+",12.625,29.625,False,False,67,59
+45,61, what,<|im_start|>,0.059082,18.875,False,False,67,59
+45,62, sort,user,15.0,19.25,False,False,67,59
+45,63, of,<|im_end|>,0.000221,9.5625,False,False,67,59
+45,64, parents,"
+",15.6875,36.5,False,False,67,59
+45,65, he,<|im_start|>,0.000164,41.0,False,False,67,59
+45,66, had,assistant,9.0625,20.25,False,False,67,59
+45,67,<|im_end|>,<|im_start|>,0.636719,11.0625,False,True,67,59
+46,0,nor,will,7.03125,7.1875,True,False,63,46
+46,1, how, always,11.0625,5.3125,False,False,63,46
+46,2, he, do,11.5625,23.5,False,False,63,46
+46,3,'s, what,17.0,27.125,False,False,63,46
+46,4, likely, you,9.8125,21.5,False,False,63,46
+46,5, to, say,0.000492,18.375,False,False,63,46
+46,6, turn, you,11.875,19.75,False,False,63,46
+46,7, out, write,9.875,17.875,False,False,63,46
+46,8, why, when,16.75,17.5,False,False,63,46
+46,9, it, you,14.75,10.5,False,False,63,46
+46,10, was, come,0.613281,21.625,False,False,63,46
+46,11, only, to,12.3125,21.5,False,False,63,46
+46,12, last, school,9.75,17.5,False,False,63,46
+46,13, week, it,0.292969,10.875,False,False,63,46
+46,14, i,'s,9.5625,17.75,False,False,63,46
+46,15, read, a,16.375,21.875,False,False,63,46
+46,16, in, good,4.34375,15.5625,False,False,63,46
+46,17, the, thing,6.0,15.875,False,False,63,46
+46,18, paper, to,1.9375,25.375,False,False,63,46
+46,19, how, have,9.1875,20.75,False,False,63,46
+46,20, a, regular,7.03125,1.265625,False,False,63,46
+46,21, man, writing,12.625,19.5,False,False,63,46
+46,22, and, practice,12.625,3.609375,False,False,63,46
+46,23, his, but,8.0,10.6875,False,False,63,46
+46,24, wife, the,0.132812,19.5,False,False,63,46
+46,25, up, children,16.0,18.0,False,False,63,46
+46,26, west,'s,10.75,20.75,False,False,63,46
+46,27, of, minds,8.1875,14.125,False,False,63,46
+46,28, the, are,3.78125,18.125,False,False,63,46
+46,29, island, going,13.4375,20.875,False,False,63,46
+46,30, took, too,7.65625,18.75,False,False,63,46
+46,31, a, fast,0.107422,21.5,False,False,63,46
+46,32, boy, for,13.9375,20.875,False,False,63,46
+46,33, out, regular,8.625,17.625,False,False,63,46
+46,34, of, lessons,0.15625,15.1875,False,False,63,46
+46,35, an, in,8.125,15.5625,False,False,63,46
+46,36, orphan, writing,3.125,12.5,False,False,63,46
+46,37, asylum, they,3.953125,20.875,False,False,63,46
+46,38, and, would,1.679688,13.9375,False,False,63,46
+46,39, he, often,12.625,15.0625,False,False,63,46
+46,40, set, write,13.25,14.1875,False,False,63,46
+46,41, fire, correct,14.5,17.75,False,False,63,46
+46,42, to, words,1e-06,16.375,False,False,63,46
+46,43, the, but,0.542969,12.0,False,False,63,46
+46,44, house, without,3.875,17.625,False,False,63,46
+46,45, at, letters,10.3125,14.4375,False,False,63,46
+46,46, night,<|im_end|>,21.125,20.25,False,False,63,46
+46,47, set,<|im_end|>,23.25,21.375,False,False,63,46
+46,48, it,"
+",3.4375,29.75,False,False,63,46
+46,49, on,<|im_start|>,2.6e-05,27.5,False,False,63,46
+46,50, purpose,user,0.902344,15.5625,False,False,63,46
+46,51, mar,<|im_end|>,22.125,15.0,False,False,63,46
+46,52,illa,"
+",12.0,25.75,False,False,63,46
+46,53, and,<|im_start|>,6.84375,36.25,False,False,63,46
+46,54, nearly,assistant,15.125,22.375,False,False,63,46
+46,55, burnt,<|im_start|>,11.6875,21.625,False,False,63,46
+46,56, them,user,9.0625,17.25,False,False,63,46
+46,57, to,<|im_end|>,23.125,18.375,False,False,63,46
+46,58, a,"
+",10.5,24.75,False,False,63,46
+46,59, crisp,<|im_start|>,2.625,31.5,False,False,63,46
+46,60, in,user,12.25,27.5,False,False,63,46
+46,61, their,"
+",7.75,23.5,False,False,63,46
+46,62, beds,<|im_end|>,17.25,19.25,False,False,63,46
+46,63,<|im_end|>,"
+",0.011108,14.625,False,True,63,46
+47,0,and,and,0.000309,0.000336,True,False,55,55
+47,1, i, i,0.002777,0.001938,False,False,55,55
+47,2, know, know,0.000854,0.00087,False,False,55,55
+47,3, another, another,0.008118,0.00766,False,False,55,55
+47,4, case, case,0.000492,0.000507,False,False,55,55
+47,5, where, where,0.011108,0.013733,False,False,55,55
+47,6, an, an,7.6e-05,7.6e-05,False,False,55,55
+47,7, adopted, adopted,0.014099,0.015381,False,False,55,55
+47,8, boy, boy,0.003036,0.002441,False,False,55,55
+47,9, used, used,0.00206,0.001381,False,False,55,55
+47,10, to, to,0.001884,0.002029,False,False,55,55
+47,11, suck, suck,0.013123,0.014343,False,False,55,55
+47,12, the, the,0.002457,0.002319,False,False,55,55
+47,13, eggs, eggs,0.003479,0.003677,False,False,55,55
+47,14, they, they,0.00071,0.00061,False,False,55,55
+47,15, couldn, couldn,0.007996,0.00592,False,False,55,55
+47,16,'t,'t,0.000117,0.000103,False,False,55,55
+47,17, break, break,0.001198,0.001007,False,False,55,55
+47,18, him, him,0.000374,0.000362,False,False,55,55
+47,19, of, of,0.000687,0.000633,False,False,55,55
+47,20, it, it,0.001518,0.001335,False,False,55,55
+47,21, if, if,0.002319,0.002579,False,False,55,55
+47,22, you, you,5e-05,3.8e-05,False,False,55,55
+47,23, had, had,0.000458,0.000835,False,False,55,55
+47,24, asked, asked,0.000364,0.000391,False,False,55,55
+47,25, my, my,0.00045,0.000618,False,False,55,55
+47,26, advice, advice,0.011108,0.011292,False,False,55,55
+47,27, in, in,0.003387,0.006622,False,False,55,55
+47,28, the, the,0.002426,0.002655,False,False,55,55
+47,29, matter, matter,0.002365,0.003647,False,False,55,55
+47,30, which, which,0.005707,0.003937,False,False,55,55
+47,31, you, you,0.000977,0.000977,False,False,55,55
+47,32, didn, didn,0.004456,0.00296,False,False,55,55
+47,33,'t,'t,0.000127,8.4e-05,False,False,55,55
+47,34, do, do,0.000359,0.000311,False,False,55,55
+47,35, mar, mar,0.02417,0.025635,False,False,55,55
+47,36,illa,illa,0.02002,0.024292,False,False,55,55
+47,37, i, i,0.00708,0.008118,False,False,55,55
+47,38,'d,'d,0.01355,0.008118,False,False,55,55
+47,39, have, have,0.000664,0.000641,False,False,55,55
+47,40, said, said,0.000702,0.000702,False,False,55,55
+47,41, for, for,0.002045,0.002045,False,False,55,55
+47,42, mercy, mercy,0.008179,0.008179,False,False,55,55
+47,43,'s,'s,0.000256,0.000256,False,False,55,55
+47,44, sake, sake,0.020874,0.020874,False,False,55,55
+47,45, not, not,0.003998,0.003998,False,False,55,55
+47,46, to, to,0.000101,0.000101,False,False,55,55
+47,47, think, think,0.00161,0.00161,False,False,55,55
+47,48, of, of,0.000109,0.000109,False,False,55,55
+47,49, such, such,0.010315,0.010315,False,False,55,55
+47,50, a, a,0.002106,0.002106,False,False,55,55
+47,51, thing, thing,0.011475,0.011475,False,False,55,55
+47,52, that, that,0.021118,0.021118,False,False,55,55
+47,53,'s,'s,0.002213,0.002213,False,False,55,55
+47,54, what, what,0.0047,0.0047,False,False,55,55
+47,55,<|im_end|>,<|im_end|>,0.00383,0.00383,False,True,55,55
+48,0,this,and,7.96875,7.9375,True,False,54,22
+48,1, job, gently,18.875,16.0,False,False,54,22
+48,2,'s, led,9.4375,22.25,False,False,54,22
+48,3, comforting, him,20.75,18.875,False,False,54,22
+48,4, seemed, away,21.625,15.0,False,False,54,22
+48,5, neither, sim,20.625,12.0625,False,False,54,22
+48,6, to,on,10.75,16.625,False,False,54,22
+48,7, offend, returned,9.4375,20.25,False,False,54,22
+48,8, nor, and,1.7e-05,13.6875,False,False,54,22
+48,9, to, held,11.75,12.6875,False,False,54,22
+48,10, alarm, him,8.375,20.875,False,False,54,22
+48,11, mar, close,17.875,27.75,False,False,54,22
+48,12,illa, to,13.9375,23.375,False,False,54,22
+48,13, she, his,11.0625,29.125,False,False,54,22
+48,14, kn, heart,16.625,16.5,False,False,54,22
+48,15,itted, i,1.140625,23.875,False,False,54,22
+48,16, steadily,'ll,12.4375,17.75,False,False,54,22
+48,17, on, go,12.3125,13.4375,False,False,54,22
+48,18, i, with,8.4375,15.9375,False,False,54,22
+48,19, don, you,9.375,25.0,False,False,54,22
+48,20,'t, said,0.000736,14.75,False,False,54,22
+48,21, deny, london,8.25,11.5625,False,False,54,22
+48,22, there,<|im_end|>,6.8125,6.8125,False,False,54,22
+48,23,'s,"
+",0.001144,21.25,False,False,54,22
+48,24, something,<|im_start|>,7.96875,25.625,False,False,54,22
+48,25, in,"
+",5.375,17.75,False,False,54,22
+48,26, what,<think>,12.5625,25.0,False,False,54,22
+48,27, you,"
+",3.890625,27.0,False,False,54,22
+48,28, say,Thinking,0.011108,26.875,False,False,54,22
+48,29, r, Process,14.0625,24.0,False,False,54,22
+48,30,achel,:,3.46875,35.25,False,False,54,22
+48,31, i,"
+
+",3.71875,18.0,False,False,54,22
+48,32,'ve,1,4.96875,26.5,False,False,54,22
+48,33, had,.,10.4375,36.25,False,False,54,22
+48,34, some, ,15.375,34.25,False,False,54,22
+48,35, qual, **,10.875,23.625,False,False,54,22
+48,36,ms,An,1.703125,32.25,False,False,54,22
+48,37, myself,alyze,15.5,25.375,False,False,54,22
+48,38, but, the,13.0625,23.75,False,False,54,22
+48,39, mat, Request,14.375,36.0,False,False,54,22
+48,40,thew,:**,1.5,34.25,False,False,54,22
+48,41, was,"
+",14.5625,26.875,False,False,54,22
+48,42, terrible,   ,8.125,28.5,False,False,54,22
+48,43, set, *,12.3125,29.875,False,False,54,22
+48,44, on,  ,10.8125,39.5,False,False,54,22
+48,45, it, Input,3.09375,26.5,False,False,54,22
+48,46, i,:,9.6875,25.625,False,False,54,22
+48,47, could, A,3.109375,23.5,False,False,54,22
+48,48, see, snippet,7.3125,15.5,False,False,54,22
+48,49, that, of,5.15625,7.875,False,False,54,22
+48,50, so, text,10.25,17.625,False,False,54,22
+48,51, i, containing,10.9375,19.875,False,False,54,22
+48,52, gave," """,7.65625,19.625,False,False,54,22
+48,53, in,Audio,2.5625,20.25,False,False,54,22
+48,54,<|im_end|>,":""",0.080078,21.0,False,True,54,22
+49,0,it,it,1.109375,1.125,True,False,66,38
+49,1,'s, was,22.0,22.125,False,False,66,38
+49,2, so, a,12.0,15.1875,False,False,66,38
+49,3, seldom, trouble,14.0,14.9375,False,False,66,38
+49,4, mat, grande,23.125,17.875,False,False,66,38
+49,5,thew, a,6.25,18.25,False,False,66,38
+49,6, sets, la,17.75,14.25,False,False,66,38
+49,7, his, f,5.53125,11.3125,False,False,66,38
+49,8, mind,ete,6.25,23.875,False,False,66,38
+49,9, on, that,0.353516,13.9375,False,False,66,38
+49,10, anything, she,9.1875,23.0,False,False,66,38
+49,11, that, ne,7.71875,14.6875,False,False,66,38
+49,12, when,ir,7.5625,13.0,False,False,66,38
+49,13, he,plus,1.34375,11.8125,False,False,66,38
+49,14, does, ne,16.25,15.875,False,False,66,38
+49,15, i,ir,12.5,11.4375,False,False,66,38
+49,16, always,plus,3.46875,22.0,False,False,66,38
+49,17, feel, observed,0.00267,8.4375,False,False,66,38
+49,18, it,",",10.8125,9.8125,False,False,66,38
+49,19,'s, and,18.5,23.5,False,False,66,38
+49,20, my, les,12.875,15.875,False,False,66,38
+49,21, duty,lie,2.765625,15.1875,False,False,66,38
+49,22, to, responded,0.000832,14.0625,False,False,66,38
+49,23, give, with,6.96875,14.1875,False,False,66,38
+49,24, in, a,14.75,14.125,False,False,66,38
+49,25, and, cheerful,10.9375,14.3125,False,False,66,38
+49,26, as, n,12.4375,9.75,False,False,66,38
+49,27, for,ods,6.46875,12.4375,False,False,66,38
+49,28, the, and,1.226562,13.25,False,False,66,38
+49,29, risk, a,22.375,17.0,False,False,66,38
+49,30, there, happy,14.4375,13.5625,False,False,66,38
+49,31,'s, laugh,10.5,16.0,False,False,66,38
+49,32, risks, that,15.5625,21.625,False,False,66,38
+49,33, in, made,2.96875,10.6875,False,False,66,38
+49,34, pretty, the,9.6875,21.75,False,False,66,38
+49,35, near, whole,12.5,14.375,False,False,66,38
+49,36, everything, atmosphere,1.75,14.5625,False,False,66,38
+49,37, a, festive,9.4375,13.125,False,False,66,38
+49,38, body,<|im_end|>,10.25,19.0,False,False,66,38
+49,39, does,"
+",0.8125,25.375,False,False,66,38
+49,40, in,<|im_start|>,9.125,26.75,False,False,66,38
+49,41, this,assistant,3.578125,18.75,False,False,66,38
+49,42, world,"
+
+",5.6875,18.625,False,False,66,38
+49,43, there,<think>,16.375,22.0,False,False,66,38
+49,44,'s,"
+",2.09375,19.0,False,False,66,38
+49,45, risks,Thinking,3.984375,22.125,False,False,66,38
+49,46, in, Process,0.033447,18.5,False,False,66,38
+49,47, people,:,10.5625,29.0,False,False,66,38
+49,48,'s,"
+
+",0.875,27.0,False,False,66,38
+49,49, having,1,7.09375,34.5,False,False,66,38
+49,50, children,.,4.6875,35.0,False,False,66,38
+49,51, of, ,10.3125,26.5,False,False,66,38
+49,52, their, **,4.25,29.375,False,False,66,38
+49,53, own,An,1.921875,31.75,False,False,66,38
+49,54, if,alyze,8.625,26.125,False,False,66,38
+49,55, it, the,6.03125,25.125,False,False,66,38
+49,56, comes, Request,8.875,22.0,False,False,66,38
+49,57, to,:**,3.890625,24.625,False,False,66,38
+49,58, that,"
+",0.695312,23.25,False,False,66,38
+49,59, they,   ,17.25,33.5,False,False,66,38
+49,60, don, *,10.8125,35.25,False,False,66,38
+49,61,'t,  ,0.000294,33.25,False,False,66,38
+49,62, always, Input,5.40625,36.75,False,False,66,38
+49,63, turn,:,9.0625,22.625,False,False,66,38
+49,64, out, A,0.009033,22.5,False,False,66,38
+49,65, well, text,0.109375,15.625,False,False,66,38
+49,66,<|im_end|>, segment,0.027954,21.0,False,True,66,38

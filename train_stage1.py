@@ -361,9 +361,9 @@ def main():
                         metavar="N", help="LibriSpeech 서브샘플 수 (기본: 전체)")
     parser.add_argument("--mls-samples",    default=None, type=int,
                         metavar="N", help="MLS 샘플 수 (기본: 전체)")
-    parser.add_argument("--gs-subset",      default="l",
+    parser.add_argument("--gs-subset",      default="xl",
                         choices=["xs", "s", "m", "l", "xl"],
-                        help="GigaSpeech subset (기본: l=2500h)")
+                        help="GigaSpeech subset (기본: xl=10000h)")
     parser.add_argument("--gs-samples",     default=None, type=int,
                         metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
     args = parser.parse_args()
