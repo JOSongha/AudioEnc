@@ -11,11 +11,11 @@ TRAIN_CONFIG = {
 
     "gradient_accumulation_steps": 4,
 
-    "stage1_lr": 5e-4,
+    "stage1_lr": 2e-4,
     "stage1_epochs": 2,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 30,
+    "stage2_epochs": 2,
 
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,

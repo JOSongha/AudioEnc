@@ -2,8 +2,13 @@
 
 ## 개요
 
-학습 속도·메모리 효율화를 위한 4가지 최적화를 opt-in 플래그로 추가.  
-기존 `train.py` 플래그 없이 실행 시 동작은 완전히 보존됨.
+학습 속도·메모리 효율화를 위한 4가지 최적화.  
+`train_pipeline_override.py` 기준: **Sequence Packing·Flash Attention 2는 기본값 ON**.  
+Liger Kernel(`--liger`)·FSDP(`--fsdp`)는 CLI 플래그로 활성화.
+
+> **참고**: 이 문서의 `--packing`, `--flash-attn` 예시는 설계 초안 기준이며,  
+> 실제 `train_pipeline_override.py`에서는 플래그 없이도 두 기능이 기본 활성화됨.  
+> FA2 비활성화가 필요한 경우 `--attn-impl sdpa` 또는 `--attn-impl eager` 사용.
 
 ---
 
@@ -11,13 +16,15 @@
 
 | 패키지 | 버전 | 용도 | 상태 |
 |--------|------|------|------|
-| `torch` | 2.8.0 | 기본 | 설치됨 |
-| `transformers` | 5.4.0 | LLM | 설치됨 |
-| `accelerate` | 1.13.0 | DDP/FSDP | 설치됨 |
+| `torch` | 2.5.1+cu124 | 기본 | 설치됨 |
+| `torchaudio` | 2.5.1 | 오디오 로드 | 설치됨 |
+| `transformers` | 5.5.0 | LLM | 설치됨 |
+| `accelerate` | 1.12.0 | DDP/FSDP | 설치됨 |
 | `flash-attn` | 2.8.3 | Flash Attention 2 | 설치됨 |
-| `peft` | 0.18.1 | LoRA | 설치됨 |
-| `bitsandbytes` | 0.49.2 | 8-bit AdamW | 설치됨 |
-| `liger-kernel` | ≥0.3 | Fused Qwen2 kernels | **미설치 → `pip install liger-kernel`** |
+| `peft` | 0.18.0 | LoRA | 설치됨 |
+| `bitsandbytes` | 0.49.0 | 8-bit AdamW | 설치됨 |
+| `liger-kernel` | 0.7.0 | Fused Qwen2 kernels | 설치됨 |
+| `datasets` | 3.6.0 | HuggingFace 데이터셋 | 설치됨 |
 
 flash_linear_attention-0.4.2
 ---
@@ -86,23 +93,34 @@ model.forward(audio, audio_lengths, transcript_input_ids)
 
 ### 실행 방법
 
+`train_pipeline_override.py` 기준 (packing·FA2는 기본 활성화):
+
 ```bash
-# Flash Attention 2만
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae --flash-attn
+# 기본 (packing + FA2 자동 활성화)
+accelerate launch train_pipeline_override.py --encoder fb_dacvae
 
-# Sequence Packing + FA2
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae --packing --flash-attn
+# Liger + FSDP 추가 (권장 실운용 설정)
+accelerate launch train_pipeline_override.py --encoder fb_dacvae \
+    --liger --fsdp
 
-# 전체 조합
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
-    --packing --flash-attn --liger --cutoff-len 2048
+# cutoff 길이 변경
+accelerate launch train_pipeline_override.py --encoder fb_dacvae \
+    --liger --fsdp --cutoff-len 4096
 
-# FSDP (4B 모델)
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
-    --llm Qwen/Qwen3.5-4B --packing --flash-attn --fsdp
+# FA2 비활성화 (SDPA로 fallback)
+accelerate launch train_pipeline_override.py --encoder fb_dacvae \
+    --attn-impl sdpa
+
+# FSDP + 4B 모델
+accelerate launch train_pipeline_override.py --encoder fb_dacvae \
+    --llm Qwen/Qwen3.5-4B --liger --fsdp
 ```
 
-### 새 데이터 파이프라인 (`--packing` 시)
+> **flash_attn LD_PRELOAD 필요** (GLIBCXX_3.4.29 + GLIBC_2.32):  
+> `LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" accelerate launch ...`  
+> 자세한 내용은 `docs/train_pipeline_errors.md` §6.7–6.8 참조.
+
+### 새 데이터 파이프라인 (항상 활성화)
 
 ```
 build_processor(tokenizer, cfg)
@@ -117,7 +135,7 @@ SequencePacker(cutoff_len, neat_packing=True)
   └─ attention_mask: 샘플 인덱스(1,2,3...) 부여 → 경계 인식
   └─ 패딩을 cutoff_len까지
 
-PackedCollator(attn_implementation)
+OmniCollator(attn_implementation)
   ├─ [FA2 경로]
   │   └─ 패딩 제거 → (1, sum_nonpad)
   │   └─ position_ids: 샘플마다 0부터 리셋 (FA2 varlen 경계 인식)
@@ -132,9 +150,9 @@ audio_lengths:  (N_audio,)
 
 | 설정 | PAD 존재 여부 |
 |------|--------------|
-| 패킹 없음 | 배치 내 최대 길이까지 PAD (최대 40% 낭비) |
-| `--packing` only | 각 pack 끝에 소량 PAD (cutoff_len까지 채움) |
-| `--packing --flash-attn` | **PAD 완전 제거** → `(1, sum_nonpad)` shape |
+| packing 없음 (구버전 `train.py`) | 배치 내 최대 길이까지 PAD (최대 40% 낭비) |
+| packing only (`--attn-impl sdpa`) | 각 pack 끝에 소량 PAD (cutoff_len까지 채움) |
+| packing + FA2 (기본) | **PAD 완전 제거** → `(1, sum_nonpad)` shape |
 
 **효과**: 패딩 없이 cutoff_len을 꽉 채움 → 실질적 배치 크기 증가.
 
@@ -239,26 +257,22 @@ FSDP 없는 DDP는 이 조합에서 권장하지 않음.
 
 ---
 
-## 검증 계획
+## 검증 결과 (완료: 2026-04-08)
 
-### 검증1: 기존 vs 새 최적화 플래그 (병목 수정 전)
+아래 4가지 설정을 `train_pipeline_override.py`로 검증 완료.  
+각 테스트: `--max-steps 2 --datasets ls100 --stage all` (Stage 1→2 전체 통과 확인).
 
-```bash
-# baseline
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
-    --datasets ls100 --ls-samples 5000 --wandb-mode offline
-
-# 검증1a: --flash-attn
-# 검증1b: --packing --flash-attn
-# 검증1c: --packing --flash-attn --liger --fsdp   ← 주력 비교 (FSDP 필수)
-# 검증1d: --packing --flash-attn --liger --fsdp --cutoff-len 4096   ← 실운용 설정
-```
-
-### 검증2: 병목 수정 후
+| 테스트 | 설정 | 결과 |
+|--------|------|------|
+| Test 1 | `--attn-impl sdpa` (packing ON, FA2 OFF) | ✅ PASS |
+| Test 2 | FA2 기본값 (packing+FA2 ON) | ✅ PASS |
+| Test 3 | FA2 + `--liger` | ✅ PASS |
+| Test 4 | FA2 + `--liger` + `--fsdp` | ✅ PASS (`train_loss: 4.504`) |
 
 ```bash
-# 검증2: 병목 수정 + 실운용 플래그
-torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
-    --datasets ls100 --ls-samples 5000 --packing --flash-attn --liger --fsdp \
-    --cutoff-len 4096 --wandb-mode offline
+# Test 4 실행 명령 (검증 기준)
+LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" \
+accelerate launch --num_processes 2 train_pipeline_override.py \
+    --encoder fb_dacvae --attn-impl flash_attention_2 --liger --fsdp \
+    --wandb-mode disabled --max-steps 2 --datasets ls100 --stage all
 ```

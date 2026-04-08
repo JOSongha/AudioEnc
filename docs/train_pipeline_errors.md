@@ -230,3 +230,370 @@ def forward(self, input_ids, labels, audio_features, audio_lengths,
 - `from torch.distributed.fsdp import FullyShardedDataParallel as FSDP` → `WerCallback.on_step_end` 내 `FSDP.summon_full_params` 호출
 - `from transformers.trainer_callback import TrainerCallback` → `WerCallback`의 base class
 - `evaluate_wer`, `_compute_wer`, `_edit_distance` → import 제거 후 파일 내 인라인으로 복원
+
+---
+
+## 6. 런타임 실행 오류 (실행 테스트 2026-04-08)
+
+`train_pipeline_override.py` 첫 실행 시 발견된 버그 목록. 패키지 버전 충돌 2건 + 모델 구현 버그 4건.
+
+### 6.1 transformers 버전: Qwen3.5 아키텍처 미지원
+
+```
+KeyError: 'qwen3_5'
+ValueError: The following model type is not supported: qwen3_5.
+  Supported types: ...
+```
+
+**원인**: 설치된 transformers 4.57.6은 Qwen3.5 아키텍처(`qwen3_5`) 등록 이전 버전.
+
+**수정**:
+```bash
+pip install --upgrade transformers   # → 5.5.0
+```
+
+---
+
+### 6.2 datasets 버전: `IterableDataset.shard()` 미존재
+
+```
+AttributeError: 'IterableDataset' object has no attribute 'shard'
+  File "train_pipeline_override.py", line 918, in build_multi_dataset_streaming_pipeline
+    ds = ds.shard(num_shards=world_size, index=rank, contiguous=True)
+```
+
+**원인**: `IterableDataset.shard()`는 datasets 3.0에서 추가됨. 설치된 2.21.0에는 없음.  
+datasets 4.x는 torchcodec 의존성으로 인해 사용 불가 (섹션 1 참조).
+
+**수정**:
+```bash
+pip install "datasets>=3.0,<4.0"   # → 3.6.0
+```
+
+---
+
+### 6.3 인코더 dtype 충돌: encoder Conv1d float32 vs bf16 bias
+
+```
+RuntimeError: Input type (float) and bias type (c10::BFloat16) should be the same
+  File ".../encoders/dacvae.py", in forward
+    x = self.encoder(audio_in.float(), ...)
+```
+
+**원인**: `freeze_llm()`과 `apply_lora()` 두 곳에서 `self.encoder.to(dtype=torch.bfloat16)` 호출.  
+`fb_dacvae` 인코더 내부는 `autocast(enabled=False)` + `audio_in.float()`로 항상 float32 입력을 강제하는데, Conv1d bias가 bf16으로 캐스팅되어 dtype mismatch 발생.
+
+**수정**: 두 메서드에서 encoder dtype 캐스팅 제거.
+
+```python
+# freeze_llm() — 제거
+- self.encoder.to(dtype=torch.bfloat16)
+
+# apply_lora() — 제거
+- self.encoder.to(dtype=torch.bfloat16)
+```
+
+**주의**: `fb_dacvae`처럼 내부적으로 float32를 강제하는 encoder는 bf16 환경에서도 encoder 전체를 float32로 유지해야 한다. encoder를 bf16으로 캐스팅하면 안 됨.
+
+---
+
+### 6.4 Qwen3.5 Weight Tying + safetensors 직렬화 오류
+
+```
+RuntimeError: Some tensors share memory, this will lead to duplicate memory on disk:
+  [{'llm.lm_head.weight', 'llm.model.embed_tokens.weight'}]
+```
+
+**원인**: Qwen3.5는 `lm_head.weight`와 `embed_tokens.weight`가 동일 메모리를 공유(weight tying).  
+safetensors는 공유 메모리 텐서 직렬화를 거부함.
+
+**실패한 우회 시도**: `TrainingArguments(save_safetensors=False)` → transformers 5.5.0에서 해당 인자 제거됨 (→ 6.5 참조).
+
+**수정**: `StreamingShardedTrainer._save` 오버라이드 — state_dict 수집 후 data_ptr 중복 탐지 및 클론:
+
+```python
+def _save(self, output_dir=None, state_dict=None):
+    output_dir = output_dir if output_dir is not None else self.args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+
+    if state_dict is None:
+        state_dict = self.model.state_dict()
+
+    # data_ptr 중복 탐지: 나중에 나온 쪽을 클론해 공유 해제
+    seen_ptrs: dict = {}
+    for k in list(state_dict.keys()):
+        ptr = state_dict[k].data_ptr()
+        if ptr in seen_ptrs:
+            state_dict[k] = state_dict[k].clone()
+        else:
+            seen_ptrs[ptr] = k
+
+    super()._save(output_dir, state_dict=state_dict)
+```
+
+이 방식은 LoRA 래핑 여부(Stage 1 vs Stage 2)에 무관하게 동작한다.  
+Stage 2(LoRA 적용 후)에서는 경로가 `llm.base_model.model.lm_head.weight` / `llm.base_model.model.model.embed_tokens.weight`로 바뀌지만, data_ptr 비교로 탐지하므로 경로 무관.
+
+**저장 검증 결과** (Stage 2 체크포인트 `/mnt/tmp/cache/hf/fb_dacvae/s2_outputs_0408_1711`):
+
+```python
+from safetensors import safe_open
+import torch
+
+with safe_open("model.safetensors", framework="pt", device="cpu") as f:
+    keys = [k for k in f.keys() if "lm_head" in k or "embed_tokens" in k]
+    tensors = {k: f.get_tensor(k) for k in keys}
+
+# 결과:
+# 값 동일: True   ← weight tying이 학습 중 올바르게 유지됨
+# 메모리 공유: False ← 파일에는 독립 복사본으로 저장 (safetensors 직렬화 성공)
+```
+
+로드 시 weight tying 복원: `AutoModelForCausalLM.from_pretrained()`이 `config.json`의  
+`tie_word_embeddings=True`를 읽고 `tie_weights()` 호출 → 자동으로 공유 메모리 복원됨.
+
+---
+
+### 6.5 `TrainingArguments.save_safetensors` 인자 제거됨
+
+```
+TypeError: TrainingArguments.__init__() got an unexpected keyword argument 'save_safetensors'
+```
+
+**원인**: transformers 5.5.0에서 `save_safetensors` 파라미터 제거.
+
+**수정**: `TrainingArguments(save_safetensors=False, ...)` → `save_safetensors` 인자 삭제.  
+safetensors 저장 우회는 `_save` 오버라이드(6.4)로 처리.
+
+---
+
+### 6.6 `Trainer.save_model(safe_serialization=False)` 인자 제거됨
+
+```
+TypeError: Trainer.save_model() got an unexpected keyword argument 'safe_serialization'
+```
+
+**원인**: transformers 5.5.0에서 `save_model(safe_serialization=...)` 파라미터 제거.  
+Stage 2 종료 후 `trainer.save_model(s2_output_dir, safe_serialization=False)` 호출이 실패.
+
+**수정**: `safe_serialization` 인자 제거.
+
+```python
+# 수정 전
+trainer.save_model(s2_output_dir, safe_serialization=False)
+
+# 수정 후
+trainer.save_model(s2_output_dir)
+```
+
+safetensors 공유 메모리 문제는 `_save` 오버라이드(6.4)에서 처리하므로 인자 불필요.
+
+---
+
+### 6.7 flash_attn GLIBC_2.32 미지원 (Ubuntu 20.04 시스템)
+
+```
+ImportError: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.32' not found
+  (required by flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so)
+```
+
+**환경**: 시스템 GLIBC 2.31 (Ubuntu 20.04), flash_attn 2.8.3
+
+**원인**: PyPI에서 배포되는 flash_attn 2.8.3 prebuilt wheel은 GLIBC_2.32 이상을 빌드 타깃으로 컴파일됨.  
+구체적으로 `__libc_single_threaded@GLIBC_2.32` 심볼 하나만 사용하며, 이는 GLIBC 2.32에서 추가된 스레딩 최적화 힌트 변수다.  
+Ubuntu 20.04의 시스템 GLIBC는 2.31이므로 이 심볼을 제공하지 못해 동적 링커가 로드를 거부한다.
+
+**시도했으나 실패한 방법들**:
+
+1. **소스 빌드** (`--no-binary flash-attn`): 시스템 GCC 9.4.0 + CUDA 11.8 NVCC로 소스 빌드했으나 결과 바이너리도 동일하게 GLIBC_2.32 요구. 빌드 툴체인(CUDA toolkit 또는 링커 설정)이 GLIBC_2.32 심볼을 끌어들임.
+
+2. **LD_PRELOAD (버전 태그 없음)**: `__libc_single_threaded = 0`만 정의한 compat .so를 preload해도 실패. 동적 링커가 `libc.so.6`에서 특정 버전 `GLIBC_2.32`을 확인하므로 다른 이름의 라이브러리로 우회 불가.
+
+3. **LD_PRELOAD (버전 태그 포함)**: `--version-script`로 `GLIBC_2.32 { __libc_single_threaded; };`를 정의해도 실패. VERNEED 항목이 `filename: libc.so.6`을 명시하므로 다른 .so 파일의 버전 태그는 검사 대상에서 제외됨.
+
+4. **문자열만 패치** (`GLIBC_2.32` → `GLIBC_2.17`): ELF VERNEED 섹션의 문자열 테이블만 바꾸면 동적 링커의 해시 검사에서 실패. VERNEED Vernaux 구조체의 `vna_hash` 필드가 `GLIBC_2.32`의 ELF 해시값(0x069691b2)으로 남아 있어 이름과 해시가 불일치.
+
+**수정 (최종)**:
+
+두 단계로 flash_attn 바이너리를 수정한다.
+
+**단계 1**: `patchelf --clear-symbol-version`으로 `.dynsym`의 심볼 버전 제거 (unversioned로 만들어 LD_PRELOAD로 제공 가능하게 함)
+
+```bash
+# flash_attn site-packages 디렉터리로 이동 후
+# 백업
+cp flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so{,.bak}
+# 심볼 버전 제거
+patchelf --clear-symbol-version __libc_single_threaded \
+  flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so
+```
+
+**단계 2**: VERNEED의 문자열 + 해시를 함께 패치 (GLIBC_2.32 → GLIBC_2.17, 시스템 libc가 제공하는 버전으로 교체)
+
+```python
+import struct
+
+def elf_hash(name):
+    h = 0
+    for c in name.encode('ascii'):
+        h = ((h << 4) + c) & 0xffffffff
+        g = h & 0xf0000000
+        if g:
+            h = (h ^ (g >> 24)) & 0xffffffff
+        h = (h & ~g) & 0xffffffff
+    return h
+
+# GLIBC_2.32 hash: 0x069691b2, GLIBC_2.17 hash: 0x06969197
+SO = ".../flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so"
+with open(SO, 'rb') as f:
+    data = bytearray(f.read())
+# 1) 문자열 교체 (null 포함, 동일 길이 10바이트)
+data = bytearray(bytes(data).replace(b'GLIBC_2.32\x00', b'GLIBC_2.17\x00'))
+# 2) 해시 교체 (LE uint32)
+old_hash = struct.pack('<I', 0x069691b2)
+new_hash = struct.pack('<I', 0x06969197)
+data = bytearray(bytes(data).replace(old_hash, new_hash))
+with open(SO, 'wb') as f:
+    f.write(data)
+```
+
+**단계 3**: unversioned `__libc_single_threaded` 심볼을 LD_PRELOAD로 제공
+
+```bash
+# GLIBC 2.31에는 __libc_single_threaded가 없으므로 직접 정의
+printf 'int __libc_single_threaded = 0;\n' > /tmp/glibc_compat.c
+gcc -shared -fPIC -o /tmp/glibc_compat.so /tmp/glibc_compat.c
+```
+
+**실행 시 항상 LD_PRELOAD 필요**:
+
+```bash
+LD_PRELOAD=/tmp/glibc_compat.so accelerate launch --num_processes N \
+  train_pipeline_override.py --attn-impl flash_attention_2 ...
+```
+
+**검증**:
+```bash
+# VERNEED에 GLIBC_2.32 없어야 함
+objdump -p flash_attn_2_cuda.so | grep GLIBC
+# __libc_single_threaded가 unversioned인지 확인
+readelf -W --dyn-syms flash_attn_2_cuda.so | grep __libc_single_threaded
+```
+
+**주의사항**:
+- 이 패치는 재설치 시 초기화되므로 flash_attn 업그레이드/재설치 후 재적용 필요
+- `/tmp/glibc_compat.so`는 재부팅 시 삭제되므로 영구 경로에 보관 권장  
+- `__libc_single_threaded = 0`은 "항상 멀티스레드 모드"로 설정 — libc의 최적화 힌트가 꺼지는 것이므로 정확성에는 영향 없음
+
+---
+
+### 6.8 flash_attn GLIBCXX_3.4.29 미지원 (GCC 9 libstdc++)
+
+6.7 패치 후 다음 에러 연속 발생:
+
+```
+ImportError: /lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.29' not found
+  (required by flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so)
+```
+
+**원인**: GLIBCXX_3.4.29는 GCC 12 / libstdc++ 12에서 추가됨.  
+Ubuntu 20.04 기본 GCC 9의 시스템 libstdc++는 최대 GLIBCXX_3.4.28을 제공.
+
+**수정**: GCC 12+ libstdc++가 포함된 conda 환경의 라이브러리를 LD_PRELOAD로 사전 로드.
+
+```bash
+# 확인: GLIBCXX_3.4.29 이상이 있는 libstdc++ 경로
+strings $CONDA_PREFIX/lib/libstdc++.so.6 | grep "GLIBCXX_3.4.29"
+
+# 최종 실행 명령 (GLIBC + GLIBCXX 두 compat 모두 preload)
+LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" \
+  accelerate launch --num_processes N \
+  train_pipeline_override.py --liger --fsdp ...
+```
+
+**glibc_compat.so 위치**: `$CONDA_PREFIX/lib/glibc_compat.so`에 영구 보관.  
+재부팅 후에도 별도 재생성 불필요. (생성 방법은 §6.7 참조)
+
+**flash_attn_2_cuda.so 패치 필요**: flash_attn을 재설치하면 GLIBC_2.32 VERNEED가 다시 생김.  
+재설치 후 §6.7의 패치 절차를 재적용할 것.
+
+---
+
+### 6.9 MLS / VoxPopuli OGG-Opus: soundfile 실패 → torchcodec fallback
+
+**증상**: MLS 또는 VoxPopuli 데이터셋 로드 시 다음과 같은 오류 또는 torchcodec 관련 import 에러 발생.
+
+```
+RuntimeError: soundfile: Error opening .../audio.opus: File contains data in an unknown format
+# 또는
+ModuleNotFoundError: No module named 'torchcodec'
+```
+
+**원인**:
+- MLS (Multilingual LibriSpeech) 와 VoxPopuli는 오디오를 **OGG-Opus 포맷**으로 저장함.
+- HuggingFace `datasets`는 오디오 디코딩 시 `soundfile`을 기본 백엔드로 시도하나, soundfile은 OGG-Opus를 지원하지 않음.
+- 디코딩 실패 시 HF datasets가 `torchcodec`을 fallback으로 시도. 이 환경에 torchcodec이 없으면 import 에러 발생.
+
+**해결책**: HF datasets의 오디오 자동 디코딩을 우회하고, `torchaudio.load()`로 직접 디코딩.
+
+```python
+# dataset.py: Audio(decode=False)로 raw bytes만 수신
+ds = load_dataset(...).cast_column("audio", Audio(decode=False))
+
+# train_pipeline_override.py: _load_audio()가 torchaudio로 직접 디코딩
+def _load_audio(audio_obj):
+    if "bytes" in audio_obj and audio_obj["bytes"] is not None:
+        waveform, sr = torchaudio.load(io.BytesIO(audio_obj["bytes"]))
+    elif "path" in audio_obj and audio_obj["path"] is not None:
+        waveform, sr = torchaudio.load(audio_obj["path"])
+    ...
+```
+
+**`HF_DATASETS_AUDIO_BACKEND` 환경변수에 대하여**:  
+remote에서 `os.environ.setdefault("HF_DATASETS_AUDIO_BACKEND", "soundfile")`이 추가되었으나,  
+soundfile은 OGG-Opus를 지원하지 않으므로 이 값은 잘못됨.  
+`decode=False`가 HF 디코딩을 우회하므로 실제로는 무시되지만, `"torchaudio"`로 수정하여 의미를 명확히 함.
+
+---
+
+### 6.10 FSDP + PEFT LoRA: mixed-dtype 오류
+
+**증상**: Stage 2 FSDP 학습 시 다음 오류 발생.
+
+```
+ValueError: Must flatten tensors with uniform dtype but got torch.float32 and torch.bfloat16
+  File "torch/distributed/fsdp/_flat_param.py", in _validate_tensors_to_flatten
+```
+
+**원인**:
+- `get_peft_model()`은 LoRA adapter 파라미터 (`lora_A.weight`, `lora_B.weight`)를 기본 dtype (fp32)으로 초기화함.
+- 기반 LLM은 bfloat16으로 로드되어 있으므로 동일 module 내 dtype이 혼재함.
+- FSDP는 각 shard 단위 내 파라미터 dtype 균일성을 강제함 → `_validate_tensors_to_flatten` 에서 ValueError.
+
+**시도된 부분 해결책**:
+- `self.llm = self.llm.to(torch.bfloat16)` in `apply_lora()`: LoRA 초기화 직후 캐스트.
+- `model = model.to(torch.bfloat16)` in `run_stage2()`: 전체 모델 캐스트.
+
+그러나 위 두 방법만으로는 여전히 실패. `model.to()`가 PeftModel 내부의 adapter weight를 건너뛰거나,  
+이후 `load_state_dict(proj_state)` 호출이 fp32 파라미터를 재삽입할 가능성이 있음.
+
+**최종 해결책**: `load_state_dict` 이후, Trainer 생성 직전에 명시적 per-param 캐스트 추가.
+
+```python
+model.apply_lora()
+# ... load_state_dict(proj_state) ...
+
+# FSDP shard dtype 균일성 보장: load_state_dict 이후 잔존 fp32 파라미터 강제 캐스트
+_fp32_params = [(n, p.dtype) for n, p in model.named_parameters()
+                if p.is_floating_point() and p.dtype != torch.bfloat16]
+if _fp32_params:
+    logger.info(f"Casting {len(_fp32_params)} non-bf16 param(s) to bf16 for FSDP: ...")
+    for param in model.parameters():
+        if param.is_floating_point() and param.dtype != torch.bfloat16:
+            param.data = param.data.to(torch.bfloat16)
+```
+
+`model.to()` 대신 `param.data = param.data.to(...)` 직접 수정을 사용하는 이유:  
+`nn.Module.to()`는 일부 커스텀 모듈 (PeftModel, Liger 패치 모듈 등)에서 adapter weight를  
+건너뛸 수 있음. `param.data` 직접 수정은 어떠한 커스텀 `.to()` 오버라이드도 우회하여  
+반드시 모든 파라미터를 캐스트함.

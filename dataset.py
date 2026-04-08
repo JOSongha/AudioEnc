@@ -14,32 +14,54 @@ from torch.utils.data import Dataset, ConcatDataset, Subset
 IGNORE_INDEX = -100
 
 
+_LS_HF_SPLIT = {
+    "train-clean-100": "train.clean.100",
+    "train-clean-360": "train.clean.360",
+    "train-other-500": "train.other.500",
+    "dev-clean":       "validation.clean",
+    "test-clean":      "test.clean",
+    "test-other":      "test.other",
+}
+
+
 class LibriSpeechDataset(Dataset):
     """
-    LibriSpeech 단일 split 래퍼.
+    openslr/librispeech_asr — HuggingFace 기반 LibriSpeech.
+    - url: 기존 torchaudio 규격 (train-clean-100, dev-clean 등) 그대로 사용
     - 출력: (waveform @ 16kHz mono, transcript 소문자)
     - max_len 초과분은 truncate
     """
 
-    def __init__(self, root: str, url: str = "train-clean-100",
+    def __init__(self, cache_dir: str, url: str = "train-clean-100",
                  target_sr: int = 16000, max_len: int = 160000):
+        from datasets import load_dataset, Audio
         self.target_sr = target_sr
         self.max_len   = max_len
-        self.dataset   = torchaudio.datasets.LIBRISPEECH(root=root, url=url, download=True)
+        hf_split = _LS_HF_SPLIT[url]
+        ds = load_dataset(
+            "openslr/librispeech_asr",
+            "all",
+            split=hf_split,
+            cache_dir=cache_dir,
+        )
+        self.dataset = ds.cast_column("audio", Audio(decode=False))
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        waveform, sample_rate, transcript, _, _, _ = self.dataset[idx]
+        item        = self.dataset[idx]
+        audio_bytes = item["audio"]["bytes"]
+        transcript  = item["text"]
 
-        if sample_rate != self.target_sr:
-            waveform = torchaudio.transforms.Resample(sample_rate, self.target_sr)(waveform)
+        waveform, sample_rate = torchaudio.load(io.BytesIO(audio_bytes))  # (C, T)
 
-        # 다채널 → 모노
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
         waveform = waveform.squeeze(0)  # (T,)
+
+        if sample_rate != self.target_sr:
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.target_sr)
 
         if waveform.shape[0] > self.max_len:
             waveform = waveform[: self.max_len]
@@ -239,7 +261,7 @@ def build_datasets(cfg: dict):
     # LibriSpeech splits
     ls_splits = [name for name in ["ls100", "ls360", "ls500"] if name in datasets]
     if ls_splits:
-        ls_parts = [LibriSpeechDataset(root=root, url=_LS_URL[name], max_len=max_len)
+        ls_parts = [LibriSpeechDataset(cache_dir=root, url=_LS_URL[name], max_len=max_len)
                     for name in ls_splits]
         librispeech = ConcatDataset(ls_parts) if len(ls_parts) > 1 else ls_parts[0]
         ls_num = cfg.get("librispeech_num_samples", None)
@@ -282,7 +304,7 @@ def build_datasets(cfg: dict):
         raise ValueError(f"datasets에 유효한 항목이 없습니다: {datasets}")
 
     train_dataset = ConcatDataset(parts) if len(parts) > 1 else parts[0]
-    val_dataset   = LibriSpeechDataset(root=root, url="dev-clean", max_len=max_len)
+    val_dataset   = LibriSpeechDataset(cache_dir=root, url="dev-clean", max_len=max_len)
     return train_dataset, val_dataset
 
 
@@ -299,7 +321,7 @@ def build_train_eval_dataset(cfg, n_per_ds: int = 10):
     parts = []
     for name in ["ls100", "ls360", "ls500"]:
         if name in datasets:
-            ds = LibriSpeechDataset(root=root, url=_LS_URL[name], max_len=max_len)
+            ds = LibriSpeechDataset(cache_dir=root, url=_LS_URL[name], max_len=max_len)
             parts.append(Subset(ds, range(min(n_per_ds, len(ds)))))
 
     if "mls" in datasets:
@@ -388,20 +410,16 @@ def _collect_lengths(dataset) -> list:
     elif isinstance(dataset, VoxPopuliDataset):
         print (f"[DEBUG] Collecting lengths for VoxPopuliDataset with {len(dataset)} samples...")
         return _voxpopuli_lengths(dataset)
-    elif isinstance(dataset, GigaSpeechDataset):
-        return _gigaspeech_lengths(dataset)
     raise ValueError(f"Unknown dataset type: {type(dataset)}")
 
 
 def _librispeech_lengths(dataset: "LibriSpeechDataset") -> list:
-    """torchaudio.info()로 FLAC 헤더만 읽어 길이 계산 (오디오 디코딩 없음)."""
-    inner = dataset.dataset  # torchaudio.datasets.LIBRISPEECH
-    base  = inner._path      # .../LibriSpeech/train-clean-100 등
+    """BytesIO + torchaudio.info로 FLAC 헤더만 읽어 길이 계산 (오디오 디코딩 없음).
+    dataset.dataset은 이미 Audio(decode=False)로 캐스팅된 상태."""
     lengths = []
-    for fileid in inner._walker:
-        speaker_id, chapter_id = fileid.split("-")[:2]
-        path = os.path.join(base, speaker_id, chapter_id, f"{fileid}.flac")
-        info = torchaudio.info(path)
+    for item in dataset.dataset:
+        audio_bytes = item["audio"]["bytes"]
+        info = torchaudio.info(io.BytesIO(audio_bytes))
         n = int(info.num_frames * dataset.target_sr / info.sample_rate)
         lengths.append(min(n, dataset.max_len))
     return lengths

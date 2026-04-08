@@ -265,6 +265,10 @@ def _count_batches(self) -> int:
 | `config.py` | `batch_size`, `stage2_batch_size`, `max_batch_samples`, `max_batch_size` 제거; `get_config()`에서 `samples_per_token`, `max_batch_tokens` 자동 계산 |
 | `train.py` | Stage 1/2 모두 `DynamicBatchSampler` 사용; `accelerator.prepare()`에서 dataloader 제거; 에폭마다 `set_epoch()` 호출 |
 
+> **참고**: `train_pipeline_override.py` (신규 스트리밍 파이프라인)는  
+> `DynamicBatchSampler` 대신 `create_packer()` (greedy knapsack, streaming 호환) 방식을 사용.  
+> HuggingFace Streaming Dataset에서는 사전 길이 계산이 불가하므로 `DynamicBatchSampler`를 적용할 수 없음.
+
 ---
 
 ## 기대 효과

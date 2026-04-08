@@ -77,7 +77,7 @@ Audio Encoder 종류에 따른 ASR 성능 비교 실험.
 
 ---
 
-### Semantic Encoder (구현 예정)
+### Semantic Encoder
 
 오디오의 언어적·음소적 표현 추출. ASR에 유리.
 

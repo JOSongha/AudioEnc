@@ -2,7 +2,7 @@
 스트리밍 ASR 학습 파이프라인 (독립 실행형).
 
 주요 설계 원칙:
-  - torchaudio.load() 대신 soundfile.read() 사용 (torchcodec 의존성 회피)
+  - torchaudio.load()로 오디오 로드 (soundfile은 OGG-Opus 미지원 → MLS/VoxPopuli 실패)
   - 데이터 파이프라인 순서: 로드 → 샤딩 → 셔플 → 처리 → 패킹
     (샤딩을 무거운 처리 이전에 수행하여 각 GPU가 자신의 슬라이스만 처리)
   - StreamingShardedTrainer: HF Trainer의 자동 DistributedSampler 삽입 우회
@@ -105,8 +105,11 @@ import gc
 from typing import Any, Literal
 from dataclasses import dataclass
 
-# Disable torchcodec in HuggingFace datasets (torchcodec not available in this env)
-os.environ.setdefault("HF_DATASETS_AUDIO_BACKEND", "soundfile")
+# MLS/VoxPopuli는 OGG-Opus 포맷 → soundfile 미지원 → HF datasets가 torchcodec을 fallback으로 시도.
+# 근본 해결책: Audio(decode=False) + torchaudio.load() 직접 호출 (_load_audio 참조).
+# 아래 환경변수는 decode=False로 HF 디코딩을 우회하므로 실제로는 사용되지 않음.
+# (soundfile이 아닌 torchaudio를 지정: 혹시 decode=False가 누락된 경우의 보조 안전장치)
+os.environ.setdefault("HF_DATASETS_AUDIO_BACKEND", "torchaudio")
 import io
 import bisect
 import math
@@ -173,11 +176,11 @@ TRAIN_CONFIG = {
 
     "gradient_accumulation_steps": 4,
 
-    "stage1_lr": 5e-4,
+    "stage1_lr": 2e-4,
     "stage1_epochs": 2,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 30,
+    "stage2_epochs": 2,
 
     "warmup_ratio": 0.1,
 
@@ -201,19 +204,19 @@ TRAIN_CONFIG = {
     # packing_cutoff_len : 하나의 packed bin(=모델에 들어가는 시퀀스) 최대 토큰 수.
     #   이 길이를 초과하는 원시 시퀀스는 packer에서 버려짐(cutoff_len 이하만 패킹 대상).
     #   클수록 GPU utilization↑, 메모리↑, attention 연산량 O(T²)↑.
-    "packing_cutoff_len":  16, #2048,
+    "packing_cutoff_len":  2048,
 
     # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
     #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
     #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
     #   packing_cutoff_len(2048)과 무관하게 독립적으로 설정.
-    "packing_bucket_size": 2, #1000,
+    "packing_bucket_size": 1000,
 
     # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
     #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
     #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
     #   권장: 32 (packing_bucket_size / process_batch_size ≈ 30회 호출로 bucket 충전).
-    "process_batch_size":  2, #32,
+    "process_batch_size":  32,
     # ──────────────────────────────────────────────────────────────────────
 
     "attn_implementation": "flash_attention_2",
@@ -381,11 +384,9 @@ class AudioQwen(nn.Module):
         return torch.cat(all_embeds, dim=0)                             # (N, T_proj, llm_dim)
 
     def _get_audio_embeds(self, audio, audio_lengths=None):
-        # if self._stage == 2 and self._cfg.get("use_fsdp", False):
-            # return self._get_audio_embeds_batched(audio, audio_lengths)
-            # return self._get_audio_embeds_sequential(audio, audio_lengths)
-        # return self._get_audio_embeds_batched(audio, audio_lengths)
-        return self._get_audio_embeds_sequential(audio, audio_lengths)
+        if self._cfg.get("use_fsdp", False):
+            return self._get_audio_embeds_sequential(audio, audio_lengths)
+        return self._get_audio_embeds_batched(audio, audio_lengths)
 
     # ------------------------------------------------------------------
     # Stage setup
@@ -418,6 +419,8 @@ class AudioQwen(nn.Module):
             target_modules=self._cfg["lora_target_modules"],
         )
         self.llm = get_peft_model(self.llm, lora_cfg)
+        # PEFT LoRA 파라미터는 기본 float32 생성 → FSDP mixed-dtype 오류 방지
+        self.llm = self.llm.to(torch.bfloat16)
 
         trainable = sum(p.numel() for p in self.llm.parameters() if p.requires_grad)
         total     = sum(p.numel() for p in self.llm.parameters())
@@ -1306,7 +1309,8 @@ def calculate_max_steps(
     return int(steps_per_epoch * target_epochs)
 
 
-# DISABLED: causes torchcodec import error in some environments
+# [이전] torchcodec import 오류로 비활성화했으나, Audio(decode=False)+torchaudio로 해결됨.
+# [현재] main()에서 주석 처리 유지 (스트리밍 데이터셋은 len() 없어 배치 반복 시 시간이 오래 걸림)
 # def _check_packing_efficiency(train_packed, collator, tokenizer, n_batches=5):
 #     """rank-0 전용: 패킹 데이터셋의 패딩 비율 보고."""
 #     loader = DataLoader(train_packed, batch_size=2, collate_fn=collator)
@@ -1457,8 +1461,6 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
 
     model = build_model(cfg, accelerator)
     model.apply_lora()
-    # Ensure all model parameters are bf16 for FSDP (LoRA params might be fp32)
-    model = model.to(torch.bfloat16)
 
     # Stage 1 projector 가중치 로드
     s1_proj_path = os.path.join(s1_output_dir, "s1_proj.pt")
@@ -1484,10 +1486,25 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
     if s1_proj_path is not None:
         logger.info(f"Stage 1 projector loaded: {s1_proj_path}")
         proj_state = torch.load(s1_proj_path, map_location="cpu", weights_only=True)
-        # Convert fp32 checkpoint to bf16 for FSDP compatibility
-        proj_state = {k: v.to(model.llm.dtype) if v.dtype == torch.float32 else v 
+        # 항상 명시적으로 bf16 변환 (model.llm.dtype이 PeftModel 래핑 후 불안정할 수 있음)
+        proj_state = {k: v.to(torch.bfloat16) if v.is_floating_point() else v
                       for k, v in proj_state.items()}
         model.load_state_dict(proj_state, strict=False)
+
+    # FSDP는 각 shard 내 dtype 균일성을 요구함.
+    # load_state_dict 이후에 명시적으로 캐스트하여 LoRA init fp32 + projector 로드 등 잔존 fp32 처리.
+    # (model.to() 대신 per-param 직접 캐스트: PeftModel.to()가 adapter weight를 건너뛸 가능성 방어)
+    _fp32_params = [(n, p.dtype) for n, p in model.named_parameters()
+                    if p.is_floating_point() and p.dtype != torch.bfloat16]
+    if _fp32_params:
+        logger.info(
+            f"Casting {len(_fp32_params)} non-bf16 param(s) to bf16 for FSDP: "
+            + ", ".join(n for n, _ in _fp32_params[:5])
+            + ("..." if len(_fp32_params) > 5 else "")
+        )
+        for param in model.parameters():
+            if param.is_floating_point() and param.dtype != torch.bfloat16:
+                param.data = param.data.to(torch.bfloat16)
 
     s2_output_dir = os.path.join(cfg["model_cache_dir"], cfg["encoder_name"], f"s2_outputs_{run_id}")
     os.makedirs(s2_output_dir, exist_ok=True)
@@ -1664,7 +1681,7 @@ def main():
     )
 
     # 4. Sanity-check packing efficiency (rank-0 only)
-    # DISABLED: causes torchcodec import error in some environments
+    # DISABLED: 스트리밍 데이터셋에서 5 배치 이터레이션이 느림 (필요 시 수동 활성화)
     # if accelerator.is_main_process:
     #     _check_packing_efficiency(train_streaming_dataset, collator, tokenizer)
 
