@@ -26,6 +26,20 @@ Audio Encoder 종류에 따른 ASR 성능 비교 실험.
 - MLS / VoxPopuli: OGG-Opus 포맷 → `Audio(decode=False)` + `torchaudio.load()` (soundfile 미지원)
 - 기본값: `--datasets` 미지정 시 6개 전체 사용
 
+### Word Alignment 데이터
+
+전체 학습 데이터셋에 대해 단어 단위 타임스탬프(start/end)가 사전 생성되어 있음.
+
+| 데이터셋 | 도구 | 발화 수 | 경로 |
+|---|---|---|---|
+| LibriSpeech (ls100/360/500/dev) | wav2vec2-large CTC | 283,944 | `word_alignments_merged/librispeech/{split}.arrow` |
+| MLS | Qwen3-ForcedAligner-0.6B | 2,420,047 | `word_alignments_merged/mls/train.arrow` |
+| GigaSpeech | Qwen3-ForcedAligner-0.6B | 8,282,987 | `word_alignments_merged/gigaspeech/train.arrow` |
+| VoxPopuli | Qwen3-ForcedAligner-0.6B | 182,482 | `word_alignments_merged/voxpopuli/train.arrow` |
+
+기본 경로: `/mnt/tmp/cache/word_alignments_merged/{dataset}/{split}.arrow`  
+자세한 내용 및 품질 통계: [`docs/word_alignment.md`](word_alignment.md)
+
 ---
 
 ## Backbone LLM
