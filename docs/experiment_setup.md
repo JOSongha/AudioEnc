@@ -3,25 +3,28 @@
 ## Overview
 
 Audio Encoder 종류에 따른 ASR 성능 비교 실험.
-공통 백본(Qwen3.5-4B Base)과 데이터를 고정하고, audio encoder만 교체하여 비교.
+공통 백본(Qwen3.5-2B Base, `--llm`으로 교체 가능)과 데이터를 고정하고, audio encoder만 교체하여 비교.
 
 ---
 
 ## Data
 
-| 데이터셋 | Split | 규모 |
-|---|---|---|
-| LibriSpeech | train-clean-100 | ~100h |
-| LibriSpeech | train-clean-360 | ~360h |
-| LibriSpeech | train-other-500 | ~500h |
-| MLS English (`parler-tts/mls_eng_10k`) | train (랜덤 샘플링, seed=42) | ~10,016h |
-| **학습 합계** | | **~10,976h** |
-| LibriSpeech | dev-clean | 검증 |
+| 키 | 데이터셋 (HuggingFace ID) | Split | 규모 | 특징 |
+|---|---|---|---|---|
+| `ls100` | `openslr/librispeech_asr` | train-clean-100 | ~100h | 낭독체, clean |
+| `ls360` | `openslr/librispeech_asr` | train-clean-360 | ~360h | 낭독체, clean |
+| `ls500` | `openslr/librispeech_asr` | train-other-500 | ~500h | 낭독체, noisy |
+| `mls` | `parler-tts/mls_eng_10k` | train | ~10,000h | 다국어 낭독체 (EN), OGG-Opus |
+| `gs` | `speechcolab/gigaspeech` (xl) | train | ~10,000h | 오디오북·팟캐스트·YouTube 혼합 |
+| `vp` | `facebook/voxpopuli` (en) | train | ~500h | 유럽의회 연설, 자발화 |
+| **학습 합계** | | | **~21,460h** | |
+| — | `openslr/librispeech_asr` | dev-clean | — | 검증 (WER) |
 
-- 전처리: 16kHz mono, 최대 **20초** truncate
-- MLS 소스: `parler-tts/mls_eng_10k` (HuggingFace datasets, decode=False + torchaudio)
-- `mls_num_samples = 4,050,000` → 실제 데이터셋 크기 ~2,420k 샘플로 min 제한 (avg ~14.9s)
-- 총 학습 샘플 수: ~2,701k / epoch (84416 steps × 32 batch)
+- 전처리: 16kHz mono, 최대 **20초** truncate (초과분 버림)
+- `train_pipeline_override.py`: 스트리밍 모드 — 사전 다운로드 불필요, `interleave_datasets`로 균등 혼합
+- GigaSpeech: 노이즈 태그(`<NOISE>`, `<COMMA>` 등) 정규식으로 제거
+- MLS / VoxPopuli: OGG-Opus 포맷 → `Audio(decode=False)` + `torchaudio.load()` (soundfile 미지원)
+- 기본값: `--datasets` 미지정 시 6개 전체 사용
 
 ---
 
@@ -162,20 +165,40 @@ LayerNorm(2048)
 
 ## Training Pipeline (2-Stage)
 
+현재 스크립트: **`train_pipeline_override.py`** (스트리밍 + Sequence Packing + FA2 + FSDP)
+
 ```
 Stage 1: Projector Alignment
   - LLM frozen, projector만 학습
-  - AdamW, lr=5e-5, 3 epochs, cosine schedule
-  - batch_size=4 per GPU × 8 GPU × grad_accum=4 → 실효 배치=128
-  - --debug c: CTC 보조 head 추가 (L = L_CE + L_CTC)
-  - --debug w: step 1,20에서 가중치 덤프 후 종료 (디버그용)
+  - AdamW, lr=2e-4, 2 epochs, cosine schedule (warmup_ratio=0.1)
+  - Sequence Packing: cutoff_len=2048, Flash Attention 2
 
 Stage 2: LoRA Fine-tuning
   - LLM에 LoRA(r=16) 적용, projector도 계속 학습
-  - AdamW8bit (bitsandbytes), lr=2e-5, 16 epochs
-  - batch_size=2 per GPU × 8 GPU × grad_accum=4 → 실효 배치=64
+  - AdamW, lr=2e-5, 2 epochs, cosine schedule
+  - Liger Kernel (--liger), FSDP (--fsdp) 권장
   - val_loss 기준 best checkpoint 저장
 ```
+
+**실행 명령**:
+```bash
+LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" \
+accelerate launch train_pipeline_override.py --encoder fb_dacvae --liger --fsdp
+
+# 특정 데이터셋만 사용
+accelerate launch train_pipeline_override.py --encoder fb_dacvae --datasets ls100,mls,gs --liger --fsdp
+
+# Stage 1만 실행
+accelerate launch train_pipeline_override.py --encoder fb_dacvae --stage s1 --liger --fsdp
+```
+
+**최적화 조합** (자세한 내용: `docs/packing_fa2_liger_fsdp.md`):
+
+| 구성 | Packing | FA2 | Liger | FSDP |
+|---|---|---|---|---|
+| 기본값 | ✅ 항상 ON | ✅ 항상 ON | ❌ | ❌ |
+| 권장 | ✅ | ✅ | ✅ `--liger` | ✅ `--fsdp` |
+| FA2 비활성화 | ✅ | ❌ `--attn-impl sdpa` | — | — |
 
 ---
 
@@ -184,7 +207,7 @@ Stage 2: LoRA Fine-tuning
 학습 중 Stage 1을 예정 epoch 전에 끊고 Stage 2로 넘어가려면:
 
 ```bash
-kill -USR1 $(cat /mnt/tmp/cache/hf/train.pid)
+kill -USR1 $(cat /mnt/tmp/cache/train.pid)
 ```
 
 - 시그널을 받으면 **현재 epoch를 완료한 뒤** Stage 2로 진입 (mid-epoch 중단 없음)
