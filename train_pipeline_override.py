@@ -104,6 +104,9 @@ import os
 import gc
 from typing import Any, Literal
 from dataclasses import dataclass
+
+# Disable torchcodec in HuggingFace datasets (torchcodec not available in this env)
+os.environ.setdefault("HF_DATASETS_AUDIO_BACKEND", "soundfile")
 import io
 import bisect
 import math
@@ -130,8 +133,16 @@ from transformers.trainer_pt_utils import IterableDatasetShard
 from config import get_config
 from encoders import build_encoder
 from encoders.base import BaseAudioEncoder
-from train import _parse_datasets
 
+def _parse_datasets(s: str) -> list:
+    valid = {"ls100", "ls360", "ls500", "mls", "gs", "vp"}
+    items = [x.strip() for x in s.split(",") if x.strip()]
+    unknown = set(items) - valid
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"알 수 없는 dataset: {unknown}. 선택 가능: {valid}"
+        )
+    return items
 
 # ══════════════════════════════════════════════════════════
 # Logger
@@ -190,19 +201,19 @@ TRAIN_CONFIG = {
     # packing_cutoff_len : 하나의 packed bin(=모델에 들어가는 시퀀스) 최대 토큰 수.
     #   이 길이를 초과하는 원시 시퀀스는 packer에서 버려짐(cutoff_len 이하만 패킹 대상).
     #   클수록 GPU utilization↑, 메모리↑, attention 연산량 O(T²)↑.
-    "packing_cutoff_len":  2048,
+    "packing_cutoff_len":  16, #2048,
 
     # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
     #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
     #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
     #   packing_cutoff_len(2048)과 무관하게 독립적으로 설정.
-    "packing_bucket_size": 1000,
+    "packing_bucket_size": 2, #1000,
 
     # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
     #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
     #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
     #   권장: 32 (packing_bucket_size / process_batch_size ≈ 30회 호출로 bucket 충전).
-    "process_batch_size":  32,
+    "process_batch_size":  2, #32,
     # ──────────────────────────────────────────────────────────────────────
 
     "attn_implementation": "flash_attention_2",
@@ -370,10 +381,11 @@ class AudioQwen(nn.Module):
         return torch.cat(all_embeds, dim=0)                             # (N, T_proj, llm_dim)
 
     def _get_audio_embeds(self, audio, audio_lengths=None):
-        if self._stage == 2 and self._cfg.get("use_fsdp", False):
-            return self._get_audio_embeds_batched(audio, audio_lengths)
-        # return self._get_audio_embeds_sequential(audio, audio_lengths)
-        return self._get_audio_embeds_batched(audio, audio_lengths)
+        # if self._stage == 2 and self._cfg.get("use_fsdp", False):
+            # return self._get_audio_embeds_batched(audio, audio_lengths)
+            # return self._get_audio_embeds_sequential(audio, audio_lengths)
+        # return self._get_audio_embeds_batched(audio, audio_lengths)
+        return self._get_audio_embeds_sequential(audio, audio_lengths)
 
     # ------------------------------------------------------------------
     # Stage setup
@@ -509,20 +521,19 @@ def build_model(cfg, accelerator):
 # ══════════════════════════════════════════════════════════
 
 def _load_audio(audio_obj) -> tuple[torch.Tensor, int]:
-    """soundfile로 오디오 bytes/path 로드 (torchcodec 의존성 회피).
+    """torchaudio로 오디오 bytes/path 로드. FLAC, WAV, OGG, OPUS, MP3 지원.
 
-    soundfile.read(..., always_2d=True)는 (frames, channels) 반환; .T로
-    torchaudio 규약인 (channels, frames)로 변환. dtype='float32'는 [-1.0, 1.0] 정규화.
-    FLAC, WAV, OGG 지원.
+    soundfile은 OGG-Opus를 지원하지 않으므로 torchaudio 사용.
+    (MLS, VoxPopuli는 OPUS 포맷 → soundfile 실패)
+    torchaudio는 이미 (channels, frames) float32 텐서 반환.
     """
     if "bytes" in audio_obj and audio_obj["bytes"] is not None:
-        data, sr = sf.read(io.BytesIO(audio_obj["bytes"]), dtype="float32", always_2d=True)
+        waveform, sr = torchaudio.load(io.BytesIO(audio_obj["bytes"]))
     elif "path" in audio_obj and audio_obj["path"] is not None:
-        data, sr = sf.read(audio_obj["path"], dtype="float32", always_2d=True)
+        waveform, sr = torchaudio.load(audio_obj["path"])
     else:
         raise ValueError("audio_obj has neither 'bytes' nor 'path'")
-    waveform = torch.from_numpy(data.T)   # (channels, frames)
-    return waveform, sr
+    return waveform, sr   # (channels, frames)
 
 
 class StaticEvalDataset(torch.utils.data.Dataset):
@@ -947,9 +958,9 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
         dataset_list.append(ds_gs)
 
     # VoxPopuli
-    if "vox" in selected:
+    if "vp" in selected:
         ds_vox = load_dataset("facebook/voxpopuli", "en", split="train", streaming=True,
-                              cache_dir=mls_root)
+                              cache_dir=mls_root, trust_remote_code=True)
         if accelerator.num_processes > 1:
             ds_vox = ds_vox.shard(num_shards=accelerator.num_processes,
                                   index=accelerator.process_index, contiguous=False)
@@ -959,7 +970,7 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
         dataset_list.append(ds_vox)
 
     if not dataset_list:
-        raise ValueError("No datasets selected. Use --datasets with values like ls100,ls360,ls500,mls,gs")
+        raise ValueError("No datasets selected. Use --datasets with values like ls100,ls360,ls500,mls,gs,vp")
 
     ds = interleave_datasets(dataset_list, seed=cfg.get("seed", 42))
 
@@ -1295,28 +1306,29 @@ def calculate_max_steps(
     return int(steps_per_epoch * target_epochs)
 
 
-def _check_packing_efficiency(train_packed, collator, tokenizer, n_batches=5):
-    """rank-0 전용: 패킹 데이터셋의 패딩 비율 보고."""
-    loader = DataLoader(train_packed, batch_size=2, collate_fn=collator)
-    total_tokens = pad_tokens = 0
-    logger.info(f"{'='*50}")
-    logger.info(f"Packed Dataset Efficiency Check (First {n_batches} Batches)")
-    logger.info(f"{'='*50}")
-    for i, batch in enumerate(loader):
-        if i >= n_batches:
-            break
-        ids   = batch["input_ids"]
-        b_pad = (ids == tokenizer.pad_token_id).sum().item()
-        b_tot = ids.numel()
-        total_tokens += b_tot
-        pad_tokens   += b_pad
-        n_audio = batch["audio_lengths"].shape[0] if "audio_lengths" in batch else "N/A"
-        logger.info(
-            f"Batch {i+1}: shape={list(ids.shape)} | audio={n_audio} | "
-            f"pad={b_pad}/{b_tot} ({b_pad/b_tot*100:.1f}%)"
-        )
-    avg = pad_tokens / total_tokens * 100 if total_tokens else 0
-    logger.info(f"{'='*50}  avg padding={avg:.1f}%\n")
+# DISABLED: causes torchcodec import error in some environments
+# def _check_packing_efficiency(train_packed, collator, tokenizer, n_batches=5):
+#     """rank-0 전용: 패킹 데이터셋의 패딩 비율 보고."""
+#     loader = DataLoader(train_packed, batch_size=2, collate_fn=collator)
+#     total_tokens = pad_tokens = 0
+#     logger.info(f"{'='*50}")
+#     logger.info(f"Packed Dataset Efficiency Check (First {n_batches} Batches)")
+#     logger.info(f"{'='*50}")
+#     for i, batch in enumerate(loader):
+#         if i >= n_batches:
+#             break
+#         ids   = batch["input_ids"]
+#         b_pad = (ids == tokenizer.pad_token_id).sum().item()
+#         b_tot = ids.numel()
+#         total_tokens += b_tot
+#         pad_tokens   += b_pad
+#         n_audio = batch["audio_lengths"].shape[0] if "audio_lengths" in batch else "N/A"
+#         logger.info(
+#             f"Batch {i+1}: shape={list(ids.shape)} | audio={n_audio} | "
+#             f"pad={b_pad}/{b_tot} ({b_pad/b_tot*100:.1f}%)"
+#         )
+#     avg = pad_tokens / total_tokens * 100 if total_tokens else 0
+#     logger.info(f"{'='*50}  avg padding={avg:.1f}%\n")
 
 
 def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_dataset,
@@ -1339,9 +1351,9 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
             main_process_only=True,
         )
 
-    logger.info(f"\n{'='*55}",)
+    logger.info(f"{'='*55}",)
     logger.info(f" Stage 1: Projector Alignment  LR={cfg['stage1_lr']} Max Steps={cfg['max_steps']}",)
-    logger.info(f"{'='*55}\n",)
+    logger.info(f"{'='*55}",)
     
     model.freeze_llm()
     output_dir = os.path.join(cfg["model_cache_dir"], cfg["encoder_name"], f"s1_outputs_{run_id}")
@@ -1357,13 +1369,14 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
 
         # 주의: TrainingArguments의 gradient_checkpointing은 FSDP backward에서 불필요한
         # AllGather를 추가함; 대신 fsdp_config의 activation_checkpointing 사용 권장.
-        # gradient_checkpointing=True,
-        # gradient_checkpointing_kwargs={"use_reentrant": False},
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
 
         logging_steps=50,
-        save_strategy="steps",
-        save_steps=cfg["save_steps"],
-        save_total_limit=3,
+        # Disable auto-save only for very short test runs (< 10 steps)
+        save_strategy="no" if (cfg.get("max_steps") and cfg["max_steps"] < 10) else "steps",
+        save_steps=cfg.get("save_steps", 500) if cfg.get("max_steps", 1000) >= 10 else None,
+        save_total_limit=5,  # Keep best and latest 5 checkpoints
         report_to="wandb",
 
         remove_unused_columns=False,
@@ -1438,12 +1451,14 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
             main_process_only=True,
         )
 
-    logger.info(f"\n{'='*55}",)
+    logger.info(f"{'='*55}",)
     logger.info(f" Stage 2: LoRA Fine-tuning  LR={cfg['stage2_lr']}  warmup={cfg.get('warmup_ratio', 0.03)} max_steps={cfg['max_steps']}",)
-    logger.info(f"{'='*55}\n",)
+    logger.info(f"{'='*55}",)
 
     model = build_model(cfg, accelerator)
     model.apply_lora()
+    # Ensure all model parameters are bf16 for FSDP (LoRA params might be fp32)
+    model = model.to(torch.bfloat16)
 
     # Stage 1 projector 가중치 로드
     s1_proj_path = os.path.join(s1_output_dir, "s1_proj.pt")
@@ -1469,6 +1484,9 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
     if s1_proj_path is not None:
         logger.info(f"Stage 1 projector loaded: {s1_proj_path}")
         proj_state = torch.load(s1_proj_path, map_location="cpu", weights_only=True)
+        # Convert fp32 checkpoint to bf16 for FSDP compatibility
+        proj_state = {k: v.to(model.llm.dtype) if v.dtype == torch.float32 else v 
+                      for k, v in proj_state.items()}
         model.load_state_dict(proj_state, strict=False)
 
     s2_output_dir = os.path.join(cfg["model_cache_dir"], cfg["encoder_name"], f"s2_outputs_{run_id}")
@@ -1530,7 +1548,8 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
     )
 
     trainer.train()
-    trainer.save_model(s2_output_dir, safe_serialization=False)
+    # save_model doesn't take safe_serialization in newer transformers
+    trainer.save_model(s2_output_dir)
     logger.info(f"Stage 2 complete. Saved: {s2_output_dir}",)
 
     accelerator.wait_for_everyone()
@@ -1561,6 +1580,10 @@ def main():
     parser.add_argument("--resume", default=None, help="체크포인트에서 재개")
     parser.add_argument("--stage", choices=["all", "1", "2"], default="all",
                         help="실행할 스테이지: all (1→2, 기본값), 1, or 2")
+    parser.add_argument("--stage1-epochs", type=int, default=None,
+                        metavar="N", help="Stage 1 epoch 수 (기본: config 값)")
+    parser.add_argument("--stage2-epochs", type=int, default=None,
+                        metavar="N", help="Stage 2 epoch 수 (기본: config 값)")
     # 기능 플래그
     parser.add_argument("--attn-impl", default=None,
                         choices=["eager", "sdpa", "flash_attention_2"],
@@ -1582,6 +1605,8 @@ def main():
     cfg["eval_steps"]         = args.eval_steps
     cfg["save_steps"]         = args.save_steps
     cfg["max_steps"]          = args.max_steps
+    if args.stage1_epochs is not None: cfg["stage1_epochs"] = args.stage1_epochs
+    if args.stage2_epochs is not None: cfg["stage2_epochs"] = args.stage2_epochs
 
     selected_datasets = args.datasets or ["ls100", "ls360", "ls500", "mls", "gs", "vp"]
     cfg["estimated_hours"] = (
@@ -1639,8 +1664,9 @@ def main():
     )
 
     # 4. Sanity-check packing efficiency (rank-0 only)
-    if accelerator.is_main_process:
-        _check_packing_efficiency(train_streaming_dataset, collator, tokenizer)
+    # DISABLED: causes torchcodec import error in some environments
+    # if accelerator.is_main_process:
+    #     _check_packing_efficiency(train_streaming_dataset, collator, tokenizer)
 
     # 5. Static eval datasets for WER callback
     val_dataset, train_eval_dataset = build_static_eval_datasets(cfg, tokenizer)
