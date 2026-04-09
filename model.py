@@ -1,3 +1,4 @@
+import math
 import os
 
 import torch
@@ -162,6 +163,31 @@ class AudioQwen(nn.Module):
 
         return audio_embeds, proj_mask
 
+    def _project_precomputed(self, enc_feats, enc_feat_lengths):
+        """사전 계산된 인코더 피처를 projector에 통과시킨다. 인코더 호출 없음.
+
+        enc_feats:        (N, T_enc_max, out_dim)  — Arrow에서 로드한 float32, 짧은 클립은 zero-pad
+        enc_feat_lengths: (N,)  long               — 각 클립의 유효 인코더 프레임 수 (T_enc)
+
+        Returns: audio_embeds (1, total_T_proj, llm_dim)
+            — 모든 N 클립의 유효 projector 프레임만 연결한 텐서.
+            total_T_proj = sum_i ceil(T_enc_i / proj_stride)
+            이 형태로 반환해 _forward_packed의 audio_flat 계산 시 n_ph와 정확히 일치.
+        """
+        feats  = enc_feats.to(self.projector[0].weight.dtype)   # (N, T_enc_max, out_dim)
+        proj   = self.projector(feats.transpose(1, 2))          # (N, llm_dim, T_proj_max)
+        embeds = self.proj_norm(proj.transpose(1, 2))           # (N, T_proj_max, llm_dim)
+        embeds = embeds.to(self.llm.get_input_embeddings().weight.dtype)
+
+        # 클립별로 유효 T_proj만 추려 연결 (패딩 프레임 제거)
+        clips = []
+        for i in range(enc_feats.shape[0]):
+            T_enc_valid  = int(enc_feat_lengths[i].item())
+            T_proj_valid = math.ceil(T_enc_valid / self._proj_stride)
+            clips.append(embeds[i, :T_proj_valid, :])            # (T_proj_valid, llm_dim)
+
+        return torch.cat(clips, dim=0).unsqueeze(0)              # (1, total_T_proj, llm_dim)
+
     # ------------------------------------------------------------------
     # Stage 1 / Stage 2 설정
     # ------------------------------------------------------------------
@@ -233,12 +259,15 @@ class AudioQwen(nn.Module):
                 # ── packed 경로 (--packing 시 사용) ──────────────────────
                 input_ids=None, labels=None,
                 audio_features=None, audio_feat_lengths=None,
-                attention_mask=None, position_ids=None):
+                attention_mask=None, position_ids=None,
+                # ── precomputed encoder features (인코더 호출 생략) ───────
+                precomputed_enc_feats=None):
         if input_ids is not None:
             # ── packed 경로 ───────────────────────────────────────────────
             return self._forward_packed(
                 input_ids, labels, audio_features, audio_feat_lengths,
                 attention_mask, position_ids,
+                precomputed_enc_feats=precomputed_enc_feats,
             )
 
         # ── 기존(legacy) 경로 ─────────────────────────────────────────────
@@ -308,24 +337,37 @@ class AudioQwen(nn.Module):
         return out
 
     def _forward_packed(self, input_ids, labels, audio_features, audio_feat_lengths,
-                        attention_mask, position_ids):
+                        attention_mask, position_ids, precomputed_enc_feats=None):
         """
         Sequence packing 경로 (--packing 플래그 사용 시).
 
-        audio_features:     (N_audio, 1, S_max)  배치 내 모든 오디오 flatten + zero-pad
-        audio_feat_lengths: (N_audio,)            각 오디오 token 수 (t_audio, projector 출력 기준)
-        input_ids:          (B, T) [eager] 또는 (1, sum_nonpad) [FA2]
-        labels:             동일 shape
-        attention_mask:     (B, 1, T, T) 4D block-diagonal mask [eager] 또는 None [FA2]
-        position_ids:       (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager]
+        audio_features:       (N_audio, 1, S_max)  배치 내 모든 오디오 flatten + zero-pad
+                              precomputed_enc_feats 사용 시 무시됨.
+        audio_feat_lengths:   (N_audio,)
+                              - precomputed 모드: 인코더 출력 프레임 수 (T_enc)
+                              - raw 모드: LLM token 수 (projector 출력 기준)
+        precomputed_enc_feats:(N_audio, T_enc_max, out_dim) float32, 또는 None.
+                              None이면 audio_features에서 인코더를 직접 실행한다.
+        input_ids:            (B, T) [eager] 또는 (1, sum_nonpad) [FA2]
+        labels:               동일 shape
+        attention_mask:       (B, 1, T, T) 4D block-diagonal mask [eager] 또는 None [FA2]
+        position_ids:         (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager]
         """
-        # 1. 오디오 인코딩
-        #    audio_features: (N, 1, S_max) → squeeze → (N, S_max)
-        #    audio_feat_lengths: t_audio (LLM token 기준) → 실제 audio sample 수로 역산
-        wavs            = audio_features.squeeze(1)                     # (N, S_max)
-        spt             = self._cfg.get("samples_per_token", 1.0)
-        lengths_samples = (audio_feat_lengths.float() * spt).long()     # (N,) audio sample 수
-        audio_embeds, _ = self._get_audio_embeds(wavs, lengths_samples) # (N, T_proj, llm_dim)
+        # 1. 오디오 인코딩 또는 사전 계산 피처 로드
+        if precomputed_enc_feats is not None:
+            # precomputed 모드: 인코더 호출 생략, projector만 실행
+            # audio_feat_lengths = T_enc (인코더 프레임 수)
+            audio_embeds = self._project_precomputed(
+                precomputed_enc_feats, audio_feat_lengths
+            )                                                            # (N, T_proj, llm_dim)
+        else:
+            # raw 모드: waveform → encoder → projector
+            #    audio_features: (N, 1, S_max) → squeeze → (N, S_max)
+            #    audio_feat_lengths: LLM token 수 → 실제 audio sample 수로 역산
+            wavs            = audio_features.squeeze(1)                 # (N, S_max)
+            spt             = self._cfg.get("samples_per_token", 1.0)
+            lengths_samples = (audio_feat_lengths.float() * spt).long() # (N,) audio sample 수
+            audio_embeds, _ = self._get_audio_embeds(wavs, lengths_samples)  # (N, T_proj, llm_dim)
 
         # 2. 전체 토큰 임베딩
         embed         = self.llm.get_input_embeddings()

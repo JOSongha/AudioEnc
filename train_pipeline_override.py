@@ -119,7 +119,6 @@ import warnings
 import torch
 import torch.nn as nn
 import torchaudio
-import soundfile as sf
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from huggingface_hub import try_to_load_from_cache
@@ -167,64 +166,7 @@ logging.basicConfig(
 logger = get_logger(__name__)
 
 
-# ══════════════════════════════════════════════════════════
-# Config
-# ══════════════════════════════════════════════════════════
-
-TRAIN_CONFIG = {
-    "llm_model": "Qwen/Qwen3.5-2B",
-
-    "gradient_accumulation_steps": 4,
-
-    "stage1_lr": 2e-4,
-    "stage1_epochs": 2,
-
-    "stage2_lr": 2e-5,
-    "stage2_epochs": 2,
-
-    "warmup_ratio": 0.1,
-
-    "max_audio_len": 16000 * 20,
-
-    "data_path": "/mnt/tmp/cache",
-    "mls_data_path": "/mnt/tmp/cache",
-    "model_cache_dir": "/mnt/tmp/cache/hf",
-    "wandb_mode": "online",
-
-    "save_steps": 5000,
-
-    "lora_r": 16,
-    "lora_alpha": 32,
-    "lora_dropout": 0.1,
-    "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-
-    "stage2_train_projector": True,
-
-    # ── Sequence packing ──────────────────────────────────────────────────
-    # packing_cutoff_len : 하나의 packed bin(=모델에 들어가는 시퀀스) 최대 토큰 수.
-    #   이 길이를 초과하는 원시 시퀀스는 packer에서 버려짐(cutoff_len 이하만 패킹 대상).
-    #   클수록 GPU utilization↑, 메모리↑, attention 연산량 O(T²)↑.
-    "packing_cutoff_len":  2048,
-
-    # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
-    #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
-    #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
-    #   packing_cutoff_len(2048)과 무관하게 독립적으로 설정.
-    "packing_bucket_size": 1000,
-
-    # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
-    #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
-    #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
-    #   권장: 32 (packing_bucket_size / process_batch_size ≈ 30회 호출로 bucket 충전).
-    "process_batch_size":  32,
-    # ──────────────────────────────────────────────────────────────────────
-
-    "attn_implementation": "flash_attention_2",
-
-    "sample_rate":        16000,
-    "audio_pad_token_id": 151655,  # Qwen2.5 <|image_pad|> — unused slot reused as audio placeholder
-}
-
+# 학습 설정은 config.py의 TRAIN_CONFIG / ENCODER_REGISTRY / get_config() 참조.
 
 IGNORE_INDEX = -100
 
@@ -388,6 +330,28 @@ class AudioQwen(nn.Module):
             return self._get_audio_embeds_sequential(audio, audio_lengths)
         return self._get_audio_embeds_batched(audio, audio_lengths)
 
+    def _project_precomputed(self, enc_feats, enc_feat_lengths):
+        """사전 계산된 인코더 피처를 projector에 통과. 인코더 호출 없음.
+
+        enc_feats:        (N, T_enc_max, out_dim)  — Arrow에서 로드한 float32, 짧은 클립은 zero-pad
+        enc_feat_lengths: (N,) long               — 각 클립의 유효 인코더 프레임 수 (T_enc)
+
+        Returns: (1, total_T_proj, llm_dim)
+            각 클립의 유효 projector 프레임만 연결. total_T_proj = sum ceil(T_enc_i / stride)
+        """
+        feats  = enc_feats.to(self.projector[0].weight.dtype)   # (N, T_enc_max, out_dim)
+        proj   = self.projector(feats.transpose(1, 2))          # (N, llm_dim, T_proj_max)
+        embeds = self.proj_norm(proj.transpose(1, 2))           # (N, T_proj_max, llm_dim)
+        embeds = embeds.to(self.llm.get_input_embeddings().weight.dtype)
+
+        clips = []
+        for i in range(enc_feats.shape[0]):
+            T_enc_valid  = int(enc_feat_lengths[i].item())
+            T_proj_valid = math.ceil(T_enc_valid / self._proj_stride)
+            clips.append(embeds[i, :T_proj_valid, :])
+
+        return torch.cat(clips, dim=0).unsqueeze(0)             # (1, total_T_proj, llm_dim)
+
     # ------------------------------------------------------------------
     # Stage setup
     # ------------------------------------------------------------------
@@ -448,24 +412,38 @@ class AudioQwen(nn.Module):
     # Forward
     # ------------------------------------------------------------------
 
-    def forward(self, input_ids, labels, audio_features, audio_lengths,
+    def forward(self, input_ids, labels, audio_features=None, audio_lengths=None,
                 attention_mask=None, position_ids=None,
-                num_items_in_batch=None, **kwargs):
+                num_items_in_batch=None,
+                precomputed_enc_feats=None,
+                **kwargs):
         """
         시퀀스 패킹 forward pass.
 
-        audio_features:  (N_audio, 1, S_max)  배치 내 전체 오디오, zero-padded
-        audio_lengths:   (N_audio,)            각 오디오의 토큰 수 (projector 출력 기준)
-        input_ids:       (B, T) [eager/sdpa] 또는 (1, sum_nonpad) [FA2]
-        labels:          input_ids와 동일한 shape
-        attention_mask:  (B, 1, T, T) 4D block-diagonal [eager/sdpa] 또는 None [FA2]
-        position_ids:    (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager/sdpa]
+        audio_features:         (N_audio, 1, S_max)  raw waveform, zero-padded.
+                                precomputed_enc_feats 사용 시 None이어도 됨.
+        audio_lengths:          (N_audio,)
+                                - raw 모드: LLM 토큰 수 (projector 출력 기준)
+                                - precomputed 모드: 인코더 프레임 수 (T_enc)
+        precomputed_enc_feats:  (N_audio, T_enc_max, out_dim) float32, 또는 None.
+                                None이면 audio_features에서 인코더를 직접 실행한다.
+        input_ids:              (B, T) [eager/sdpa] 또는 (1, sum_nonpad) [FA2]
+        labels:                 input_ids와 동일한 shape
+        attention_mask:         (B, 1, T, T) 4D block-diagonal [eager/sdpa] 또는 None [FA2]
+        position_ids:           (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager/sdpa]
         """
-        # 1. Encode audio
-        wavs            = audio_features.squeeze(1)                     # (N, S_max)
-        spt             = self._cfg.get("samples_per_token", 1.0)
-        lengths_samples = (audio_lengths.float() * spt).long()          # (N,) in samples
-        audio_embeds    = self._get_audio_embeds(wavs, lengths_samples) # (N, T_proj, llm_dim)
+        # 1. Encode audio or use precomputed features
+        if precomputed_enc_feats is not None:
+            # precomputed 모드: 인코더 생략, audio_lengths = T_enc
+            audio_embeds = self._project_precomputed(
+                precomputed_enc_feats, audio_lengths
+            )                                                            # (1, total_T_proj, llm_dim)
+        else:
+            # raw 모드: waveform → encoder → projector
+            wavs            = audio_features.squeeze(1)                 # (N, S_max)
+            spt             = self._cfg.get("samples_per_token", 1.0)
+            lengths_samples = (audio_lengths.float() * spt).long()      # (N,) in samples
+            audio_embeds    = self._get_audio_embeds(wavs, lengths_samples)  # (N, T_proj, llm_dim)
 
         # 2. Embed all tokens
         embed         = self.llm.get_input_embeddings()
@@ -983,45 +961,84 @@ class OmniCollator:
 
     패킹된 샘플 리스트를 모델 입력 텐서로 변환:
       - input_ids, labels 스택 (packer에서 이미 cutoff_len으로 맞춤)
-      - 배치 전체 audio_features 평탄화 → (N_audio, 1, S_max)
+      - raw 모드: 배치 전체 waveform 평탄화 → audio_features (N_audio, 1, S_max)
+      - precomputed 모드: 인코더 피처 평탄화 → precomputed_enc_feats (N_audio, T_enc_max, out_dim)
       - 4D block-diagonal mask 생성 [eager/sdpa] 또는 평탄화 + position_ids 리셋 [FA2]
+
+    enc_out_dim > 0: precomputed 모드. audio_features는 flat float32 (T_enc × out_dim,)로
+    저장되어 있으며, audio_lengths = T_enc (인코더 프레임 수).
+    enc_out_dim == 0: raw waveform 모드 (기본).
     """
     pad_token_id: int
     attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa"
     compute_dtype: torch.dtype = torch.bfloat16
     block_diag_attn: bool = True
+    enc_out_dim: int = 0   # 0 = raw waveform 모드; >0 = precomputed encoder feature 모드
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
+        import numpy as np
+
         input_ids      = torch.tensor([f["input_ids"] for f in features], dtype=torch.long)
         labels         = torch.tensor([f["labels"]    for f in features], dtype=torch.long)
         attention_mask = torch.tensor([f["attention_mask"] for f in features], dtype=torch.long)
 
-        # 배치 전체 waveform 평탄화 → (N_audio, 1, S_max)
-        all_waveforms     = []
         all_audio_lengths = []
         for f in features:
-            for wav in f["audio_features"]:
-                all_waveforms.append(
-                    wav if isinstance(wav, torch.Tensor) else torch.tensor(wav, dtype=torch.float32)
-                )
             all_audio_lengths.extend(f["audio_lengths"])
-
-        if all_waveforms:
-            max_audio_len = max(w.size(0) for w in all_waveforms)
-            audio_features = torch.stack(
-                [torch.nn.functional.pad(w, (0, max_audio_len - w.size(0))) for w in all_waveforms]
-            ).unsqueeze(1)
-        else:
-            audio_features = torch.zeros((0, 1, 0), dtype=torch.float32)
-
         audio_lengths = torch.tensor(all_audio_lengths, dtype=torch.long)
 
-        result = {
-            "input_ids":      input_ids,       # (B, cutoff_len)
-            "labels":         labels,           # (B, cutoff_len)
-            "audio_features": audio_features,  # (N_audio, 1, max_audio_len)
-            "audio_lengths":  audio_lengths,   # (N_audio,)
-        }
+        if self.enc_out_dim > 0:
+            # ── precomputed 모드 ───────────────────────────────────────────
+            # audio_features per clip: flat numpy array (T_enc × out_dim,)
+            # audio_lengths per clip: T_enc
+            out_dim = self.enc_out_dim
+            all_enc_feats = []
+            for f in features:
+                for flat_feat, t_enc in zip(f["audio_features"], f["audio_lengths"]):
+                    arr = np.asarray(flat_feat, dtype=np.float32).reshape(t_enc, out_dim)
+                    all_enc_feats.append(torch.from_numpy(arr))   # (T_enc, out_dim)
+
+            if all_enc_feats:
+                max_T_enc = max(e.shape[0] for e in all_enc_feats)
+                enc_tensor = torch.zeros(
+                    len(all_enc_feats), max_T_enc, out_dim, dtype=torch.float32
+                )
+                for i, e in enumerate(all_enc_feats):
+                    enc_tensor[i, :e.shape[0], :] = e
+            else:
+                enc_tensor = torch.zeros((0, 0, out_dim), dtype=torch.float32)
+
+            result = {
+                "input_ids":             input_ids,    # (B, cutoff_len)
+                "labels":                labels,        # (B, cutoff_len)
+                "precomputed_enc_feats": enc_tensor,   # (N_audio, T_enc_max, out_dim)
+                "audio_lengths":         audio_lengths, # (N_audio,) = T_enc per clip
+            }
+        else:
+            # ── raw waveform 모드 (기존) ──────────────────────────────────
+            all_waveforms = []
+            for f in features:
+                for wav in f["audio_features"]:
+                    all_waveforms.append(
+                        wav if isinstance(wav, torch.Tensor)
+                        else torch.tensor(wav, dtype=torch.float32)
+                    )
+
+            if all_waveforms:
+                max_audio_len = max(w.size(0) for w in all_waveforms)
+                audio_features = torch.stack(
+                    [torch.nn.functional.pad(w, (0, max_audio_len - w.size(0)))
+                     for w in all_waveforms]
+                ).unsqueeze(1)
+            else:
+                audio_features = torch.zeros((0, 1, 0), dtype=torch.float32)
+
+            result = {
+                "input_ids":      input_ids,        # (B, cutoff_len)
+                "labels":         labels,            # (B, cutoff_len)
+                "audio_features": audio_features,   # (N_audio, 1, max_audio_len)
+                "audio_lengths":  audio_lengths,     # (N_audio,)
+            }
 
         if self.block_diag_attn:
             if self.attn_implementation != "flash_attention_2":
@@ -1155,6 +1172,125 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
         from accelerate.logging import get_logger as _get_logger
         _logger = _get_logger(__name__)
         _logger.info(f"Pipeline initialized. Total interleaved shards: {getattr(ds._ex_iterable, 'num_shards', 1)}")
+
+    return ds
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Precomputed encoder feature 파이프라인
+# ══════════════════════════════════════════════════════════════════════════════
+
+def make_precomputed_processor_fn(cfg, tokenizer):
+    """Pre-computed encoder feature Arrow 파일용 processor_fn.
+
+    Arrow 스키마: utterance_id(str), text(str), features(list<float32>), feat_len(int32)
+    features = flattened (T_enc × out_dim,) float32
+
+    출력 키:
+        input_ids       : list[int]
+        labels          : list[int]
+        audio_features  : list[float32]  — flattened (T_enc × out_dim,)
+        audio_lengths   : list[int]      — T_enc (인코더 프레임 수, collator에서 reshape에 사용)
+    """
+    audio_pad_id   = cfg.get("audio_pad_token_id", 151655)
+    max_text_len   = cfg.get("max_text_len", 256)
+    proj_stride    = cfg["encoder"].get("proj_strides", [2, 2])
+    total_stride   = 1
+    for s in proj_stride:
+        total_stride *= s
+
+    def process_samples(examples):
+        all_input_ids, all_labels = [], []
+        all_audio_features, all_audio_lengths = [], []
+
+        for flat_feats, feat_len, text in zip(
+            examples["features"], examples["feat_len"], examples["text"]
+        ):
+            if feat_len == 0 or not flat_feats:
+                continue
+            T_enc = int(feat_len)
+            T_proj = math.ceil(T_enc / total_stride)
+
+            text_ids = tokenizer.encode(
+                text.lower().strip(), add_special_tokens=False
+            )[:max_text_len]
+            if not text_ids:
+                continue
+
+            # [audio_pad × T_proj] + [text_ids] + [EOS]
+            input_ids = ([audio_pad_id] * T_proj) + text_ids + [tokenizer.eos_token_id]
+            labels    = ([-100] * T_proj) + text_ids + [tokenizer.eos_token_id]
+
+            # flat float list 그대로 보관 (collator에서 reshape)
+            all_input_ids.append(input_ids)
+            all_labels.append(labels)
+            all_audio_features.append(flat_feats if isinstance(flat_feats, list)
+                                      else list(flat_feats))
+            all_audio_lengths.append(T_enc)
+
+        return {
+            "input_ids":      all_input_ids,
+            "labels":         all_labels,
+            "audio_features": all_audio_features,
+            "audio_lengths":  all_audio_lengths,
+        }
+
+    return process_samples
+
+
+def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, packer_fn,
+                               selected_datasets=None, shuffle: bool = True,
+                               word_aug: bool = False):
+    """Pre-computed Arrow 파일 기반 데이터 파이프라인.
+
+    각 rank는 자신의 rank{process_index}.arrow 파일만 로드한다.
+    word_aug=True: processor_fn이 word-level sub-clip 생성 (AlignmentLookup 필요).
+    """
+    from pathlib import Path
+    rank       = accelerator.process_index
+    enc_name   = cfg["encoder_name"]
+    selected   = selected_datasets or ["ls100", "ls360", "ls500", "mls", "gs", "vp"]
+    base_dir   = Path(precomputed_dir) / enc_name
+
+    dataset_list = []
+    for ds_key in selected:
+        arrow_path = base_dir / ds_key / f"rank{rank}.arrow"
+        if not arrow_path.exists():
+            logger.warning(
+                f"[rank {rank}] Precomputed file missing: {arrow_path} — skipping {ds_key}",
+                main_process_only=False,
+            )
+            continue
+        ds = load_dataset("arrow", data_files=str(arrow_path), split="train", streaming=True)
+        dataset_list.append(ds)
+        logger.info(
+            f"[rank {rank}] Loaded precomputed: {arrow_path}",
+            main_process_only=False,
+        )
+
+    if not dataset_list:
+        raise ValueError(
+            f"No precomputed Arrow files found under {base_dir}. "
+            f"Run: bash precompute/run_precompute.sh --encoder {enc_name}"
+        )
+
+    ds = interleave_datasets(dataset_list, seed=cfg.get("seed", 42))
+    if shuffle:
+        ds = ds.shuffle(buffer_size=10000, seed=cfg.get("seed", 42))
+
+    ds = ds.map(
+        processor_fn,
+        batched=True,
+        batch_size=cfg.get("process_batch_size", 32),
+        remove_columns=["utterance_id", "text", "features", "feat_len"],
+    )
+
+    if cfg.get("packing", True):
+        ds = ds.map(
+            packer_fn,
+            batched=True,
+            batch_size=cfg.get("packing_bucket_size", 200),
+        )
 
     return ds
 
@@ -1465,32 +1601,6 @@ def calculate_max_steps(
     return int(steps_per_epoch * target_epochs)
 
 
-# [이전] torchcodec import 오류로 비활성화했으나, Audio(decode=False)+torchaudio로 해결됨.
-# [현재] main()에서 주석 처리 유지 (스트리밍 데이터셋은 len() 없어 배치 반복 시 시간이 오래 걸림)
-# def _check_packing_efficiency(train_packed, collator, tokenizer, n_batches=5):
-#     """rank-0 전용: 패킹 데이터셋의 패딩 비율 보고."""
-#     loader = DataLoader(train_packed, batch_size=2, collate_fn=collator)
-#     total_tokens = pad_tokens = 0
-#     logger.info(f"{'='*50}")
-#     logger.info(f"Packed Dataset Efficiency Check (First {n_batches} Batches)")
-#     logger.info(f"{'='*50}")
-#     for i, batch in enumerate(loader):
-#         if i >= n_batches:
-#             break
-#         ids   = batch["input_ids"]
-#         b_pad = (ids == tokenizer.pad_token_id).sum().item()
-#         b_tot = ids.numel()
-#         total_tokens += b_tot
-#         pad_tokens   += b_pad
-#         n_audio = batch["audio_lengths"].shape[0] if "audio_lengths" in batch else "N/A"
-#         logger.info(
-#             f"Batch {i+1}: shape={list(ids.shape)} | audio={n_audio} | "
-#             f"pad={b_pad}/{b_tot} ({b_pad/b_tot*100:.1f}%)"
-#         )
-#     avg = pad_tokens / total_tokens * 100 if total_tokens else 0
-#     logger.info(f"{'='*50}  avg padding={avg:.1f}%\n")
-
-
 def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_dataset,
                collator, run_id: str, resume=None):
     """Stage 1: LLM frozen 상태에서 Projector alignment. (output_dir, total_steps) 반환."""
@@ -1522,6 +1632,7 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         output_dir=output_dir,
         bf16=True,
         max_steps=cfg["max_steps"],
+        per_device_train_batch_size=1,   # packed bin 1개 = 1 batch (기본값 8이면 8 bin 묶음 → 8× 느림)
         gradient_accumulation_steps=cfg.get("gradient_accumulation_steps", 4),
         learning_rate=cfg["stage1_lr"],
         lr_scheduler_type="constant",
@@ -1542,6 +1653,12 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         remove_unused_columns=False,
         # Stage 1: LLM frozen, projector만 학습 → DDP로 충분 (FSDP 불필요)
         ddp_find_unused_parameters=False,
+
+        # CPU 데이터 로딩을 GPU 학습과 병렬화.
+        # 주의: IterableDataset + num_workers>0 은 각 worker가 동일 스트림을 독립적으로
+        # 순회하므로 데이터 중복이 발생할 수 있음. 속도 우선 트레이드오프.
+        dataloader_num_workers=4,
+        dataloader_prefetch_factor=2,
     )
 
     wer_callback = WerCallback(
@@ -1698,6 +1815,8 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
         save_total_limit=3,
 
         remove_unused_columns=False,
+        dataloader_num_workers=4,
+        dataloader_prefetch_factor=2,
 
         **({
             "fsdp": "full_shard auto_wrap",
@@ -1769,6 +1888,10 @@ def main():
                         help="Stage 2 FSDP 활성화/비활성화 (기본: --fsdp)")
     parser.add_argument("--word-aug", action="store_true", default=False,
                         help="단어 단위 ASR 서브샘플 생성 활성화 (word alignment Arrow 필요)")
+    parser.add_argument("--precomputed-dir", default=None,
+                        help="Pre-computed encoder feature 디렉토리 "
+                             "(기본: None = raw audio 모드). "
+                             "예: /mnt/fr20tb/wbl_residency/jos/ddn/precomputed")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -1784,6 +1907,7 @@ def main():
     cfg["max_steps"]          = args.max_steps
     if args.stage1_epochs is not None: cfg["stage1_epochs"] = args.stage1_epochs
     if args.stage2_epochs is not None: cfg["stage2_epochs"] = args.stage2_epochs
+    cfg["precomputed_dir"] = args.precomputed_dir   # None = raw audio 모드
 
     selected_datasets = args.datasets or ["ls100", "ls360", "ls500", "mls", "gs", "vp"]
     cfg["estimated_hours"] = (
@@ -1852,40 +1976,61 @@ def main():
         merged_alignment = MergedAlignmentLookup(list(lookups_dict.values()))
         logger.info(f"Word-aug enabled. Loaded {sum(1 for v in lookups_dict.values() if v)} alignment lookups.")
 
-    processor_fn = create_processor(
-        tokenizer=tokenizer,
-        audio_pad_token_id=cfg.get("audio_pad_token_id", 151655),
-        sample_rate=cfg.get("sample_rate", 16000),
-        alignment_lookup=merged_alignment,
-        word_aug=args.word_aug,
-    )
     packer_fn = create_packer(
         cutoff_len=cfg["packing_cutoff_len"],
         pad_token_id=tokenizer.pad_token_id,
         neat_packing=True,
     )
-    collator = OmniCollator(
-        pad_token_id=tokenizer.pad_token_id,
-        attn_implementation=cfg.get("attn_implementation", "sdpa"),
-        block_diag_attn=True,
-    )
 
-    # 3. Build streaming dataset (Load → Shard → Shuffle → Process → Pack)
-    logger.info("Building Streaming Pipeline...",)
-    train_streaming_dataset = build_multi_dataset_streaming_pipeline(
-        cfg=cfg,
-        accelerator=accelerator,
-        processor_fn=processor_fn,
-        packer_fn=packer_fn,
-        shuffle=True,
-        selected_datasets=selected_datasets,
-        word_aug=args.word_aug,
-    )
+    precomputed_dir = cfg.get("precomputed_dir")   # None = raw audio 모드
 
-    # 4. Sanity-check packing efficiency (rank-0 only)
-    # DISABLED: 스트리밍 데이터셋에서 5 배치 이터레이션이 느림 (필요 시 수동 활성화)
-    # if accelerator.is_main_process:
-    #     _check_packing_efficiency(train_streaming_dataset, collator, tokenizer)
+    if precomputed_dir:
+        # ── Precomputed 모드: Arrow 파일에서 인코더 피처 직접 로드 ──────────
+        logger.info(f"Precomputed mode: loading encoder features from {precomputed_dir}")
+        processor_fn = make_precomputed_processor_fn(cfg, tokenizer)
+        collator = OmniCollator(
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation=cfg.get("attn_implementation", "sdpa"),
+            block_diag_attn=True,
+            enc_out_dim=model.encoder.out_dim,
+        )
+        # 3. Build precomputed pipeline
+        logger.info("Building Precomputed Pipeline...",)
+        train_streaming_dataset = build_precomputed_pipeline(
+            cfg=cfg,
+            accelerator=accelerator,
+            precomputed_dir=precomputed_dir,
+            processor_fn=processor_fn,
+            packer_fn=packer_fn,
+            selected_datasets=selected_datasets,
+            word_aug=args.word_aug,
+        )
+    else:
+        # ── Raw audio 모드 (기존): HF streaming + on-the-fly encoding ───────
+        processor_fn = create_processor(
+            tokenizer=tokenizer,
+            audio_pad_token_id=cfg.get("audio_pad_token_id", 151655),
+            sample_rate=cfg.get("sample_rate", 16000),
+            alignment_lookup=merged_alignment,
+            word_aug=args.word_aug,
+        )
+        collator = OmniCollator(
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation=cfg.get("attn_implementation", "sdpa"),
+            block_diag_attn=True,
+            enc_out_dim=0,   # raw waveform 모드
+        )
+        # 3. Build streaming dataset (Load → Shard → Shuffle → Process → Pack)
+        logger.info("Building Streaming Pipeline...",)
+        train_streaming_dataset = build_multi_dataset_streaming_pipeline(
+            cfg=cfg,
+            accelerator=accelerator,
+            processor_fn=processor_fn,
+            packer_fn=packer_fn,
+            shuffle=True,
+            selected_datasets=selected_datasets,
+            word_aug=args.word_aug,
+        )
 
     # 5. Static eval datasets for WER callback
     val_dataset, train_eval_dataset = build_static_eval_datasets(cfg, tokenizer)

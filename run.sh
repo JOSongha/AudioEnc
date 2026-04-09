@@ -38,6 +38,8 @@
 #   --wandb-mode    online | offline | disabled (기본 online)
 #   --resume        체크포인트 경로
 #   --word-aug      단어 단위 ASR 서브샘플 생성 (word alignment Arrow 사용)
+#   --precomputed-dir 사전 계산된 인코더 피처 디렉토리 (기본: None = raw audio 모드)
+#                   예) --precomputed-dir /mnt/fr20tb/wbl_residency/jos/ddn/precomputed
 # =============================================================================
 
 set -e
@@ -56,6 +58,9 @@ fi
 # flash_attn LD_PRELOAD (GLIBCXX_3.4.29 + GLIBC_2.32 우회)
 # 자세한 내용: docs/train_pipeline_errors.md §6.7–6.8
 export LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so"
+
+# CUDA 메모리 단편화 완화 (word-aug 등으로 N_audio가 많아질 때 OOM 방지)
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # -----------------------------------------------------------------------------
 # 인자 파싱
