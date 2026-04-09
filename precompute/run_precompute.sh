@@ -7,6 +7,7 @@
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --datasets ls100,gs
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --gpus 4
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --verify
+#   bash precompute/run_precompute.sh --encoder fb_dacvae --batch-size 8
 #
 # 각 GPU가 독립 프로세스로 실행되며 데이터셋을 1/N 샤드씩 처리한다.
 # 결과: /mnt/fr20tb/wbl_residency/jos/ddn/precomputed/{encoder}/{dataset}/rank{k}.arrow
