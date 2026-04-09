@@ -99,7 +99,7 @@ N_STREAMS = 2
 N_DECODE_THREADS = 16
 
 # 한 번에 GPU에 올리는 최대 클립 수 (A100 80GB 기준)
-DEFAULT_BATCH_SIZE = 64
+DEFAULT_BATCH_SIZE = 16
 
 # Arrow 파일 flush 주기 (row 수)
 FLUSH_EVERY = 2000
@@ -338,7 +338,7 @@ def precompute_dataset(
         # 남은 버퍼 flush & 파일 닫기
         _flush_arrow()
         writer.close()
-        executor.shutdown(wait=False)
+        executor.shutdown(wait=True)
         if success:
             tmp_path.rename(output_path)   # 완료된 경우에만 최종 경로로 이동
         else:

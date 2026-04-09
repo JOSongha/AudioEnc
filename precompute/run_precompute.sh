@@ -7,13 +7,21 @@
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --datasets ls100,gs
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --gpus 4
 #   bash precompute/run_precompute.sh --encoder fb_dacvae --verify
-#   bash precompute/run_precompute.sh --encoder fb_dacvae --batch-size 8
+#   bash precompute/run_precompute.sh --encoder fb_dacvae --batch-size 50
 #
 # 각 GPU가 독립 프로세스로 실행되며 데이터셋을 1/N 샤드씩 처리한다.
 # 결과: /mnt/fr20tb/wbl_residency/jos/ddn/precomputed/{encoder}/{dataset}/rank{k}.arrow
 # =============================================================================
 
 set -e
+
+# Ctrl-C / 종료 시 모든 child 프로세스 강제 종료
+_cleanup() {
+    echo "[run_precompute] 종료 신호 수신, child 프로세스 정리 중..."
+    pkill -9 -P $$ 2>/dev/null || true
+    pkill -9 -f precompute_features.py 2>/dev/null || true
+}
+trap _cleanup EXIT INT TERM
 
 # Conda 환경 설정
 if [[ -z "$CONDA_PREFIX" ]]; then
