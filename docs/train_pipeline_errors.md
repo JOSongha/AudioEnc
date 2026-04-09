@@ -20,6 +20,9 @@
     - [Config 의존성 정리](#config-의존성-정리)
   - [4. 학습 루프 / 실행 방식](#4-학습-루프--실행-방식)
   - [5. 평가 (Validation / WER)](#5-평가-validation--wer)
+  - [6. 런타임 실행 오류 (실행 테스트 2026-04-08)](#6-런타임-실행-오류-실행-테스트-2026-04-08)
+    - [6.11 word-aug: CUDA OOM (메모리 단편화)](#611-word-aug-cuda-oom-메모리-단편화)
+    - [6.12 word-aug: 300× 속도 저하 (혼합 길이 패딩 폭발)](#612-word-aug-300-속도-저하-혼합-길이-패딩-폭발)
 
 
 ## 0. 패키지 버전 
@@ -597,3 +600,71 @@ if _fp32_params:
 `nn.Module.to()`는 일부 커스텀 모듈 (PeftModel, Liger 패치 모듈 등)에서 adapter weight를  
 건너뛸 수 있음. `param.data` 직접 수정은 어떠한 커스텀 `.to()` 오버라이드도 우회하여  
 반드시 모든 파라미터를 캐스트함.
+
+---
+
+### 6.11 word-aug: CUDA OOM (메모리 단편화)
+
+**발생 시점**: `--word-aug` 플래그로 학습 시작, Step 2 backward 중 GPU 4에서 OOM.
+
+```
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 14.38 GiB.
+GPU 4 has a total capacity of 79.33 GiB of which 12.64 GiB is free.
+Process 110386 has 66.63 GiB memory in use. Of the allocated memory 43.49 GiB
+is allocated by PyTorch, and 21.50 GiB is reserved by PyTorch but unallocated.
+Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.
+```
+
+**원인**: word-aug로 한 bin에 단어 클립이 많아지면 backward 시 대형 연속 블록을 할당해야 하는데,  
+21.5 GiB가 예약되어 있지만 단편화로 인해 연속된 14.38 GiB 블록 확보 불가.
+
+**수정**: `run.sh`에 CUDA 메모리 확장 세그먼트 설정 추가.
+
+```bash
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
+OOM은 해소되지만 근본 원인(메모리 압박)은 §6.12에서 별도 처리.
+
+---
+
+### 6.12 word-aug: 300× 속도 저하 (혼합 길이 패딩 폭발)
+
+**증상**: word-aug 없이 ~1 s/it이던 Step 속도가 word-aug ON 시 ~300 s/it으로 저하.  
+GPU 4 utilization 26%, 나머지 7개 GPU는 100% (NCCL spin-wait).
+
+**원인**: `OmniCollator`가 bin 내 모든 오디오 클립을 `max(clip_length)`로 패딩한다.
+
+word-aug processor는 원본 발화(full utterance)와 단어 단위 서브클립(word clip)을 **같은 패킹 풀**에 섞어 넣는다.
+그 결과 하나의 packed bin에 긴 발화와 짧은 단어 클립이 공존한다.
+
+```
+bin 예시 (cutoff_len=2048 LLM tokens):
+  발화 1개:   10s  = 160,000 samples (@ 16kHz)
+  단어 클립 100개:  0.5s =   8,000 samples 각
+
+collator → audio_features: (101, 1, 160,000)
+실제 유효 데이터: 1×160,000 + 100×8,000 = 960,000 samples
+패딩 포함 데이터: 101×160,000 = 16,160,000 samples
+효율: 6%  (94%가 패딩 0)
+```
+
+이 텐서가 fb_dacvae 인코더로 전달되면 44kHz 리샘플 후 `(101, 1, 440,000)` = 178 MB.  
+인코더 forward + backward 비용이 ~20× 증가 → GPU 4 메모리 소진 → 300× 속도 저하.
+
+**근본 수정 방향**: `_get_audio_embeds_batched` 대신 `_get_audio_embeds_sequential` 사용.  
+클립 하나씩 실제 길이로 인코더에 통과시키므로 교차 패딩 낭비 없음.
+
+현재 라우팅 (`_get_audio_embeds`):
+```python
+def _get_audio_embeds(self, audio, audio_lengths=None):
+    if self._cfg.get("use_fsdp", False):   # FSDP만 sequential
+        return self._get_audio_embeds_sequential(audio, audio_lengths)
+    return self._get_audio_embeds_batched(audio, audio_lengths)  # word-aug 시 비효율
+```
+
+**수정 방향**: `use_fsdp` 조건 제거하거나 `N_audio > 임계값` 시 sequential로 전환.  
+Stage 1 DDP에서도 sequential을 쓸 경우 약간의 루프 오버헤드가 있지만,  
+word-aug 없이도 클립 10~20개 × ~10ms/클립 = 100~200ms로 전체 step의 일부에 불과.
+
+**상태**: 미수정 (베이스라인 확인 후 적용 예정).

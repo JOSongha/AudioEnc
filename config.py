@@ -12,7 +12,7 @@ TRAIN_CONFIG = {
     "gradient_accumulation_steps": 4,
 
     "stage1_lr": 2e-4,
-    "stage1_epochs": 2,
+    "stage1_epochs": 1,
 
     "stage2_lr": 2e-5,
     "stage2_epochs": 2,
@@ -50,13 +50,27 @@ TRAIN_CONFIG = {
     # False: LoRA만 학습, projector frozen
     "stage2_train_projector": True,
 
-    # ── 최적화 플래그 (기본값 모두 False → 기존 동작 보존) ──────────────
-    # --packing     : Sequence packing (processor+SequencePacker+PackedCollator)
-    # --flash-attn  : Flash Attention 2 (flash-attn 설치 필요, 이미 설치됨)
-    # --liger       : Liger fused kernels (pip install liger-kernel 필요)
-    # --fsdp        : FSDP (DDP 대체, 4B+ 모델 권장)
-    "use_packing":         True,
-    "packing_cutoff_len":  2048,      # packing 시 최대 시퀀스 길이 (토큰 수 기준)
+    # ── Sequence packing ──────────────────────────────────────────────────
+    # packing_cutoff_len : 하나의 packed bin(=모델에 들어가는 시퀀스) 최대 토큰 수.
+    #   이 길이를 초과하는 원시 시퀀스는 packer에서 버려짐(cutoff_len 이하만 패킹 대상).
+    #   클수록 GPU utilization↑, 메모리↑, attention 연산량 O(T²)↑.
+    "packing_cutoff_len":  2048,
+
+    # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
+    #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
+    #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
+    #   50으로 줄인 이유: streaming on-the-fly 오디오 디코딩이 CPU 병목.
+    #   packing_bucket_size=1000 → step당 ~667 utterance 디코딩 → ~120s/step.
+    #   50으로 줄이면 step당 ~50 utterance 디코딩 → ~12s CPU,
+    #   dataloader_num_workers=4와 조합 시 GPU와 겹쳐 ~5s/step 목표.
+    "packing_bucket_size": 200,
+
+    # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
+    #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
+    #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
+    "process_batch_size":  32,
+    # ──────────────────────────────────────────────────────────────────────
+
     "attn_implementation": "flash_attention_2",   # "eager" | "flash_attention_2" | sdpa
     "use_liger_kernel":    True,
     "use_fsdp":            False,
