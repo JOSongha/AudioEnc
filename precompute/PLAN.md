@@ -69,27 +69,33 @@ After:   precomputed features → Projector → LLM
 
 ### 용량 추정 (fb_dacvae 기준)
 
+> **실제 측정값** (`facebook/dacvae-watermarked` 로드 시 확인)
+
 | 항목 | 값 |
 |---|---|
-| 인코더 FPS | 86 fps (44100 Hz / 512 hop) |
-| out_dim | 8 |
-| float32 per frame | 32 bytes |
-| 초당 바이트 | 86 × 8 × 4 = 2,752 B/s |
-| 21,500 h 전체 | ~213 GB |
-| float16 사용 시 | ~107 GB |
+| 인코더 sample_rate | 48,000 Hz |
+| hop_length | 1,920 |
+| FPS | 48000 / 1920 = **25 fps** |
+| out_dim | **128** |
+| float32 per frame | 128 × 4 = 512 bytes |
+| 초당 바이트 | 25 × 512 = 12,800 B/s |
+| GigaSpeech XL (~10K h) 실측 | **~265 GB** (rank0-7 합산) |
+| 21,500 h 전체 추정 | **~570 GB** |
 
-FLAC 원본 대비 **절반 이하** 크기. 로드 속도도 훨씬 빠름.
+※ 초기 계획서의 86fps/8dim/213GB 추정은 잘못된 모델 스펙 기반이었음.
 
-## 전처리 속도 추정
+## 전처리 속도 (실측)
 
-A100 80GB에서 DACVAE encoder:
-- batch (64, 1, 441000) → ~0.5 s
-- GPU throughput: 64 clips × 10 s / 0.5 s = **1,280 s/s per GPU**
-- 8 GPU 합산: **10,240 s/s** 실시간 배속
-- 21,500 h = 77.4 M 초 → 77.4M / 10,240 ≈ **7,560 s ≈ 2.1 h**
+A100 80GB, batch_size=16 기준:
 
-보수적 (배치 작게 잡으면): ~25 h  
-공격적 (배치 크게 + CUDA stream 파이프라인): ~7 h
+| 항목 | 값 |
+|---|---|
+| GPU당 처리 속도 | **~50 utt/s** |
+| 8 GPU 합산 | ~400 utt/s |
+| GigaSpeech XL (~5M utt) 예상 소요 | ~3.5 h |
+| 전체 데이터셋 예상 소요 | ~8~12 h |
+
+※ batch_size=64에서 16으로 줄였을 때 오히려 2배 빨라짐 (패딩 낭비 감소, OOM fallback 없어짐)
 
 ## GPU 내 병렬화 전략
 
@@ -115,12 +121,52 @@ word_feats  = features[start_frame:end_frame]   # (T_word, out_dim)
 
 인코더를 word clip마다 재실행하지 않아도 되므로 현재 대비 **100× 빠름**.
 
+## 트러블슈팅 (실행 중 발생한 문제)
+
+### 1. CUDA OOM — batch_size=64 + 긴 클립
+
+**원인**: fb_dacvae 인코더가 16kHz → 48kHz로 리샘플 후 DAC Conv1D를 통과. 30s 클립 × batch 64 = 중간 텐서가 60~70 GB로 폭발.
+
+**해결**:
+1. `DEFAULT_BATCH_SIZE = 16` (64 → 16)
+2. OOM 시 자동 clip-by-clip fallback 추가:
+   ```python
+   except torch.cuda.OutOfMemoryError:
+       # 배치를 1건씩 재처리
+   ```
+
+### 2. 좀비 child 프로세스
+
+**원인**: `kill <shell_pid>`는 bash 스크립트만 죽이고 `python precompute_features.py` child 프로세스는 살아남음. 다음 실행 시 동일 GPU에 두 프로세스가 공존 → OOM.
+
+**해결**: `run_precompute.sh`에 trap 추가:
+```bash
+trap 'pkill -9 -P $$; pkill -9 -f precompute_features.py' EXIT INT TERM
+```
+
+### 3. Arrow 파일 corruption
+
+**원인**: 크래시 시 `ipc.new_file()`이 만든 빈 파일(706 bytes)이 남음. 재실행 시 "already exists" 로 스킵 → 학습에 빈 파일 사용.
+
+**해결**: Atomic write 패턴 적용:
+- `.arrow.tmp`에 쓰다가 **완료 후에만** `.arrow`로 rename
+- 시작 시 기존 `.tmp` 강제 삭제
+- 크래시 시 `.tmp` 삭제 → 다음 실행이 처음부터 재작성
+
+### 4. GIL crash (GPU 3)
+
+**원인**: `executor.shutdown(wait=False)` — 스레드가 Python 객체를 사용 중인데 프로세스가 종료됨.
+
+**해결**: `executor.shutdown(wait=True)`
+
+---
+
 ## 단점 / 트레이드오프
 
 | 단점 | 영향 |
 |---|---|
 | 인코더 바꾸면 전처리 재실행 필요 | encoder-swappable 목적과 충돌 |
-| 전처리 디스크 공간 ~213 GB (per encoder) | /mnt/tmp 19 TB 여유, 문제없음 |
+| 전처리 디스크 공간 ~570 GB (per encoder) | /mnt/ddn 6 TB 여유, 주의 필요 |
 | 전처리 시간 2~25 h (1회) | 훈련 단축 효과로 충분히 회수 |
 | 인코더 파인튜닝 불가 | 원래 frozen이라 해당 없음 |
 
