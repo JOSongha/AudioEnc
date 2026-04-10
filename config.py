@@ -37,7 +37,7 @@ TRAIN_CONFIG = {
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
-    "eval_steps": 500,
+    "eval_steps": 5000,
     "save_steps": 5000,
 
     "lora_r": 16,
@@ -54,20 +54,21 @@ TRAIN_CONFIG = {
     # packing_cutoff_len : 하나의 packed bin(=모델에 들어가는 시퀀스) 최대 토큰 수.
     #   이 길이를 초과하는 원시 시퀀스는 packer에서 버려짐(cutoff_len 이하만 패킹 대상).
     #   클수록 GPU utilization↑, 메모리↑, attention 연산량 O(T²)↑.
-    "packing_cutoff_len":  2048,
+    #   (Flash Attention 2: 메모리 O(T), gradient checkpointing 병행 시 실측 스케일 ~1.7×/2×bin)
+    #   실측: 2048→13GB/24%util, 4096→20GB/46%util, 8192→35GB/82%util (fb_dacvae, 8×A100-80GB)
+    "packing_cutoff_len":  16384,
 
     # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
-    #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
-    #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
-    #   50으로 줄인 이유: streaming on-the-fly 오디오 디코딩이 CPU 병목.
-    #   packing_bucket_size=1000 → step당 ~667 utterance 디코딩 → ~120s/step.
-    #   50으로 줄이면 step당 ~50 utterance 디코딩 → ~12s CPU,
-    #   dataloader_num_workers=4와 조합 시 GPU와 겹쳐 ~5s/step 목표.
-    "packing_bucket_size": 200,
+    #   greedy knapsack: bucket 내 샘플을 길이 내림차순 정렬 후 각 bin에 남은 공간에
+    #   들어가는 가장 큰 샘플을 bisect로 탐색하여 채움. bucket이 클수록 탐색 풀이 넓어져
+    #   bin 충전율(fill ratio)↑ → step당 유효 토큰↑ → GPU utilization 간접 향상.
+    #   precomputed 모드: 오디오 디코딩 없어 CPU 부담 낮음 → 1000~2000 권장.
+    #   raw audio 모드: 오디오 디코딩이 CPU 병목 → 50~200 권장.
+    "packing_bucket_size": 1000,
 
-    # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
-    #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
-    #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
+    # process_batch_size : processor_fn(토크나이징)을 한 번에 처리할 샘플 수.
+    #   precomputed 모드: Arrow 피처 로드 + 토크나이징만 수행 → 128~256 권장.
+    #   raw audio 모드: 오디오 디코딩 포함 → 32 권장.
     "process_batch_size":  32,
     # ──────────────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ def get_config(encoder_name: str) -> dict:
     # numClips4DACVAE = 3.7
     # numClips = numClips4DACVAE
     # cfg["max_batch_tokens"] = int(numClips * (max_audio_tokens + cfg["max_text_len"]))
-    cfg["max_batch_tokens"] = 2600
+    cfg["max_batch_tokens"] = 8000
 
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg

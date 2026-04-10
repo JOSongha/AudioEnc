@@ -99,7 +99,7 @@ N_STREAMS = 2
 N_DECODE_THREADS = 16
 
 # 한 번에 GPU에 올리는 최대 클립 수 (A100 80GB 기준)
-DEFAULT_BATCH_SIZE = 16
+DEFAULT_BATCH_SIZE = 8
 
 # Arrow 파일 flush 주기 (row 수)
 FLUSH_EVERY = 2000
@@ -182,9 +182,16 @@ def _encode_batch(encoder, wavs: list[np.ndarray], device: torch.device,
     """wav 리스트 → 인코더 피처 리스트. OOM 시 clip-by-clip fallback."""
     if not wavs:
         return []
+    def _is_oom(e: Exception) -> bool:
+        return isinstance(e, torch.cuda.OutOfMemoryError) or (
+            isinstance(e, RuntimeError) and "out of memory" in str(e).lower()
+        )
+
     try:
         return _encode_batch_impl(encoder, wavs, device, stream)
-    except torch.cuda.OutOfMemoryError:
+    except Exception as e:
+        if not _is_oom(e):
+            raise
         torch.cuda.empty_cache()
         print(f"[warn] OOM on batch size {len(wavs)}, falling back to clip-by-clip", flush=True)
         results = []
@@ -192,7 +199,9 @@ def _encode_batch(encoder, wavs: list[np.ndarray], device: torch.device,
             try:
                 r = _encode_batch_impl(encoder, [wav], device, stream)
                 results.extend(r)
-            except torch.cuda.OutOfMemoryError:
+            except Exception as e2:
+                if not _is_oom(e2):
+                    raise
                 torch.cuda.empty_cache()
                 print(f"[warn] OOM on single clip (len={len(wav)}), skipping", flush=True)
                 # 빈 피처로 채워서 downstream에서 skipped 처리

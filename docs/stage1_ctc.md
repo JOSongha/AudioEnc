@@ -171,12 +171,12 @@ transcript를 character sequence로 변환:
 
 CTC head 크기: `Linear(llm_dim, 28)` → 파라미터 약 57K. 오버헤드 무시 가능.
 
-**활성화 방법**: `--debug c` 플래그로 Stage 1 시작 시 `model.init_ctc_head()`가 호출된다.
+**활성화 방법**: `arXiv/scripts/train_debug.py`의 `--debug c` 플래그로 Stage 1 시작 시 `model.init_ctc_head()`가 호출된다.
 `init_ctc_head()`는 반드시 `freeze_llm()` 호출 후, optimizer 생성 전에 실행되어야 optimizer에 포함된다.
 
 ### 3-4. Stage 1 loss 구성
 
-현재 구현: `--debug c` 플래그를 쓸 때 loss = CE + CTC (합산, `ctc_weight=1.0` 고정).
+현재 구현: `arXiv/scripts/train_debug.py --debug c` 사용 시 loss = CE + CTC (합산, `ctc_weight=1.0` 고정). 실험 스크립트 전용이며 `train_pipeline_override.py`에는 미통합.
 
 ```python
 # model.py forward()

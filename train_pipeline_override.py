@@ -1254,19 +1254,32 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
 
     dataset_list = []
     for ds_key in selected:
-        arrow_path = base_dir / ds_key / f"rank{rank}.arrow"
-        if not arrow_path.exists():
-            logger.warning(
-                f"[rank {rank}] Precomputed file missing: {arrow_path} — skipping {ds_key}",
+        # sharded 파일 우선 (rankN_s0.arrow, rankN_s1.arrow, ...) → num_shards > 1
+        shard_files = sorted(
+            (base_dir / ds_key).glob(f"rank{rank}_s*.arrow")
+        )
+        if shard_files:
+            data_files = [str(p) for p in shard_files]
+            ds = load_dataset("arrow", data_files=data_files, split="train", streaming=True)
+            logger.info(
+                f"[rank {rank}] Loaded precomputed ({len(shard_files)} shards): "
+                + ", ".join(p.name for p in shard_files),
                 main_process_only=False,
             )
-            continue
-        ds = load_dataset("arrow", data_files=str(arrow_path), split="train", streaming=True)
+        else:
+            arrow_path = base_dir / ds_key / f"rank{rank}.arrow"
+            if not arrow_path.exists():
+                logger.warning(
+                    f"[rank {rank}] Precomputed file missing: {arrow_path} — skipping {ds_key}",
+                    main_process_only=False,
+                )
+                continue
+            ds = load_dataset("arrow", data_files=str(arrow_path), split="train", streaming=True)
+            logger.info(
+                f"[rank {rank}] Loaded precomputed: {arrow_path}",
+                main_process_only=False,
+            )
         dataset_list.append(ds)
-        logger.info(
-            f"[rank {rank}] Loaded precomputed: {arrow_path}",
-            main_process_only=False,
-        )
 
     if not dataset_list:
         raise ValueError(
@@ -1643,7 +1656,7 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
 
-        logging_steps=50,
+        logging_steps=cfg.get("log_every", 10),
         # Disable auto-save only for very short test runs (< 10 steps)
         save_strategy="no" if (cfg.get("max_steps") and cfg["max_steps"] < 10) else "steps",
         save_steps=cfg.get("save_steps", 500) if cfg.get("max_steps", 1000) >= 10 else None,
@@ -1651,13 +1664,23 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         report_to="wandb",
 
         remove_unused_columns=False,
-        # Stage 1: LLM frozen, projector만 학습 → DDP로 충분 (FSDP 불필요)
-        ddp_find_unused_parameters=False,
+        # Stage 1: LLM frozen, projector만 학습 → 기본 DDP.
+        # --fsdp-stage1 활성화 시 FSDP full_shard: LLM 메모리 1/8 절감 대신 forward all-gather 추가.
+        **({
+            "fsdp": "full_shard auto_wrap",
+            "fsdp_config": {
+                "fsdp_transformer_layer_cls_to_wrap": ["Qwen3_5DecoderLayer"],
+                "fsdp_use_orig_params": True,
+                "fsdp_backward_prefetch": "backward_pre",
+                "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+                "fsdp_ignored_modules": ["encoder"],
+            },
+        } if cfg.get("use_fsdp_stage1") else {"ddp_find_unused_parameters": False}),
 
         # CPU 데이터 로딩을 GPU 학습과 병렬화.
-        # 주의: IterableDataset + num_workers>0 은 각 worker가 동일 스트림을 독립적으로
-        # 순회하므로 데이터 중복이 발생할 수 있음. 속도 우선 트레이드오프.
-        dataloader_num_workers=4,
+        # 각 rank마다 num_workers개의 worker process가 Arrow shard를 병렬 읽기.
+        # shard 수(6 datasets × 4 shards = 24) ≥ num_workers × num_ranks 이어야 중복 없음.
+        dataloader_num_workers=8,
         dataloader_prefetch_factor=2,
     )
 
@@ -1808,14 +1831,14 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
 
-        logging_steps=50,
+        logging_steps=cfg.get("log_every", 10),
         report_to="wandb",
         save_strategy="steps",
         save_steps=cfg["save_steps"],
         save_total_limit=3,
 
         remove_unused_columns=False,
-        dataloader_num_workers=4,
+        dataloader_num_workers=8,
         dataloader_prefetch_factor=2,
 
         **({
@@ -1886,6 +1909,8 @@ def main():
                         help="Liger fused kernel 활성화/비활성화 (기본: --liger)")
     parser.add_argument("--fsdp", default=True, action=argparse.BooleanOptionalAction,
                         help="Stage 2 FSDP 활성화/비활성화 (기본: --fsdp)")
+    parser.add_argument("--fsdp-stage1", default=False, action=argparse.BooleanOptionalAction,
+                        help="Stage 1 FSDP 활성화 (기본: --no-fsdp-stage1 = DDP)")
     parser.add_argument("--word-aug", action="store_true", default=False,
                         help="단어 단위 ASR 서브샘플 생성 활성화 (word alignment Arrow 필요)")
     parser.add_argument("--precomputed-dir", default=None,
@@ -1900,6 +1925,7 @@ def main():
     if args.attn_impl: cfg["attn_implementation"] = args.attn_impl
     cfg["use_liger_kernel"] = args.liger
     cfg["use_fsdp"]         = args.fsdp
+    cfg["use_fsdp_stage1"]  = args.fsdp_stage1
     cfg["wandb_mode"]         = args.wandb_mode
     cfg["packing_cutoff_len"] = args.cutoff_len if args.cutoff_len is not None else cfg["packing_cutoff_len"]
     cfg["eval_steps"]         = args.eval_steps  if args.eval_steps  is not None else cfg.get("eval_steps",  500)
@@ -1917,6 +1943,9 @@ def main():
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME", cfg["model_cache_dir"])
+
+    if cfg.get("wandb_mode") == "disabled":
+        os.environ["WANDB_MODE"] = "disabled"
 
     accelerator = Accelerator(log_with="wandb")
 
@@ -1945,6 +1974,7 @@ def main():
         logger.info(f"  Seq Packing   : ✓ (always on, cutoff={cfg['packing_cutoff_len']})")
         logger.info(f"  Flash Attn 2  : {'✓' if cfg.get('attn_implementation') == 'flash_attention_2' else '✗ (' + cfg.get('attn_implementation', '?') + ')'}")
         logger.info(f"  Liger Kernel  : {'✓' if cfg.get('use_liger_kernel') else '✗'}")
+        logger.info(f"  FSDP (Stage1) : {'✓' if cfg.get('use_fsdp_stage1') else '✗ (DDP)'}")
         logger.info(f"  FSDP (Stage2) : {'✓' if cfg.get('use_fsdp') else '✗'}")
         logger.info("  ── Word Augmentation ──────────────────────────")
         logger.info(f"  Word-aug      : {'✓' if args.word_aug else '✗ (disabled)'}")

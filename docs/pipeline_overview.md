@@ -20,7 +20,8 @@
 | Sequence Packing | 여러 샘플을 cutoff_len 토큰으로 묶어 padding 최소화 | 항상 ON |
 | Flash Attention 2 | varlen kernel, padding 완전 제거 `(1, sum_nonpad)` | 기본 ON (`--attn-impl` 변경 가능) |
 | Liger Kernel | fused RoPE / RMSNorm / SwiGLU / CE loss (vocab 메모리 절감) | `--liger` (기본 ON) |
-| FSDP (Stage 2) | LLM + projector LoRA 파라미터 분산 | `--fsdp` (기본 ON, Stage 2만) |
+| FSDP (Stage 1) | LLM 메모리 1/8 절감 (GPU당 ~4.6GB), forward all-gather 오버헤드 | `--fsdp-stage1` (기본 OFF) |
+| FSDP (Stage 2) | LLM + projector LoRA 파라미터 분산 | `--fsdp` (기본 ON) |
 
 ---
 
@@ -175,7 +176,7 @@ samples_per_token = hop * (16000/tgt_sr) * prod(proj_strides)
 | 평가 | WER + val_loss every `eval_steps`(기본 500) steps |
 | 저장 | `{cache_dir}/{encoder}/s1_outputs_{run_id}/` |
 | best projector | `{cache_dir}/{encoder}/s1_outputs_{run_id}/best_s1_proj.pt` |
-| FSDP | ✗ (LLM frozen이므로 불필요) |
+| FSDP | ✗ DDP 기본. `--fsdp-stage1` 으로 활성화 가능 (메모리↓, 속도 검증 중) |
 
 **Stage 1 조기 종료**: `kill -USR1 $(cat /mnt/tmp/cache/train.pid)`
 
@@ -207,9 +208,9 @@ samples_per_token = hop * (16000/tgt_sr) * prod(proj_strides)
   Stage(s)      : all
   Datasets      : ls100, ls360, ls500, mls, gs, vp
   Est. hours    : 21460h
-  Cutoff len    : 2048 tokens
+  Cutoff len    : 16384 tokens
   ── Optimizations ──────────────────────────────────
-  Seq Packing   : ✓ (always on, cutoff=2048)
+  Seq Packing   : ✓ (always on, cutoff=16384)
   Flash Attn 2  : ✓
   Liger Kernel  : ✓
   FSDP (Stage2) : ✓

@@ -57,7 +57,7 @@ bash run.sh --encoder <encoder> [옵션...]
 | 인자 | 기본값 | 설명 |
 |---|---|---|
 | `--stage` | `all` | 실행할 스테이지. `all` (1→2 순서) \| `1` \| `2` |
-| `--stage1-epochs` | config의 `stage1_epochs` (`2`) | Stage 1 epoch 수 |
+| `--stage1-epochs` | config의 `stage1_epochs` (`1`) | Stage 1 epoch 수 |
 | `--stage2-epochs` | config의 `stage2_epochs` (`2`) | Stage 2 epoch 수. encoder별 오버라이드 있음 (dac, mimi_semantic은 8) |
 | `--max-steps` | `estimated_hours` 기반 자동 계산 | 학습 최대 step 수. 지정 시 epoch 계산 무시 |
 | `--eval-steps` | config의 `eval_steps` (`500`) | WER + val_loss 평가 주기 (steps) |
@@ -70,7 +70,7 @@ bash run.sh --encoder <encoder> [옵션...]
 
 | 인자 | 기본값 | 설명 |
 |---|---|---|
-| `--cutoff-len` | config의 `packing_cutoff_len` (`2048`) | 하나의 packed bin 최대 토큰 수. cutoff_len을 초과하는 샘플은 드롭됨 (절단 없음). 클수록 GPU utilization↑, 메모리↑ |
+| `--cutoff-len` | config의 `packing_cutoff_len` (`16384`) | 하나의 packed bin 최대 토큰 수. cutoff_len을 초과하는 샘플은 드롭됨 (절단 없음). 클수록 GPU utilization↑, 메모리↑ |
 
 > **중요**: `cutoff_len=10`이고 bin에 8 토큰이 차 있을 때 다음 아이템이 4 토큰이면, 그 아이템은 현재 bin에 들어가지 않고 다음 bin으로 넘어감. 아이템은 절대 mid-truncate 되지 않는다.
 
@@ -79,10 +79,10 @@ bash run.sh --encoder <encoder> [옵션...]
 | | `cutoff_len` (= `packing_cutoff_len`) | `packing_bucket_size` |
 |---|---|---|
 | 역할 | bin 하나의 크기 | greedy knapsack의 입력 풀 크기 |
-| 기본값 | `2048` | `1000` (코드 내 하드코딩) |
-| 영향 | 모델이 받는 시퀀스 길이 | 패킹 품질 (클수록 padding↓, 메모리↑) |
+| 기본값 | `16384` | `200` (config의 `packing_bucket_size`) |
+| 영향 | 모델이 받는 시퀀스 길이, GPU util | 패킹 품질 (클수록 padding↓, fill ratio↑) |
 
-흐름: `packing_bucket_size=1000`개 샘플 → greedy knapsack → `cutoff_len=2048`짜리 bin들 생성.
+흐름: `packing_bucket_size=200`개 샘플 → greedy knapsack → `cutoff_len=16384`짜리 bin들 생성.
 `packing_bucket_size`가 클수록 knapsack이 더 좋은 조합을 찾아 padding이 줄지만, 처리 단위가 커진다.
 
 ---
@@ -93,7 +93,8 @@ bash run.sh --encoder <encoder> [옵션...]
 |---|---|---|
 | `--attn-impl` | `flash_attention_2` | Attention 구현체. `eager` \| `sdpa` \| `flash_attention_2` |
 | `--liger` / `--no-liger` | `--liger` (ON) | Liger fused kernel (RoPE, RMSNorm, SwiGLU, CE loss). 비활성화: `--no-liger` |
-| `--fsdp` / `--no-fsdp` | `--fsdp` (ON) | Stage 2 FSDP 활성화. 비활성화: `--no-fsdp`. Stage 1은 LLM frozen이므로 항상 DDP |
+| `--fsdp` / `--no-fsdp` | `--fsdp` (ON) | Stage 2 FSDP 활성화 (full_shard, encoder excluded). 비활성화: `--no-fsdp` |
+| `--fsdp-stage1` / `--no-fsdp-stage1` | `--no-fsdp-stage1` (OFF) | Stage 1 FSDP 활성화. ON 시 LLM 메모리 1/8 절감 (GPU당 ~4.6GB), forward all-gather 오버헤드 추가 |
 
 ---
 
@@ -166,9 +167,11 @@ bash run.sh --encoder fb_dacvae --stage 2 \
 
 ### packing과의 관계
 
-`cutoff_len=2048`일 때 bin 하나에 들어가는 **오디오 토큰 수**는 `tokens_per_10s`에 비례.  
+`cutoff_len=16384`일 때 bin 하나에 들어가는 **오디오 토큰 수**는 `tokens_per_10s`에 비례.  
 mimi_acoustic(~78 tokens/10s)은 bin 하나에 더 많은 클립이 들어가고,  
 dac/fb_dacvae(~215 tokens/10s)는 상대적으로 적은 클립이 들어간다.
+
+> 실측 (fb_dacvae, 8×A100-80GB): cutoff 2048→13GB/24%util, 8192→35GB/82%util, 16384→64GB/~95%util (~55s/step, ~44h wall).
 
 ---
 
