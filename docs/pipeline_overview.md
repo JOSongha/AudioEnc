@@ -20,7 +20,7 @@
 | Sequence Packing | 여러 샘플을 cutoff_len 토큰으로 묶어 padding 최소화 | 항상 ON |
 | Flash Attention 2 | varlen kernel, padding 완전 제거 `(1, sum_nonpad)` | 기본 ON (`--attn-impl` 변경 가능) |
 | Liger Kernel | fused RoPE / RMSNorm / SwiGLU / CE loss (vocab 메모리 절감) | `--liger` (기본 ON) |
-| FSDP (Stage 1) | LLM 메모리 1/8 절감 (GPU당 ~4.6GB), forward all-gather 오버헤드 | `--fsdp-stage1` (기본 OFF) |
+| FSDP (Stage 1) | LLM 메모리 1/8 절감 이론상이나 activation이 dominant → 실제 절감 없음. 속도 2.2배 느림 (gradient_checkpointing 충돌) | `--fsdp-stage1` (기본 OFF, **사용 비권장**) |
 | FSDP (Stage 2) | LLM + projector LoRA 파라미터 분산 | `--fsdp` (기본 ON) |
 
 ---
@@ -46,7 +46,7 @@ HF Streaming Dataset (6개)
   │     └─ 각 (audio, text) → input_ids / labels / audio_features / audio_lengths
   │         word_aug=True: + word-level 서브샘플 생성 (§3 참조)
   │
-  └─ map(pack_samples, batched=True, batch_size=1000)
+  └─ map(pack_samples, batched=True, batch_size=200)
         └─ greedy knapsack: cutoff_len 안에 샘플 최대 밀집
             attention_mask: 서브시퀀스 인덱스 (1, 2, 3…) → block-diagonal 마스킹용
 ```
@@ -176,7 +176,7 @@ samples_per_token = hop * (16000/tgt_sr) * prod(proj_strides)
 | 평가 | WER + val_loss every `eval_steps`(기본 500) steps |
 | 저장 | `{cache_dir}/{encoder}/s1_outputs_{run_id}/` |
 | best projector | `{cache_dir}/{encoder}/s1_outputs_{run_id}/best_s1_proj.pt` |
-| FSDP | ✗ DDP 기본. `--fsdp-stage1` 으로 활성화 가능 (메모리↓, 속도 검증 중) |
+| FSDP | ✗ DDP 기본. `--fsdp-stage1` 사용 비권장 (속도 2.2배 느림, 메모리 절감 없음 — 검증됨) |
 
 **Stage 1 조기 종료**: `kill -USR1 $(cat /mnt/tmp/cache/train.pid)`
 
