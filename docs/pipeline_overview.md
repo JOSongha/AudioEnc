@@ -67,6 +67,33 @@ HF Streaming Dataset (6개)
 - `0`: padding
 - `1, 2, 3, …`: 서브시퀀스 인덱스 (같은 숫자 → 같은 샘플 → cross-attend 허용)
 
+### 2-2b. Precomputed / Pre-packed 경로
+
+`--precomputed-dir` 지정 시 HF streaming 대신 사전 계산된 Arrow 파일을 사용한다.
+
+```
+{precomputed_dir}/{encoder}/{dataset}/
+  ├─ packed_{cutoff_len}/rank{N}.arrow   ← Pre-packed (우선, map 완전 스킵)
+  ├─ rank{N}_s*.arrow                     ← Per-sample sharded
+  └─ rank{N}.arrow                        ← Per-sample single
+```
+
+**Pre-packed 모드** (권장):
+```
+packed Arrow → pyarrow.ipc.read_all() → HF Dataset (in-memory)
+  → .to_iterable_dataset() → interleave → DataLoader → 학습
+```
+processor_fn, packer_fn map 단계 없음. 데이터 로딩 수 초.
+
+**Per-sample 모드** (pre-packed 없을 때 fallback):
+```
+per-sample Arrow → pyarrow.ipc.read_all() → HF Dataset (in-memory)
+  → .map(processor_fn, num_proc=16) → .map(packer_fn, num_proc=16)
+  → .to_iterable_dataset() → interleave → DataLoader → 학습
+```
+
+Pre-pack 생성: `bash precompute/run_pack.sh --encoder fb_dacvae`
+
 ### 2-3. OmniCollator
 
 | FA2 경로 | Eager/SDPA 경로 |

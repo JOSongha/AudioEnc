@@ -213,19 +213,130 @@ FA2가 position discontinuity를 경계로 인식 → cross-sample attention 자
 
 ### 3. Liger Kernel
 
+#### 한 줄 요약
+
+> LLM 내부 연산(RoPE, LayerNorm, FFN, loss)을 Triton으로 구현한 **fused kernel 라이브러리**.  
+> **메모리를 덜 쓰고 HBM 왕복이 줄어서 빠르다.**
+
+---
+
+#### 왜 필요한가 — "fused"의 의미
+
+PyTorch 연산은 기본적으로 **연산 하나마다 GPU 메모리(HBM)를 한 번씩 읽고 쓴다**.
+
+```
+일반 PyTorch (RMSNorm 예시):
+  HBM에서 x 읽기 → x² 계산 → 결과 HBM에 저장
+  HBM에서 다시 읽기 → mean 계산 → HBM에 저장
+  HBM에서 다시 읽기 → x/rms 계산 → HBM에 저장
+  HBM에서 다시 읽기 → weight 곱 → HBM에 저장   ← 총 4번 왕복
+
+Liger Fused (RMSNorm):
+  HBM에서 x 읽기 → 한 번에 x², mean, rms, weight 곱 전부 계산 → HBM에 저장   ← 1번 왕복
+```
+
+GPU는 연산(FLOP)보다 메모리 읽기/쓰기(bandwidth)가 병목인 경우가 많다.  
+Liger는 이 병목을 "묶어서 한 번만 읽고 쓰기"로 줄인다.
+
+---
+
+#### 사용 방법
+
 ```python
-# model.py: LLM 로드 직후, gradient_checkpointing_enable() 이전에 적용
+# model.py: LLM 로드 직후, gradient_checkpointing_enable() 이전
 from liger_kernel.transformers import apply_liger_kernel_to_qwen2
 apply_liger_kernel_to_qwen2(rope=True, rms_norm=True, swiglu=True,
                              fused_linear_cross_entropy=True)
 ```
 
-`fused_linear_cross_entropy=True`: LM head 출력 logit 텐서를 materialize 없이  
-chunk 단위로 CE loss 계산 → vocab=151,665 × seq_len × batch 크기의 메모리 절감.
+이 한 줄이 Qwen2 모델의 모듈들을 Liger 구현으로 **in-place 교체**한다.  
+모델 구조 변경 없이 동작하며, 학습 결과에 영향을 주지 않는다.
 
-**주의**: `fused_linear_cross_entropy=True` 사용 시 `out.loss` 직접 계산으로 대체됨.  
-`eos_weight` 커스텀 loss (기존 `_forward_legacy`에서 사용) 와 충돌 가능 →  
-packed 경로에서만 Liger CE 활성화, legacy 경로에서는 비활성.
+---
+
+#### 교체되는 모듈 4가지
+
+| 옵션 | 교체 대상 | 효과 |
+|------|---------|------|
+| `rope=True` | `apply_rotary_pos_emb` (Q, K에 위치정보 적용) | HBM 왕복 횟수 감소 |
+| `rms_norm=True` | `Qwen2RMSNorm` (각 layer 앞뒤 정규화) | HBM 왕복 4→1회 |
+| `swiglu=True` | `Qwen2MLP` 내 SiLU gate 연산 | 중간 activation 텐서 1개 제거 |
+| `fused_linear_cross_entropy=True` | `lm_head` + `CrossEntropyLoss` | **logit 텐서 ~5 GB 절감** ← 가장 중요 |
+
+---
+
+#### fused_linear_cross_entropy가 핵심인 이유
+
+일반적으로 LLM loss 계산은 이렇게 된다:
+
+```
+hidden_states (16384 tokens, 2048 dim)
+  → lm_head (선형 변환)
+  → logits: (16384 tokens, 151665 vocab) 텐서 생성  ← 이게 문제
+  → CrossEntropy(logits, labels)
+```
+
+`logits` 텐서의 크기: 16384 × 151665 × 2 bytes(bf16) ≈ **4.97 GB**  
+이 텐서가 순전파 + 역전파 동안 GPU 메모리에 상주한다.
+
+Liger는 이 텐서를 **절대 통째로 만들지 않는다**:
+
+```
+hidden_states를 작은 chunk (예: 1024 tokens)로 나눔
+  각 chunk:
+    lm_head 적용 → 작은 logit (1024 × 151665) 임시 생성
+    CE loss 계산 → gradient 저장 → 임시 logit 즉시 삭제
+  → 5 GB 짜리 텐서가 메모리에 올라가지 않음
+```
+
+**주의**: 이 옵션은 HuggingFace의 `out.loss` 계산 경로를 교체한다.  
+커스텀 loss(`_forward_legacy`의 `eos_weight`)와 충돌하므로  
+**packed 경로(`_forward_packed`)에서만 활성화**, legacy 경로에서는 비활성.
+
+---
+
+#### 구현 이슈: qwen3 vs qwen3_5 아키텍처 불일치
+
+`liger-kernel 0.7.0`에는 `apply_liger_kernel_to_qwen3_5`가 없다.  
+기존 코드는 ImportError 시 `apply_liger_kernel_to_qwen3`로 fallback했는데,  
+이 함수는 `transformers.models.qwen3.*` 클래스를 패치하지만  
+Qwen3.5-2B는 `transformers.models.qwen3_5.*` 클래스를 사용한다 → **패치가 silent no-op**.
+
+결과적으로 "Liger ON"과 "Liger OFF" 실험 모두 실질적으로 Liger 없이 실행되었다.
+
+**수정**: `train_pipeline_override.py`에서 fallback 대신 `modeling_qwen3_5` 모듈을 직접 패치.  
+주요 호환성 차이점:
+
+| 항목 | Qwen3 | Qwen3.5 | 처리 방법 |
+|------|-------|---------|---------|
+| RMSNorm 수식 | `output * weight` (init: ones) | `output * (1 + weight)` (init: zeros) | `LigerRMSNorm(offset=1.0, init_fn="zeros")` 서브클래스 |
+| MLP 시그니처 | `__init__(self, config)` | `__init__(self, config, intermediate_size)` | config를 복사해 `intermediate_size` 주입하는 래퍼 |
+| Fused CE | `Qwen3ForCausalLM.forward` 교체 | `Qwen3_5ForCausalLM.forward` 교체 | `_qwen3_lce_forward` 직접 할당 |
+
+---
+
+#### 실측 비교 (2026-04-10, 8×A100-80GB, fb_dacvae, cutoff_len=16384)
+
+| 설정 | slow step | fast step | 비고 |
+|------|-----------|-----------|------|
+| Liger OFF (no-liger 베이스라인) | ~109 s | ~25 s | DataLoader 대기 / compute |
+| Liger "ON" (버그 전, 실제 no-op) | ~109 s | ~25 s | qwen3_5 패치 안 됨 |
+| Liger ON (버그 수정 후) | ~108 s | ~27 s | 실제 패치 적용, 차이 없음 |
+
+**결론**: Liger 적용 후에도 스텝 시간이 거의 변하지 않는다.
+
+**근본 원인 (2026-04-10 추가 분석)**:  
+DataLoader 병목과 별개로, Liger가 최적화하는 연산(RoPE, RMSNorm, SwiGLU, CE loss)은 **memory-bound element-wise 연산**으로 전체 compute의 5~10%에 불과하다. 학습 step의 대부분은 Liger가 건드리지 않는 **196개 matmul** (Q/K/V/O + gate/up/down × 28 레이어)과 **attention 연산**이 지배한다. 5~10% 구간을 2배 빠르게 해도 전체 step은 2.5~5% 개선에 그쳐 측정 노이즈 범위.
+
+> **업데이트 (2026-04-10)**: Offline Pre-Packing (§10 in `dataloader_trials.md`)으로 DataLoader 병목 해소.
+> Pre-packed Arrow 모드에서는 CPU packing이 없으므로 Liger가 compute 구간에서 효과를 발휘할 수 있다.
+> 단, gradient_checkpointing이 여전히 ON (cutoff_len=16384에서 필수 — OFF 시 OOM)이므로
+> Liger의 메모리 절감이 배치 크기 증가로 이어지지는 않음. 순수 compute 속도 개선만 기대.
+
+> **더 큰 속도 개선 후보**: `flash-linear-attention` 미설치로 Qwen3.5의 linear attention 레이어가
+> 순수 PyTorch fallback으로 동작 중. fla 설치 시 fused CUDA kernel 사용 → Liger보다 훨씬 큰 속도 개선 기대.
+> 설치 방법 및 상세: `dataloader_trials.md` §9b 참조.
+> Pre-packed 모드에서의 Liger 효과 재측정 예정.
 
 ### 4. FSDP
 

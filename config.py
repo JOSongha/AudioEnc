@@ -69,7 +69,7 @@ TRAIN_CONFIG = {
     # process_batch_size : processor_fn(토크나이징)을 한 번에 처리할 샘플 수.
     #   precomputed 모드: Arrow 피처 로드 + 토크나이징만 수행 → 128~256 권장.
     #   raw audio 모드: 오디오 디코딩 포함 → 32 권장.
-    "process_batch_size":  64,
+    "process_batch_size":  32,
     # ──────────────────────────────────────────────────────────────────────
 
     "attn_implementation": "flash_attention_2",   # "eager" | "flash_attention_2" | sdpa

@@ -226,19 +226,42 @@ class AudioQwen(nn.Module):
             try:
                 try:
                     from liger_kernel.transformers import apply_liger_kernel_to_qwen3_5 as apply_liger_qwen
-                    liger_target = "qwen3_5"
+                    apply_liger_qwen(rope=True, rms_norm=True, swiglu=True, fused_linear_cross_entropy=True)
+                    logger.info("Liger kernel applied via qwen3_5 (rope, rms_norm, swiglu, fused_linear_ce).",
+                                main_process_only=True)
                 except ImportError:
-                    from liger_kernel.transformers import apply_liger_kernel_to_qwen3 as apply_liger_qwen
-                    liger_target = "qwen3"
+                    # liger-kernel 0.7.0은 qwen3_5 미지원 → 직접 패치
+                    # qwen3 fallback은 Qwen3_5 클래스를 건드리지 않아 사실상 no-op이므로 사용 금지
+                    import copy
+                    import transformers.models.qwen3_5.modeling_qwen3_5 as _q35
+                    from liger_kernel.transformers.monkey_patch import (
+                        liger_rotary_pos_emb, LigerRMSNorm, LigerSwiGLUMLP,
+                    )
+                    from liger_kernel.transformers.model.qwen3 import lce_forward as _qwen3_lce_forward
 
-                apply_liger_qwen(
-                    rope=True, rms_norm=True, swiglu=True,
-                    fused_linear_cross_entropy=True,
-                )
-                logger.info(
-                    f"Liger kernel applied via {liger_target} (rope, rms_norm, swiglu, fused_linear_ce).",
-                    main_process_only=True,
-                )
+                    # 1) RoPE: 동일 함수 시그니처, 직접 교체
+                    _q35.apply_rotary_pos_emb = liger_rotary_pos_emb
+
+                    # 2) RMSNorm: Qwen3.5는 weight=zeros + (1+weight) 공식 → offset=1.0 필요
+                    class _Qwen3_5LigerRMSNorm(LigerRMSNorm):
+                        def __init__(self, dim: int, eps: float = 1e-6):
+                            super().__init__(dim, eps=eps, offset=1.0, init_fn="zeros")
+                    _q35.Qwen3_5RMSNorm = _Qwen3_5LigerRMSNorm
+
+                    # 3) SwiGLU: Qwen3.5 MLP는 (config, intermediate_size) 시그니처
+                    class _Qwen3_5LigerSwiGLUMLP(LigerSwiGLUMLP):
+                        def __init__(self, config, intermediate_size: int):
+                            cfg_copy = copy.copy(config)
+                            cfg_copy.intermediate_size = intermediate_size
+                            super().__init__(cfg_copy)
+                    _q35.Qwen3_5MLP = _Qwen3_5LigerSwiGLUMLP
+
+                    # 4) Fused Linear CE: Qwen3_5ForCausalLM.forward 교체
+                    _q35.Qwen3_5ForCausalLM.forward = _qwen3_lce_forward
+
+                    logger.info("Liger kernel manually patched for qwen3_5 "
+                                "(rope, rms_norm+offset, swiglu, fused_linear_ce).",
+                                main_process_only=True)
             except Exception as e:
                 logger.warning(f"Liger kernel 적용 실패: {e}. 계속 진행합니다...",)
                 raise RuntimeError("Liger kernel 적용 실패. pip install liger-kernel 필요.")
@@ -1232,7 +1255,7 @@ def make_precomputed_processor_fn(cfg, tokenizer):
             "input_ids":      all_input_ids,
             "labels":         all_labels,
             "audio_features": all_audio_features,
-            "audio_lengths":  all_audio_lengths,
+            "audio_lengths":  [int(x) for x in all_audio_lengths],
         }
 
     return process_samples
@@ -1245,27 +1268,63 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
 
     각 rank는 자신의 rank{process_index}.arrow 파일만 로드한다.
     word_aug=True: processor_fn이 word-level sub-clip 생성 (AlignmentLookup 필요).
+
+    Pre-packed 모드 (권장):
+        {precomputed_dir}/{encoder}/{dataset}/packed_{cutoff_len}/rank{N}.arrow 가 존재하면
+        processor_fn / packer_fn map을 건너뛰고 Arrow를 직접 로드한다.
+        → DataLoader 학습 중 CPU packing 부하 제거.
+        생성: bash precompute/run_pack.sh --encoder {encoder}
     """
     from pathlib import Path
     rank       = accelerator.process_index
     enc_name   = cfg["encoder_name"]
+    cutoff_len = cfg["packing_cutoff_len"]
     selected   = selected_datasets or ["ls100", "ls360", "ls500", "mls", "gs", "vp"]
     base_dir   = Path(precomputed_dir) / enc_name
 
-    dataset_list = []
+    # interleave_datasets는 모든 데이터셋의 schema가 동일해야 함.
+    # pack_arrow.py는 int32+float32로 저장하지만, on-the-fly packing은
+    # Python int/float → HF datasets가 int64/float64로 추론함.
+    # → 모든 데이터셋을 동일 schema로 cast.
+    from datasets import Features, Sequence, Value as DValue
+    _PACKED_CANONICAL = Features({
+        "input_ids":      Sequence(DValue("int32")),
+        "labels":         Sequence(DValue("int32")),
+        "attention_mask": Sequence(DValue("int32")),
+        "audio_features": Sequence(Sequence(DValue("float32"))),
+        "audio_lengths":  Sequence(DValue("int32")),
+    })
+    _PROC_FEATURES = Features({
+        "input_ids":      Sequence(DValue("int32")),
+        "labels":         Sequence(DValue("int32")),
+        "audio_features": Sequence(DValue("float32")),
+        "audio_lengths":  DValue("int32"),
+    })
+
+    dataset_list    = []
+    any_needs_pack  = False   # pre-packed 아닌 데이터셋이 하나라도 있으면 True
+
     for ds_key in selected:
-        # sharded 파일 우선 (rankN_s0.arrow, rankN_s1.arrow, ...) → num_shards > 1
+        # ── Pre-packed Arrow 우선 ──────────────────────────────────────────
+        packed_path = base_dir / ds_key / f"packed_{cutoff_len}" / f"rank{rank}.arrow"
+        if packed_path.exists():
+            import pyarrow.ipc as _pa_ipc
+            from datasets import Dataset as _HFDataset
+            _table = _pa_ipc.open_file(str(packed_path)).read_all()
+            ds = _HFDataset(_table).to_iterable_dataset()
+            logger.info(
+                f"[rank {rank}] Pre-packed {ds_key} (in-memory): {packed_path.name}",
+                main_process_only=False,
+            )
+            dataset_list.append(ds)
+            continue
+
+        # ── Per-sample Arrow (sharded 우선) ───────────────────────────────
         shard_files = sorted(
             (base_dir / ds_key).glob(f"rank{rank}_s*.arrow")
         )
         if shard_files:
             data_files = [str(p) for p in shard_files]
-            ds = load_dataset("arrow", data_files=data_files, split="train", streaming=True)
-            logger.info(
-                f"[rank {rank}] Loaded precomputed ({len(shard_files)} shards): "
-                + ", ".join(p.name for p in shard_files),
-                main_process_only=False,
-            )
         else:
             arrow_path = base_dir / ds_key / f"rank{rank}.arrow"
             if not arrow_path.exists():
@@ -1274,11 +1333,45 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
                     main_process_only=False,
                 )
                 continue
-            ds = load_dataset("arrow", data_files=str(arrow_path), split="train", streaming=True)
-            logger.info(
-                f"[rank {rank}] Loaded precomputed: {arrow_path}",
-                main_process_only=False,
+            data_files = [str(arrow_path)]
+
+        logger.info(
+            f"[rank {rank}] Loading precomputed {ds_key} into memory: {[Path(f).name for f in data_files]}",
+            main_process_only=False,
+        )
+        import pyarrow.ipc as _pa_ipc
+        from datasets import Dataset as _HFDataset
+        import pyarrow as _pa
+        _tables = [_pa_ipc.open_file(f).read_all() for f in data_files]
+        _table = _pa.concat_tables(_tables) if len(_tables) > 1 else _tables[0]
+        ds = _HFDataset(_table)
+
+        # per-sample 데이터셋: processor + packer를 여기서 바로 적용
+        # num_proc: 128코어 / 8 rank = 16 per rank, 캐시는 /dev/shm (RAM tmpfs)
+        import os as _os
+        _num_proc = max(1, _os.cpu_count() // 8)
+        _shm_cache = f"/dev/shm/hf_map_cache/rank{rank}"
+        _os.makedirs(_shm_cache, exist_ok=True)
+        ds = ds.map(
+            processor_fn,
+            batched=True,
+            batch_size=cfg.get("process_batch_size", 32),
+            remove_columns=["utterance_id", "text", "features", "feat_len"],
+            features=_PROC_FEATURES,
+            num_proc=_num_proc,
+            cache_file_name=f"{_shm_cache}/{ds_key}_proc.arrow",
+        )
+        if cfg.get("packing", True):
+            ds = ds.map(
+                packer_fn,
+                batched=True,
+                batch_size=cfg.get("packing_bucket_size", 200),
+                features=_PACKED_CANONICAL,
+                num_proc=_num_proc,
+                cache_file_name=f"{_shm_cache}/{ds_key}_pack.arrow",
             )
+        any_needs_pack = True
+        ds = ds.to_iterable_dataset()
         dataset_list.append(ds)
 
     if not dataset_list:
@@ -1287,23 +1380,16 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
             f"Run: bash precompute/run_precompute.sh --encoder {enc_name}"
         )
 
+    if any_needs_pack:
+        logger.info(
+            "Some datasets use on-the-fly packing. "
+            f"Run `bash precompute/run_pack.sh --encoder {enc_name}` to pre-pack.",
+            main_process_only=True,
+        )
+
     ds = interleave_datasets(dataset_list, seed=cfg.get("seed", 42))
     if shuffle:
         ds = ds.shuffle(buffer_size=10000, seed=cfg.get("seed", 42))
-
-    ds = ds.map(
-        processor_fn,
-        batched=True,
-        batch_size=cfg.get("process_batch_size", 32),
-        remove_columns=["utterance_id", "text", "features", "feat_len"],
-    )
-
-    if cfg.get("packing", True):
-        ds = ds.map(
-            packer_fn,
-            batched=True,
-            batch_size=cfg.get("packing_bucket_size", 200),
-        )
 
     return ds
 
@@ -1677,10 +1763,9 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
             },
         } if cfg.get("use_fsdp_stage1") else {"ddp_find_unused_parameters": False}),
 
-        # CPU 데이터 로딩을 GPU 학습과 병렬화.
-        # 각 rank마다 num_workers개의 worker process가 Arrow shard를 병렬 읽기.
-        # shard 수(6 datasets × 4 shards = 24) ≥ num_workers × num_ranks 이어야 중복 없음.
-        dataloader_num_workers=8,
+        # precomputed 모드: rank당 파일 1개 → num_shards=1 → worker 1개면 충분.
+        # raw audio 모드: 여러 shard 파일 → worker 8개로 병렬 로딩.
+        dataloader_num_workers=1 if cfg.get("precomputed_dir") else 8,
         dataloader_prefetch_factor=2,
     )
 
@@ -1838,7 +1923,7 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
         save_total_limit=3,
 
         remove_unused_columns=False,
-        dataloader_num_workers=8,
+        dataloader_num_workers=1 if cfg.get("precomputed_dir") else 8,
         dataloader_prefetch_factor=2,
 
         **({

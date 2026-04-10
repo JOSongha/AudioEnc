@@ -54,17 +54,34 @@ After:   precomputed features → Projector → LLM
 
 **Arrow** 포맷 (`.arrow`, `pyarrow` 사용). 데이터셋별·rank별로 분리 저장.
 
-### 저장 경로
+### 저장 경로 및 파일 종류
 
 ```
-/mnt/fr20tb/wbl_residency/jos/ddn/precomputed/{encoder_name}/
-  ls100/   rank0.arrow  rank1.arrow  ...  rank7.arrow
-  ls360/   rank0.arrow  ...
-  ls500/   rank0.arrow  ...
-  mls/     rank0.arrow  ...
-  gs/      rank0.arrow  ...
-  vp/      rank0.arrow  ...
-  meta.json            ← 인코더 설정, 완료 여부, 파일별 행 수
+/mnt/ddn/users/jos/precomputed/{encoder_name}/          ← ddn 심볼릭 링크로도 접근 가능
+  meta.json
+  ls100/
+    rank{N}.arrow           ← ① 원본 per-sample (precompute_features.py 출력)
+    rank{N}_s{M}.arrow      ← ② 샤딩 버전 (shard_arrow.py 출력)
+    packed_16384/
+      rank{N}.arrow         ← ③ 패킹 버전 (pack_arrow.py 출력)
+  ls360/ ls500/ mls/ gs/ vp/  (동일 구조)
+```
+
+#### 파일 종류 설명
+
+| 파일 패턴 | 생성 스크립트 | 내용 | 용도 |
+|---|---|---|---|
+| `rank{N}.arrow` | `precompute_features.py` | 인코더 출력 피처, 샘플 1개 = 1행. rank(=GPU)별로 데이터셋을 1/8씩 분담 | 기본 precomputed 모드 |
+| `rank{N}_s{M}.arrow` | `shard_arrow.py` | `rank{N}.arrow`를 행 단위로 M개로 균등 분할한 것. 스트리밍 로드 시 메모리 부담 감소 | `pack_arrow.py` 입력으로 우선 사용됨 |
+| `packed_{L}/rank{N}.arrow` | `pack_arrow.py` | 여러 샘플을 greedy-knapsack으로 묶어 최대 L 토큰짜리 bin으로 패킹. 1행 = 1 packed bin | 훈련 시 sequence packing 모드 |
+| `meta.json` | `precompute_features.py` | 인코더 설정(out_dim, tgt_sr, hop) + 파일별 행 수 | 검증용 |
+
+#### 로드 우선순위 (`build_precomputed_pipeline` 기준)
+
+```
+packed_{cutoff_len}/rank{N}.arrow  ← 있으면 최우선
+rank{N}_s*.arrow                   ← packed 없으면 sharded
+rank{N}.arrow                      ← shard도 없으면 단일 파일
 ```
 
 ### 용량 추정 (fb_dacvae 기준)

@@ -10,13 +10,21 @@
 | max_batch_tokens 증가 | 2600 → 8000 | 효과 없음 (training 미사용, eval 전용) | ✅ 검증됨 (무효) |
 | **packing_bucket_size** 증가 | 200 → 1000 | GPU util 오히려 **~95% → ~27% 급락** (CPU 병목) | ✅ 검증됨 (무효, 역효과) |
 | **packing_bucket_size** 조정 | 200 → 400 | 중단 (step 8 기준 ~95s, 200이 최적) | ✅ 검증됨 (무효) |
-| **process_batch_size** 증가 | 32 → 128 | ~55~110s **불규칙 반복**, 평균 ~90s → baseline 55s 대비 악화. CPU burst 패턴 (bucket=1000과 동일 원인) | ✅ 검증됨 (무효, 역효과) |
-| **gradient_accumulation_steps** 증가 | 4 → 8 | 미검증 | 🔄 검증 예정 |
+| **process_batch_size** 증가 | 32 → 64 | 2-slow(~109s)+2-fast(~29s) **교대 패턴**, avg GPU util ~70% → baseline 55s/95% 대비 악화. CPU burst (bucket=1000과 동일 원인) | ✅ 검증됨 (무효, 역효과) |
+| **process_batch_size** 증가 | 32 → 128 | ~55~110s **불규칙 반복**, 평균 ~90s → baseline 55s 대비 악화. CPU burst 패턴 | ✅ 검증됨 (무효, 역효과) |
+| **gradient_accumulation_steps** 증가 | 4 → 8 | step당 시간 ~2배 (avg ~179s), step 수 절반 → wall time 동일. DataLoader slow/fast 패턴 여전 | ✅ 검증됨 (무효) |
+| **Liger kernel** (qwen3_5 올바른 패치) | OFF → ON (수동 monkey-patch) | slow 108s / fast 26s → slow 108s / fast 26s (동일) | ✅ 검증됨 (효과 없음 — DataLoader 병목 구간) |
 | **Stage 1 FSDP** (`--fsdp-stage1`) | DDP → FSDP full_shard | DDP보다 **2.2배 느림** (~119s vs ~55s/step), 메모리 절감 없음 | ✅ 재검증됨 (무효) |
+| **streaming=False** (RAM 로딩) | HF streaming → pyarrow.ipc.read_all() + map(num_proc=16) | ls100/ls360/ls500 성공, **MLS에서 OOM kill** (cgroup 제한 + cp 동시 실행) | ✅ 검증됨 (대용량 불가) |
+| **Pre-packed Arrow** | on-the-fly pack → 사전 packed Arrow 직접 로드 | map 2단계 완전 스킵 (processor+packer 0s). DataLoader 병목 해소 | ✅ 검증됨 |
+| **gradient_checkpointing=False** (Stage 1) | True → False | cutoff_len=16384에서 **OOM** (79.3GB/GPU 소진) | ✅ 검증됨 (불가, checkpointing 필수) |
+| **flash-linear-attention** | 미설치 → 설치 | Qwen3.5의 linear attention이 torch fallback으로 동작 중. fla 설치 시 fused CUDA kernel 사용 → 속도 개선 기대 | 🔄 설치 중 |
 
-**결론**: 현 구조에서 GPU utilization의 핵심 레버는 `packing_cutoff_len` 단 하나.
+**결론**: on-the-fly packing 모드에서 GPU utilization의 핵심 레버는 `packing_cutoff_len` 단 하나.
 n_shards/num_workers/max_batch_tokens/packing_bucket_size/process_batch_size 모두 영향 없거나 역효과.
 CPU 처리 단위(bucket_size, process_batch_size)를 늘리면 GPU 굶김(starving)이 발생해 오히려 악화됨.
+- `process_batch_size`: 32(최적) < 64(역효과, avg ~90s, GPU util ~70%) < 128(역효과, avg ~90s, 불규칙)
+- **Pre-packed Arrow** 모드로 전환 시 DataLoader 병목 자체가 해소됨 (§10 참조)
 
 ---
 
@@ -42,6 +50,13 @@ CPU 처리 단위(bucket_size, process_batch_size)를 늘리면 GPU 굶김(starv
 | 04-10 09:25 | — | precomputed | 8 | 8 | 16384 | **1000** | ~117 (step4) | ~27% | ~64GB | CPU packing 병목, 5 step 중단 |
 | 04-10 09:37 | — | precomputed | 8 | 8 | 16384 | **400** | ~95 (step8) | — | ~64GB | 중단 (여전히 악화) |
 | 04-10 09:53 | — | precomputed | 8 | 8 | 16384 | 200 | **~55~110 불규칙** | — | ~64GB | process_batch_size=128, 평균 ~90s, 43 step |
+| 04-10 11:04 | — | precomputed | 8 | 8 | 16384 | 200 | **25~29s(fast) / ~109s(slow) 교대**, avg ~90s | ~70% | ~64GB | process_batch_size=64, 2-slow+2-fast 주기4 패턴, 14 step 후 중단 |
+| 04-10 12:56 | — | precomputed | 8 | 8 | 16384 | 200 | **26~28s(fast) / ~108s(slow) 교대** | — | ~64GB | **Liger OFF 베이스라인** (process_batch_size=64 방치, 실질 no-liger) |
+| 04-10 12:56 | — | precomputed | 8 | 8 | 16384 | 200 | **26~28s(fast) / ~108s(slow) 교대** | — | ~64GB | **Liger ON (수정 후)** (process_batch_size=64 방치, 패치 성공했으나 DataLoader 병목 동일) |
+| 04-10 11:32 | — | precomputed | 8 | 8 | 16384 | 200 | **128~280s 불규칙**, avg ~179s | — | ~64GB | **gradient_accumulation_steps=8**, step당 micro-step 2배 → 시간 2배, step 수 절반. wall time 이득 없음. 5 step 후 중단 |
+| 04-10 20:22 | — | **pre-packed** | 1 | — | 16384 | — | OOM kill (MLS 로드 중) | — | — | streaming=False RAM 로드, num_proc=16, /dev/shm 캐시. ls100~ls500 성공 후 MLS(55GB×8 rank)에서 cgroup OOM. 동시 cp도 영향 |
+| 04-10 21:07 | — | **pre-packed** | 1 | — | 16384 | — | ~244 (오측정) | 30~100% | ~13GB | ls100+ls360+ls500, pre-packed Arrow. **중복 학습 세션 2개 동시 실행으로 GPU 메모리 반분 → 오측정** |
+| 04-10 21:32 | — | **pre-packed** | 1 | — | 16384 | — | OOM | — | 79.3GB | `gradient_checkpointing=False` 시도. activation이 GPU 메모리 전부 소진 → CUDA OOM |
 
 ## 핵심 관찰
 
@@ -99,15 +114,74 @@ DDP baseline 대비:
 
 **원인 분석**:
 
-1. **메모리 절감 없음**: cutoff_len=16384의 activation이 메모리를 지배. FSDP는 파라미터만 샤딩(LLM ~4GB → ~500MB/GPU)하지만, packed sequence activation 메모리가 훨씬 커서 절감 효과 없음.
+#### 이유 1: 메모리 절감 없음 — activation이 메모리를 지배
 
-2. **속도 저하**: `gradient_checkpointing`과 FSDP `full_shard` 조합 시 backward pass에서 redundant AllGather 발생 (HF Trainer 경고). 또한 forward pass마다 layer별 all-gather → 통신 오버헤드.
+FSDP의 파라미터 샤딩 효과:
+```
+Qwen3.5-2B in bf16 = ~4 GB
+FSDP 8-GPU 분산 → 500 MB/GPU  ← 이론상 3.5 GB/GPU 절감
+```
 
-   ```
-   When using FSDP full shard, instead of using `gradient_checkpointing` in TrainingArguments,
-   please use `activation_checkpointing` in `fsdp_config`. The former introduces a redundant
-   AllGather operation in backward pass.
-   ```
+그런데 cutoff_len=16384인 packed sequence를 처리하면 각 레이어의 attention/FFN 중간 activation이 파라미터보다 훨씬 크다. 28개 레이어 × 16384 토큰의 activation 합산이 파라미터 절감분(3.5 GB)을 압도한다.
+
+실측 결과: 64 GB → 66 GB로 오히려 증가. **파라미터가 메모리 병목이 아니라 activation이 병목**이므로 FSDP 파라미터 샤딩은 효과가 없다.
+
+#### 이유 2: forward마다 레이어별 all-gather 통신 발생
+
+DDP는 각 GPU가 전체 파라미터를 보유하므로 forward 중 통신이 없다. FSDP는 파라미터를 분산 저장하므로 연산 전 매번 복원해야 한다:
+
+```
+[DDP forward]
+  Layer 1 → Layer 2 → ... → Layer 28
+  통신: 없음
+
+[FSDP full_shard forward]
+  all-gather(Layer1) → Layer 1 연산 → free
+  all-gather(Layer2) → Layer 2 연산 → free
+  ...
+  all-gather(Layer28) → Layer 28 연산 → free
+  통신: 28회 all-gather
+```
+
+backward도 레이어별 all-gather + reduce-scatter가 반복된다.
+
+#### 이유 3 (결정타): `gradient_checkpointing` + FSDP `full_shard` 충돌
+
+`gradient_checkpointing`은 forward 시 activation을 저장하지 않고 backward 때 재계산한다. 재계산에는 해당 레이어의 파라미터가 필요한데, FSDP는 이미 free했으므로 **재계산 시 또 all-gather가 발생**한다:
+
+```
+[FSDP + gradient_checkpointing backward]
+  Layer N:
+    all-gather(파라미터 복원)          ← 1번째 all-gather
+    activation 재계산 → all-gather 재발생  ← 2번째 all-gather (중복)
+    gradient 계산
+    reduce-scatter(gradient 분산)
+    free
+  → 레이어당 all-gather 2회
+```
+
+HF Trainer 경고:
+```
+When using FSDP full shard, instead of using `gradient_checkpointing` in TrainingArguments,
+please use `activation_checkpointing` in `fsdp_config`. The former introduces a redundant
+AllGather operation in backward pass.
+```
+
+올바른 방법은 `TrainingArguments(gradient_checkpointing=True)` 대신 `fsdp_config` 안에 `activation_checkpointing: true`를 쓰는 것이다. Stage 1 FSDP 시도 당시 이 설정이 누락되어 all-gather가 2배로 발생했다.
+
+> **참고**: `fsdp_config.activation_checkpointing`으로 전환하면 이유 3의 중복 all-gather는 해소되지만, 이유 1(activation이 메모리 지배)과 이유 2(레이어별 all-gather 통신)는 여전히 유효하다. 또한 `gradient_checkpointing` 자체를 끄는 것도 불가능하다 — cutoff_len=16384에서 checkpointing=False 시 GPU 메모리 79.3GB를 전부 소진하고 OOM이 발생한다 (§12 참조). 따라서 Stage 1 FSDP는 설정을 개선하더라도 DDP 대비 이점이 없다.
+
+#### 왜 Stage 2는 FSDP가 유효한가
+
+Stage 2는 LoRA 파라미터의 optimizer state(Adam m, v)가 추가된다. float32 Adam이면 LoRA 파라미터 × 3배 메모리가 필요하다. 이게 각 GPU에 full copy로 있으면 OOM에 가까워지므로, FSDP로 optimizer state까지 분산하는 것이 의미 있다.
+
+| 항목 | Stage 1 | Stage 2 |
+|------|---------|---------|
+| 학습 파라미터 | Projector만 (수 MB) | LoRA + Projector |
+| Optimizer state | 무시 가능 | LoRA × 3 (유의미) |
+| 메모리 병목 | activation | activation + optimizer state |
+| FSDP 이점 | 없음 | optimizer state 분산 |
+| 결론 | DDP 최적 | FSDP 최적 |
 
 **결론**: Stage 1은 DDP가 최적. `--fsdp-stage1` 사용하지 않음.
 
@@ -194,15 +268,156 @@ packer는 전체 데이터셋을 한꺼번에 보지 않는다. HuggingFace `dat
 
 `packing_bucket_size`는 fill ratio(품질)와 CPU latency(GPU 굶김) 사이의 trade-off다. precomputed 모드에서 오디오 디코딩이 없어 CPU가 빠르더라도, bucket이 너무 크면 packer 자체가 새 병목이 된다.
 
+### 9. Liger Kernel 효과 측정 (2026-04-10)
+
+**배경**: Liger는 Qwen3.5-2B 내부 연산(RoPE, RMSNorm, SwiGLU, fused CE)을 Triton으로 fuse한다.  
+측정 당시 `process_batch_size=64`가 설정에 남아 있어 두 실험 모두 DataLoader 병목(108s/26s 교대) 하에서 진행됨.
+
+| 실험 | slow step | fast step |
+|------|-----------|-----------|
+| Liger OFF | ~109 s | ~25 s |
+| Liger ON (올바른 qwen3_5 패치) | ~108 s | ~26 s |
+
+**결론**: Liger 적용 여부와 무관하게 스텝 시간이 동일. 원인:
+- compute(fast step)는 ~26 s, DataLoader 대기(slow step)는 ~108 s
+- Liger는 compute 구간만 최적화하므로 전체 시간 변화 없음
+- **DataLoader stall이 해소되기 전까지는 Liger 효과를 측정할 수 없음**
+
+**process_batch_size=64 방치 이슈**: 64 trial 이후 32로 되돌리지 않아 후속 실험 전부가 영향받음.  
+`config.py`에서 32로 복구 완료 (2026-04-10). 다음 실행부터 정상 적용.
+
+**Liger가 효과 없는 근본 원인 (2026-04-10 분석)**:
+
+Liger가 최적화하는 연산(RoPE, RMSNorm, SwiGLU, CE loss)은 **memory-bound element-wise 연산**으로, 전체 compute의 5~10%에 불과하다. 학습 step의 대부분은 Liger가 건드리지 않는 **linear projection matmul** (Q/K/V/O + gate/up/down MLP = 레이어당 7개 × 28 레이어 = 196개)과 **attention 연산**이 지배한다. gradient_checkpointing으로 forward가 2회 실행되는 것도 matmul 2회를 의미한다.
+
+즉, Liger가 최적화하는 5~10% 구간을 2배 빠르게 해도 전체 step 시간은 2.5~5% 개선에 그치며, 이는 측정 노이즈 범위이다.
+
+### 9b. flash-linear-attention 미설치 문제 (2026-04-10, 발견)
+
+**증상**: 학습 시작 시 반복 출력:
+```
+The fast path is not available because one of the required library is not installed.
+Falling back to torch implementation.
+```
+
+**원인**: Qwen3.5는 hybrid 아키텍처로, 일부 레이어가 **gated delta rule linear attention**을 사용한다. `flash-linear-attention` (fla) 패키지가 설치되어 있으면 fused CUDA kernel으로 실행되지만, 미설치 시 순수 PyTorch loop fallback으로 동작한다.
+
+**영향**: Liger가 최적화하는 RoPE/RMSNorm/SwiGLU는 전체 compute의 5~10%이지만, linear attention은 전체 attention 연산의 일부를 차지한다. fused kernel vs torch fallback의 속도 차이는 상당할 수 있으며, **Liger보다 훨씬 큰 속도 영향**이 예상된다.
+
+**필요 패키지**:
+- `causal-conv1d` (fla 의존성)
+- `flash-linear-attention`
+
+**설치 시 주의**: 시스템 nvcc (11.8)와 PyTorch CUDA (12.4) 버전 불일치로 빌드 실패 가능. conda 환경의 CUDA toolkit (12.4+)을 사용하도록 `CUDA_HOME` 설정 필요.
+```bash
+CUDA_HOME=/mnt/ddn/users/jos/miniforge3/envs/audio \
+PATH=/mnt/ddn/users/jos/miniforge3/envs/audio/bin:$PATH \
+pip install causal-conv1d flash-linear-attention --no-build-isolation
+```
+
+**상태**: 🔄 설치 진행 중 (2026-04-10)
+
+---
+
+### 10. Offline Pre-Packing (2026-04-10, 구현 완료)
+
+**문제**: DataLoader worker가 학습 중에 processor_fn + packer_fn을 실행하기 때문에 CPU 병목 발생.
+packer_fn은 200개 샘플을 모아 greedy knapsack을 돌리는데, 이 처리 시간 동안 GPU가 대기한다.
+결과적으로 ~26s compute / ~108s DataLoader stall 교대 패턴이 반복됨.
+
+**해결책**: packing을 학습 시간에서 precompute 시간으로 이동.
+
+```
+[기존]
+per-sample Arrow → (학습 중) processor_fn → packer_fn → GPU
+
+[변경 후]
+per-sample Arrow → (사전에) processor_fn → packer_fn → packed Arrow
+                   (학습 중) packed Arrow 읽기 → GPU
+```
+
+**출력 경로**: `{precomputed_dir}/{encoder}/{dataset}/packed_{cutoff_len}/rank{N}.arrow`
+
+**스키마** (packed Arrow):
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| `input_ids` | list<int32> | 길이 = cutoff_len |
+| `labels` | list<int32> | 길이 = cutoff_len |
+| `attention_mask` | list<int32> | 길이 = cutoff_len (서브시퀀스 ID) |
+| `audio_features` | list<list<float32>> | bin 내 클립별 flat feature |
+| `audio_lengths` | list<int32> | bin 내 클립별 T_enc |
+
+**실행**:
+```bash
+# 8 rank 병렬 (GPU 불필요)
+bash precompute/run_pack.sh --encoder fb_dacvae
+
+# 특정 데이터셋만
+bash precompute/run_pack.sh --encoder fb_dacvae --datasets ls100,ls360
+```
+
+**학습 코드 변동**: `build_precomputed_pipeline`이 `packed_{cutoff_len}/rank{N}.arrow` 존재 여부를
+자동 감지. 있으면 processor/packer map 건너뜀. 없으면 기존 on-the-fly 동작 유지 (하위 호환).
+
+---
+
+### 11. streaming=False RAM 로딩 시도 (2026-04-10, OOM)
+
+**동기**: HF streaming DataLoader가 CPU 병목 → 데이터를 한 번에 RAM에 올려서 `num_proc=16` 병렬 map으로 처리.
+
+**구현**:
+```python
+# pyarrow.ipc로 Arrow 파일 전체를 RAM에 로드
+_tables = [_pa_ipc.open_file(f).read_all() for f in data_files]
+ds = _HFDataset(_pa.concat_tables(_tables))
+
+# 128코어 / 8 rank = 16 per rank, 캐시는 /dev/shm (RAM tmpfs)
+ds = ds.map(processor_fn, num_proc=16,
+            cache_file_name=f"/dev/shm/hf_map_cache/rank{rank}/{ds_key}_proc.arrow")
+ds = ds.map(packer_fn, num_proc=16,
+            cache_file_name=f"/dev/shm/hf_map_cache/rank{rank}/{ds_key}_pack.arrow")
+```
+
+**결과**:
+- ls100 (4.4GB), ls360 (16GB), ls500 (22GB): 성공. processor ~34s + packer ~6s per rank.
+- **MLS (55GB × 8 rank = 440GB)에서 OOM kill**.
+  - `cp invoked oom-killer` — ddn→local 복사가 동시에 실행되어 cgroup 메모리 압박 가중
+  - 프로세스 RSS: ~250GB (`anon-rss:261962984kB`)
+  - cgroup 메모리 제한에 도달 (`CONSTRAINT_MEMCG`)
+
+**교훈**: 소규모 데이터셋은 RAM 로딩이 가능하지만, MLS/GS 규모(55GB/rank)는 8 rank 동시 로드 시 메모리 초과. Pre-packed Arrow 모드가 더 실용적.
+
+### 12. gradient_checkpointing=False 검증 (2026-04-10, OOM)
+
+**가설**: Stage 1에서 GPU 메모리가 ~64GB/80GB → 여유 있으므로 checkpointing을 끄면 activation recompute가 제거되어 ~2배 빠를 것.
+
+**결과**: CUDA OOM.
+```
+torch.OutOfMemoryError: CUDA out of memory.
+GPU 0 has a total capacity of 79.33 GiB of which 1.81 MiB is free.
+Process 154590 has 79.31 GiB memory in use.
+77.76 GiB is allocated by PyTorch.
+```
+
+**원인**: cutoff_len=16384 시퀀스의 28 레이어 full activation이 80GB를 초과.
+gradient_checkpointing=True 시 ~64GB (레이어 경계만 저장), False 시 ~80GB+ (모든 중간 텐서 저장).
+
+**결론**: cutoff_len=16384에서 `gradient_checkpointing=True`는 **필수**. 끌 수 없음.
+
+> 참고: 이전에 "13GB/GPU, 244s/step" 측정은 **학습 세션 2개가 동시에 실행**되어 GPU 메모리를 반분한 결과였음. 단일 세션 시 정상적으로 ~64GB 사용.
+
+---
+
 ## 핵심 변수 설명
 
 | 변수 | 위치 | 역할 | 현재값 |
 |------|------|------|--------|
 | `n_shards` | `shard_arrow.py --n-shards` | `load_dataset` num_shards → worker 상한 결정 | 8 |
-| `dataloader_num_workers` | `train_pipeline_override.py` | DataLoader 병렬 worker 수 | 8 |
+| `dataloader_num_workers` | `train_pipeline_override.py` | DataLoader 병렬 worker 수 | 1 (precomputed) / 8 (raw audio) |
 | `packing_cutoff_len` | `config.py` | packed bin 최대 토큰 수 (GPU util의 핵심 레버) | 16384 (현재 최적, wall ~44h) |
 | `packing_bucket_size` | `config.py` | knapsack packer greedy 탐색 버킷 크기 (fill ratio vs CPU latency trade-off) | **200** (최적 확인) |
-| `process_batch_size` | `config.py` | 토크나이징 배치 크기 | **32** (128 역효과 확인, 32가 최적) |
+| `process_batch_size` | `config.py` | 토크나이징 배치 크기 | **32** (64·128 역효과 확인, 32가 최적) |
 | `gradient_accumulation_steps` | `train_pipeline_override.py` | micro-step 수 (업데이트 1회당) | 4 (검증 예정) |
 | `per_device_train_batch_size` | `train_pipeline_override.py` | GPU당 bin 수 (S1=1, S2=2) | 1/2 |
 
@@ -215,4 +430,7 @@ packer는 전체 데이터셋을 한꺼번에 보지 않는다. HuggingFace `dat
 | `train_pipeline_override.py` | `dataloader_num_workers`: 4 → 8 (Stage1, Stage2 모두) |
 | `config.py` | `packing_cutoff_len`: 2048 → 4096 → 8192 → 16384 |
 | `config.py` | `packing_bucket_size`: 200 → 1000/400 (역효과 확인) → **200 복귀** |
-| `config.py` | `process_batch_size`: 32 → 128 (역효과 확인) → **32 복귀** |
+| `config.py` | `process_batch_size`: 32 → 128 (역효과) → 32 복귀 → **64 추가 검증 (역효과)** → **32 최종 확정** |
+| `train_pipeline_override.py` | `build_precomputed_pipeline`: pre-packed Arrow 자동 감지, streaming=False RAM 로드 경로 추가 |
+| `train_pipeline_override.py` | `dataloader_num_workers`: precomputed 모드에서 1로 변경 (pre-packed은 CPU 처리 불필요) |
+| `train_pipeline_override.py` | `gradient_checkpointing=False` 시도 → OOM → True로 복구 |
