@@ -2,7 +2,7 @@
 스트리밍 ASR 학습 파이프라인 (독립 실행형).
 
 주요 설계 원칙:
-  - torchaudio.load() 대신 soundfile.read() 사용 (torchcodec 의존성 회피)
+  - torchaudio.load() 사용 (torchcodec 경유, FLAC/WAV/OGG-Opus/MP3 지원)
   - 데이터 파이프라인 순서: 로드 → 샤딩 → 셔플 → 처리 → 패킹
     (샤딩을 무거운 처리 이전에 수행하여 각 GPU가 자신의 슬라이스만 처리)
   - StreamingShardedTrainer: HF Trainer의 자동 DistributedSampler 삽입 우회
@@ -105,8 +105,10 @@ import gc
 from typing import Any, Literal
 from dataclasses import dataclass
 
-# Disable torchcodec in HuggingFace datasets (torchcodec not available in this env)
-os.environ.setdefault("HF_DATASETS_AUDIO_BACKEND", "soundfile")
+# Note: HF_DATASETS_AUDIO_BACKEND has no effect in streaming mode.
+# In streaming, Audio(decode=False) always returns {"bytes":...} dict (backend-independent).
+# Without decode=False, streaming always returns AudioDecoder (torchcodec).
+# _load_audio handles both cases via torchaudio.load() and get_all_samples().
 import io
 import bisect
 import math
@@ -116,7 +118,6 @@ import warnings
 import torch
 import torch.nn as nn
 import torchaudio
-import soundfile as sf
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from huggingface_hub import try_to_load_from_cache
@@ -129,6 +130,17 @@ from transformers.trainer_callback import TrainerCallback
 from tqdm import tqdm
 from datasets import load_dataset, interleave_datasets, Audio
 from transformers.trainer_pt_utils import IterableDatasetShard
+
+# ── torchcodec / LD_LIBRARY_PATH 주의사항 ────────────────────────────────────
+# torchaudio 2.x는 내부적으로 torchcodec을 사용. torchcodec은 libavutil.so.59
+# (FFmpeg 7)가 필요한데 conda env lib 경로가 LD_LIBRARY_PATH에 없으면
+# ctypes.CDLL 탐색에서 실패 → SIGABRT crash.
+#
+# 실행 전 반드시:
+#   export LD_LIBRARY_PATH=/mnt/tmp/miniconda3/envs/venv_torch211/lib:$LD_LIBRARY_PATH
+#
+# run.sh에는 이미 포함되어 있음.
+# ────────────────────────────────────────────────────────────────────────────
 
 from config import get_config
 from encoders import build_encoder
@@ -207,13 +219,13 @@ TRAIN_CONFIG = {
     #   packer는 이 bucket 안에서만 greedy 탐색 → 클수록 bin 충전율(packing efficiency)↑,
     #   메모리 사용량↑, 첫 배치 지연↑.  일반적으로 500~2000이면 충분.
     #   packing_cutoff_len(2048)과 무관하게 독립적으로 설정.
-    "packing_bucket_size": 2, #1000,
+    "packing_bucket_size": 1000,
 
     # process_batch_size : processor_fn(오디오 디코딩 + 토크나이징)을 한 번에 처리할
     #   raw 샘플 수. 너무 작으면 Python 함수 호출 오버헤드가 지배적이고 packer bucket을
     #   천천히 채움. 너무 크면 오디오 bytes가 메모리에 한꺼번에 올라감.
     #   권장: 32 (packing_bucket_size / process_batch_size ≈ 30회 호출로 bucket 충전).
-    "process_batch_size":  2, #32,
+    "process_batch_size":  32,
     # ──────────────────────────────────────────────────────────────────────
 
     "attn_implementation": "flash_attention_2",
@@ -381,11 +393,12 @@ class AudioQwen(nn.Module):
         return torch.cat(all_embeds, dim=0)                             # (N, T_proj, llm_dim)
 
     def _get_audio_embeds(self, audio, audio_lengths=None):
-        # if self._stage == 2 and self._cfg.get("use_fsdp", False):
-            # return self._get_audio_embeds_batched(audio, audio_lengths)
-            # return self._get_audio_embeds_sequential(audio, audio_lengths)
-        # return self._get_audio_embeds_batched(audio, audio_lengths)
-        return self._get_audio_embeds_sequential(audio, audio_lengths)
+        # Stage 1 DDP: 각 GPU가 배치의 1/N만 보유 → batched가 빠름
+        # Stage 2 FSDP: encoder가 샤딩되지 않아 각 GPU가 전체 배치를 보므로 sequential로 OOM 방지
+        if self._stage == 1 or not self._cfg.get("use_fsdp", False):
+            return self._get_audio_embeds_batched(audio, audio_lengths)
+        else:
+            return self._get_audio_embeds_sequential(audio, audio_lengths)
 
     # ------------------------------------------------------------------
     # Stage setup
@@ -521,19 +534,28 @@ def build_model(cfg, accelerator):
 # ══════════════════════════════════════════════════════════
 
 def _load_audio(audio_obj) -> tuple[torch.Tensor, int]:
-    """torchaudio로 오디오 bytes/path 로드. FLAC, WAV, OGG, OPUS, MP3 지원.
+    """오디오 로드. dict(bytes/path) 또는 AudioDecoder(torchcodec) 둘 다 처리.
 
-    soundfile은 OGG-Opus를 지원하지 않으므로 torchaudio 사용.
-    (MLS, VoxPopuli는 OPUS 포맷 → soundfile 실패)
-    torchaudio는 이미 (channels, frames) float32 텐서 반환.
+    streaming + Audio(decode=False) → {"bytes":..., "path":...} dict
+      → torchaudio.load()로 읽음 (torchcodec 경유, 모든 포맷 지원)
+    streaming + 기본(decode=True) → AudioDecoder (torchcodec)
+      → get_all_samples()로 읽음
+
+    torchaudio.load() 및 AudioDecoder.data 모두 (channels, frames) float 반환.
     """
-    if "bytes" in audio_obj and audio_obj["bytes"] is not None:
-        waveform, sr = torchaudio.load(io.BytesIO(audio_obj["bytes"]))
-    elif "path" in audio_obj and audio_obj["path"] is not None:
-        waveform, sr = torchaudio.load(audio_obj["path"])
+    if isinstance(audio_obj, dict):
+        if audio_obj.get("bytes") is not None:
+            waveform, sr = torchaudio.load(io.BytesIO(audio_obj["bytes"]))
+        elif audio_obj.get("path") is not None:
+            waveform, sr = torchaudio.load(audio_obj["path"])
+        else:
+            raise ValueError("audio dict has neither 'bytes' nor 'path'")
     else:
-        raise ValueError("audio_obj has neither 'bytes' nor 'path'")
-    return waveform, sr   # (channels, frames)
+        # AudioDecoder (torchcodec) — streaming without Audio(decode=False)
+        result = audio_obj.get_all_samples()
+        waveform = result.data.float()        # (channels, frames)
+        sr = result.sample_rate
+    return waveform, sr
 
 
 class StaticEvalDataset(torch.utils.data.Dataset):
@@ -960,7 +982,7 @@ def build_multi_dataset_streaming_pipeline(cfg, accelerator, processor_fn, packe
     # VoxPopuli
     if "vp" in selected:
         ds_vox = load_dataset("facebook/voxpopuli", "en", split="train", streaming=True,
-                              cache_dir=mls_root, trust_remote_code=True)
+                              cache_dir=mls_root)
         if accelerator.num_processes > 1:
             ds_vox = ds_vox.shard(num_shards=accelerator.num_processes,
                                   index=accelerator.process_index, contiguous=False)
@@ -1362,13 +1384,12 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         output_dir=output_dir,
         bf16=True,
         max_steps=cfg["max_steps"],
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=cfg.get("gradient_accumulation_steps", 4),
         learning_rate=cfg["stage1_lr"],
         lr_scheduler_type="constant",
         optim="adamw_torch_fused",
 
-        # 주의: TrainingArguments의 gradient_checkpointing은 FSDP backward에서 불필요한
-        # AllGather를 추가함; 대신 fsdp_config의 activation_checkpointing 사용 권장.
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
 
@@ -1515,7 +1536,9 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
         weight_decay=0.01,
         optim="adamw_torch_fused",
 
-        gradient_checkpointing=True,
+        # FSDP 사용 시: TrainingArguments의 gradient_checkpointing 대신
+        # fsdp_config의 fsdp_activation_checkpointing을 사용 (불필요한 AllGather 방지).
+        gradient_checkpointing=not cfg.get("use_fsdp", True),
         gradient_checkpointing_kwargs={"use_reentrant": False},
 
         logging_steps=50,
@@ -1535,6 +1558,7 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
                 "fsdp_state_dict_type": "SHARDED_STATE_DICT",
                 "limit_all_gathers": True,
                 "fsdp_ignored_modules": ["encoder"],
+                "fsdp_activation_checkpointing": True,
             },
         } if cfg.get("use_fsdp", True) else {}),
     )
@@ -1688,19 +1712,19 @@ def main():
 
     accelerator.wait_for_everyone()
 
-    # 8. Stage 2: LoRA fine-tuning
-    if args.stage in ("all", "2"):
-        run_stage2(
-            cfg=cfg,
-            train_packed=train_streaming_dataset,
-            val_dataset=val_dataset,
-            train_eval_dataset=train_eval_dataset,
-            collator=collator,
-            accelerator=accelerator,
-            s1_output_dir=s1_output_dir,
-            run_id=run_id,
-            args=args,
-        )
+    # # 8. Stage 2: LoRA fine-tuning
+    # if args.stage in ("all", "2"):
+    #     run_stage2(
+    #         cfg=cfg,
+    #         train_packed=train_streaming_dataset,
+    #         val_dataset=val_dataset,
+    #         train_eval_dataset=train_eval_dataset,
+    #         collator=collator,
+    #         accelerator=accelerator,
+    #         s1_output_dir=s1_output_dir,
+    #         run_id=run_id,
+    #         args=args,
+    #     )
 
 
 if __name__ == "__main__":
