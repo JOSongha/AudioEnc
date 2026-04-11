@@ -262,3 +262,63 @@ torchrun --nproc_per_node=8 train.py --encoder fb_dacvae \
     --datasets ls100 --ls-samples 5000 --packing --flash-attn --liger --fsdp \
     --cutoff-len 4096 --wandb-mode offline
 ```
+
+---
+
+## Benchmark Results: train_pipeline_override.py
+
+> **Date**: 2026-04-08  
+> **System**: 8× NVIDIA A100-SXM4-80GB, CUDA 12.4  
+> **Encoder**: fb_dacvae  
+> **Datasets**: ls100, ls360, ls500, mls  
+> **Training**: Stage 1 (1 epoch) + Stage 2 (1 epoch)  
+
+### Configuration Matrix
+
+| Config | Attention | Liger | FSDP | Command Flags |
+|--------|-----------|-------|------|---------------|
+| Config-1 | SDPA | ❌ | ❌ | `--attn-impl sdpa --no-liger --no-fsdp` |
+| Config-2 | FA2 | ❌ | ❌ | `--attn-impl flash_attention_2 --no-liger --no-fsdp` |
+| Config-3 | FA2 | ✅ | ❌ | `--attn-impl flash_attention_2 --liger --no-fsdp` |
+| Config-4 | FA2 | ✅ | ✅ | `--attn-impl flash_attention_2 --liger --fsdp` |
+
+### Wall-Clock Performance
+
+| Config | Attention | Liger | FSDP | Stage 1 Time | Stage 2 Time | Total Time |
+|--------|-----------|-------|------|--------------|--------------|------------|
+<!-- BENCHMARK_RESULTS_START -->
+<!-- Results will be appended here by benchmark_runner.sh -->
+| config-4-fa2-liger-fsdp | FA2 | ✅ | ✅ | N/A | N/A | N/A |
+| config-3-fa2-liger | FA2 | ✅ | ❌ | N/A | N/A | N/A |
+| config-2-fa2 | FA2 | ❌ | ❌ | N/A | N/A | N/A |
+| config-1-sdpa | SDPA | ❌ | ❌ | N/A | N/A | N/A |
+| config-4-fa2-liger-fsdp | FA2 | ✅ | ✅ | N/A | N/A | N/A |
+| config-4-fa2-liger-fsdp | FA2 | ✅ | ✅ | N/A | N/A | N/A |
+| config-4-fa2-liger-fsdp | FA2 | ✅ | ✅ | N/A | N/A | N/A |
+| config-3-fa2-liger | FA2 | ✅ | ❌ | N/A | N/A | N/A |
+| config-4-fa2-liger-fsdp | FA2 | ✅ | ✅ | N/A | N/A | N/A |
+| config-3-fa2-liger | FA2 | ✅ | ❌ | N/A | N/A | N/A |
+| config-2-fa2 | FA2 | ❌ | ❌ | N/A | N/A | N/A |
+| config-1-sdpa | SDPA | ❌ | ❌ | N/A | N/A | N/A |
+<!-- BENCHMARK_RESULTS_END -->
+
+### Observations
+- *To be filled after benchmark completion*
+
+---
+
+### Reproduction
+
+```bash
+# Run all 4 configs sequentially
+bash benchmark_runner.sh
+
+# Or run individual config:
+accelerate launch --num_processes=8 --mixed_precision=bf16 \
+    train_pipeline_override.py \
+    --encoder fb_dacvae \
+    --datasets ls100,ls360,ls500,mls \
+    --stage1-epochs 1 --stage2-epochs 1 --stage all \
+    --attn-impl sdpa --no-liger --no-fsdp \
+    --wandb-mode disabled
+```

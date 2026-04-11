@@ -378,8 +378,10 @@ def run_stage2(cfg, accelerator, train_dataset, val_dataset, proj_path, step_off
     model = build_model(cfg, accelerator)
     model.apply_lora()
 
+    if proj_path is None:
+        proj_path = os.path.join(cache_dir, f"s1_proj_{enc_name}.pt")
     if accelerator.is_main_process:
-        print("Loading Stage 1 projector weights...")
+        print(f"Loading Stage 1 projector weights from {proj_path}...")
     proj_state = torch.load(proj_path, map_location="cpu", weights_only=True)
     model.load_state_dict(proj_state, strict=False)
 
@@ -573,7 +575,7 @@ def _text_to_ctc_targets(texts: list[str]):
 
 
 def _parse_datasets(s: str) -> list:
-    valid = {"ls100", "ls360", "ls500", "mls", "gs"}
+    valid = {"ls100", "ls360", "ls500", "mls", "gs", "vp"}
     items = [x.strip() for x in s.split(",") if x.strip()]
     unknown = set(items) - valid
     if unknown:
@@ -598,20 +600,22 @@ def main():
     # 데이터셋 선택 및 샘플 수
     parser.add_argument("--datasets",
                         default=None, type=_parse_datasets,
-                        metavar="ls100,ls360,ls500,mls,gs",
+                        metavar="ls100,ls360,ls500,mls,gs,vp",
                         help="사용할 데이터셋 (쉼표 구분). 기본: ls100,ls360,ls500,mls")
     parser.add_argument("--ls-samples",     default=None, type=int,
                         metavar="N", help="LibriSpeech 서브샘플 수 (Stage 2, 기본: 전체)")
     parser.add_argument("--mls-samples",    default=None, type=int,
                         metavar="N", help="MLS 샘플 수 (Stage 2, 기본: 전체)")
-    parser.add_argument("--gs-subset",      default="l",
+    parser.add_argument("--gs-subset",      default="xl",
                         choices=["xs", "s", "m", "l", "xl"],
                         help="GigaSpeech subset (기본: l=2500h)")
     parser.add_argument("--gs-samples",     default=None, type=int,
                         metavar="N", help="GigaSpeech 샘플 수 (기본: 전체)")
+    parser.add_argument("--vp-samples",     default=None, type=int,
+                        metavar="N", help="VoxPopuli 샘플 수 (Stage 2, 기본: 전체)")
     parser.add_argument("--s1-datasets",
                         default=None, type=_parse_datasets,
-                        metavar="ls100,ls360,mls",
+                        metavar="ls100,ls360,mls,vp",
                         help="Stage 1 전용 데이터셋. 미지정 시 --datasets 사용")
     parser.add_argument("--s1-ls-samples",  default=None, type=int,
                         metavar="N", help="Stage 1 LibriSpeech 서브샘플 수 (기본: --ls-samples)")
@@ -619,6 +623,8 @@ def main():
                         metavar="N", help="Stage 1 MLS 샘플 수 (기본: --mls-samples)")
     parser.add_argument("--s1-gs-samples",  default=None, type=int,
                         metavar="N", help="Stage 1 GigaSpeech 샘플 수 (기본: --gs-samples)")
+    parser.add_argument("--s1-vp-samples",  default=None, type=int,
+                        metavar="N", help="Stage 1 VoxPopuli 샘플 수 (기본: --vp-samples)")
 
     # ── 최적화 플래그 ──────────────────────────────────────────────────────
     parser.add_argument("--packing",    action="store_true",
@@ -631,6 +637,12 @@ def main():
                         help="FSDP (DDP 대체, 4B+ 모델 권장)")
     parser.add_argument("--cutoff-len", default=2048, type=int,
                         metavar="N", help="Packing 시퀀스 최대 길이 (기본: 2048)")
+    parser.add_argument("--stage1-epochs", type=int, default=None,
+                        metavar="N", help="Stage 1 epoch 수 (기본: config 값)")
+    parser.add_argument("--stage2-epochs", type=int, default=None,
+                        metavar="N", help="Stage 2 epoch 수 (기본: config 값)")
+    parser.add_argument("--stage", choices=["1", "2", "all"], default="all",
+                        help="실행할 stage 선택 (기본: all)")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -643,6 +655,7 @@ def main():
     if args.mls_samples is not None: cfg["mls_num_samples"]         = args.mls_samples
     cfg["gs_subset"]     = args.gs_subset
     if args.gs_samples  is not None: cfg["gs_num_samples"]          = args.gs_samples
+    if args.vp_samples  is not None: cfg["vp_num_samples"]          = args.vp_samples
 
     # 최적화 플래그 반영
     if args.packing:    cfg["use_packing"]         = True
@@ -650,6 +663,8 @@ def main():
     if args.liger:      cfg["use_liger_kernel"]    = True
     if args.fsdp:       cfg["use_fsdp"]            = True
     cfg["packing_cutoff_len"] = args.cutoff_len
+    if args.stage1_epochs is not None: cfg["stage1_epochs"] = args.stage1_epochs
+    if args.stage2_epochs is not None: cfg["stage2_epochs"] = args.stage2_epochs
 
     os.makedirs(cfg["model_cache_dir"], exist_ok=True)
     os.environ.setdefault("HF_HOME",    cfg["model_cache_dir"])
@@ -690,13 +705,19 @@ def main():
     stage1_cfg["gs_num_samples"] = (
         args.s1_gs_samples  if args.s1_gs_samples  is not None else cfg.get("gs_num_samples")
     )
+    stage1_cfg["vp_num_samples"] = (
+        args.s1_vp_samples  if args.s1_vp_samples  is not None else cfg.get("vp_num_samples")
+    )
 
     stage1_train_dataset, val_dataset = build_datasets(stage1_cfg)
     stage2_train_dataset, _           = build_datasets(cfg)
 
-    proj_path, step_offset = run_stage1(cfg, accelerator, stage1_train_dataset, val_dataset,
-                                        debug=args.debug)
-    run_stage2(cfg, accelerator, stage2_train_dataset, val_dataset, proj_path, step_offset)
+    proj_path, step_offset = None, 0
+    if args.stage in ("all", "1"):
+        proj_path, step_offset = run_stage1(cfg, accelerator, stage1_train_dataset, val_dataset,
+                                            debug=args.debug)
+    if args.stage in ("all", "2"):
+        run_stage2(cfg, accelerator, stage2_train_dataset, val_dataset, proj_path, step_offset)
 
     if accelerator.is_main_process:
         wandb.finish()

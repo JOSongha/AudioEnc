@@ -74,6 +74,10 @@ echo "  GPUs     : $GPUS"
 echo "  Extra    : ${EXTRA_ARGS[*]}"
 echo "========================================"
 
+# torchcodec(torchaudio 2.x 의존)이 libavutil.so를 찾으려면 conda 환경 lib 경로가 필요.
+# LD_LIBRARY_PATH 없으면 libavutil.so.59를 못 찾아 SIGABRT crash.
+export LD_LIBRARY_PATH="/mnt/tmp/miniconda3/envs/venv_torch211/lib:${LD_LIBRARY_PATH}"
+
 torchrun \
     --nproc_per_node=$GPUS \
     --master_port=29500 \
