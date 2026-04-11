@@ -309,33 +309,57 @@ Qwen3.5-2B는 `transformers.models.qwen3_5.*` 클래스를 사용한다 → **�
 
 | 항목 | Qwen3 | Qwen3.5 | 처리 방법 |
 |------|-------|---------|---------|
+| RoPE | full head_dim 회전 | **partial_rotary_factor=0.25** (head_dim=256 중 64만 회전) | 앞쪽 `rope_dim`만 liger에 넘기고 나머지 pass-through (아래 참조) |
 | RMSNorm 수식 | `output * weight` (init: ones) | `output * (1 + weight)` (init: zeros) | `LigerRMSNorm(offset=1.0, init_fn="zeros")` 서브클래스 |
 | MLP 시그니처 | `__init__(self, config)` | `__init__(self, config, intermediate_size)` | config를 복사해 `intermediate_size` 주입하는 래퍼 |
 | Fused CE | `Qwen3ForCausalLM.forward` 교체 | `Qwen3_5ForCausalLM.forward` 교체 | `_qwen3_lce_forward` 직접 할당 |
 
+#### 구현 이슈: Qwen3.5 partial rotary + liger RoPE nan (2026-04-11, 해결)
+
+**문제**: liger의 Triton RoPE kernel은 `cos_offsets = tl.arange(0, pad_hd // 2)`로 cos를 읽는다. `pad_hd = head_dim = 256` → 128개를 읽으려 하지만, Qwen3.5의 cos는 `partial_rotary_factor=0.25`로 64개뿐 → 엉뚱한 메모리 읽기 → 잘못된 값 (max diff = 10.3) → nan.
+
+**해결**: partial rotary 대응 래퍼.
+```python
+def _partial_liger_rotary_pos_emb(q, k, cos, sin, ...):
+    rope_dim = cos.shape[-1]  # 64
+    q_rope, q_pass = q[..., :rope_dim], q[..., rope_dim:]
+    k_rope, k_pass = k[..., :rope_dim], k[..., rope_dim:]
+    q_rope, k_rope = LigerRopeFunction.apply(q_rope.contiguous(), k_rope.contiguous(), cos, sin, ...)
+    return torch.cat([q_rope, q_pass], dim=-1), torch.cat([k_rope, k_pass], dim=-1)
+```
+
+**검증**: liger 4개 패치(RoPE+RMSNorm+SwiGLU+fused CE) 모두 활성화, loss=6.965, grad_norm=11.19 ✅
+
 ---
 
-#### 실측 비교 (2026-04-10, 8×A100-80GB, fb_dacvae, cutoff_len=16384)
+#### 실측 비교 (2026-04-10~11, 8×A100-80GB, fb_dacvae, cutoff_len=16384)
 
-| 설정 | slow step | fast step | 비고 |
-|------|-----------|-----------|------|
-| Liger OFF (no-liger 베이스라인) | ~109 s | ~25 s | DataLoader 대기 / compute |
-| Liger "ON" (버그 전, 실제 no-op) | ~109 s | ~25 s | qwen3_5 패치 안 됨 |
-| Liger ON (버그 수정 후) | ~108 s | ~27 s | 실제 패치 적용, 차이 없음 |
+| 설정 | s/step | GPU mem | 비고 |
+|------|--------|---------|------|
+| torch 2.5.1, no-fla, on-the-fly packing | ~55s (steady) | ~64GB | DataLoader slow/fast 교대 |
+| torch 2.5.1, no-fla, liger ON (on-the-fly) | ~55s | ~64GB | DataLoader 병목이 지배 → liger 효과 측정 불가 |
+| torch 2.6.0, fla 0.3.2, no-liger, pre-packed | ~167s (warmup) | ~8GB | fla fast path 미활성 (0.3.2에 fla.ops 없음) |
+| torch 2.6.0, fla 0.4.2, liger (partial RoPE), pre-packed | **~40s** (steady) | **~11GB** | ✅ **최종 구성. fast_path_warn=0** |
 
-**결론**: Liger 적용 후에도 스텝 시간이 거의 변하지 않는다.
+**결론 (2026-04-11)**:
 
-**근본 원인 (2026-04-10 추가 분석)**:  
-DataLoader 병목과 별개로, Liger가 최적화하는 연산(RoPE, RMSNorm, SwiGLU, CE loss)은 **memory-bound element-wise 연산**으로 전체 compute의 5~10%에 불과하다. 학습 step의 대부분은 Liger가 건드리지 않는 **196개 matmul** (Q/K/V/O + gate/up/down × 28 레이어)과 **attention 연산**이 지배한다. 5~10% 구간을 2배 빠르게 해도 전체 step은 2.5~5% 개선에 그쳐 측정 노이즈 범위.
+fla + liger 풀 스택이 이전 baseline 대비 **27% 속도 향상 + 82% GPU 메모리 절감**.
 
-> **업데이트 (2026-04-10)**: Offline Pre-Packing (§10 in `dataloader_trials.md`)으로 DataLoader 병목 해소.
-> Pre-packed Arrow 모드에서는 CPU packing이 없으므로 Liger가 compute 구간에서 효과를 발휘할 수 있다.
-> 단, gradient_checkpointing이 여전히 ON (cutoff_len=16384에서 필수 — OFF 시 OOM)이므로
-> Liger의 메모리 절감이 배치 크기 증가로 이어지지는 않음. 순수 compute 속도 개선만 기대.
+| 지표 | 이전 (torch 2.5.1, no-fla) | 현재 (torch 2.6.0 + fla + liger) | 개선 |
+|------|---------------------------|----------------------------------|------|
+| s/step (steady) | ~55s | **~40s** | **27%↑** |
+| GPU mem | ~64GB | **~11GB** | **82%↓** |
+| fast path | torch fallback | fla fused kernel | ✅ |
+| liger | 4패치 (효과 불분명) | 4패치 (partial RoPE fix) | ✅ |
 
-> **더 큰 속도 개선 후보**: `flash-linear-attention` 미설치로 Qwen3.5의 linear attention 레이어가
-> 순수 PyTorch fallback으로 동작 중. fla 설치 시 fused CUDA kernel 사용 → Liger보다 훨씬 큰 속도 개선 기대.
-> 설치 방법 및 상세: `dataloader_trials.md` §9b 참조.
+속도 향상의 대부분은 **fla** (linear attention fused kernel)에 의한 것. liger 단독 효과는 여전히 작지만 (compute의 5~10%), fused CE의 메모리 절감(logits ~5GB 미생성)은 유의미.
+
+GPU 메모리 ~11GB/80GB → **cutoff_len을 크게 올릴 여지**가 있음. 65536 이상도 가능할 것으로 예상.
+
+> **업데이트 (2026-04-11)**: fla 0.4.2 + causal_conv1d 1.6.1 설치 완료. fla fast path 활성화 확인 (fast_path_warn=0).
+> **결과: ~55s → ~40s/step (27% 가속), ~64GB → ~11GB GPU mem (82% 절감).**
+> 속도 향상의 대부분은 fla의 fused linear attention kernel에 의한 것.
+> 설치 과정 및 호환성 이슈 상세: `dataloader_trials.md` §9b, §9c 참조.
 > Pre-packed 모드에서의 Liger 효과 재측정 예정.
 
 ### 4. FSDP

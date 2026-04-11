@@ -13,12 +13,16 @@
 | **process_batch_size** 증가 | 32 → 64 | 2-slow(~109s)+2-fast(~29s) **교대 패턴**, avg GPU util ~70% → baseline 55s/95% 대비 악화. CPU burst (bucket=1000과 동일 원인) | ✅ 검증됨 (무효, 역효과) |
 | **process_batch_size** 증가 | 32 → 128 | ~55~110s **불규칙 반복**, 평균 ~90s → baseline 55s 대비 악화. CPU burst 패턴 | ✅ 검증됨 (무효, 역효과) |
 | **gradient_accumulation_steps** 증가 | 4 → 8 | step당 시간 ~2배 (avg ~179s), step 수 절반 → wall time 동일. DataLoader slow/fast 패턴 여전 | ✅ 검증됨 (무효) |
-| **Liger kernel** (qwen3_5 올바른 패치) | OFF → ON (수동 monkey-patch) | slow 108s / fast 26s → slow 108s / fast 26s (동일) | ✅ 검증됨 (효과 없음 — DataLoader 병목 구간) |
+| **Liger kernel** (partial RoPE fix) | OFF → ON (RMSNorm+SwiGLU+fused CE+partial RoPE) | pre-packed + fla 환경에서 **4패치 모두 정상 동작** (loss=6.3, grad=11.9). RoPE nan 버그 → partial rotary fix로 해결 | ✅ 검증됨 |
 | **Stage 1 FSDP** (`--fsdp-stage1`) | DDP → FSDP full_shard | DDP보다 **2.2배 느림** (~119s vs ~55s/step), 메모리 절감 없음 | ✅ 재검증됨 (무효) |
 | **streaming=False** (RAM 로딩) | HF streaming → pyarrow.ipc.read_all() + map(num_proc=16) | ls100/ls360/ls500 성공, **MLS에서 OOM kill** (cgroup 제한 + cp 동시 실행) | ✅ 검증됨 (대용량 불가) |
 | **Pre-packed Arrow** | on-the-fly pack → 사전 packed Arrow 직접 로드 | map 2단계 완전 스킵 (processor+packer 0s). DataLoader 병목 해소 | ✅ 검증됨 |
 | **gradient_checkpointing=False** (Stage 1) | True → False | cutoff_len=16384에서 **OOM** (79.3GB/GPU 소진) | ✅ 검증됨 (불가, checkpointing 필수) |
-| **flash-linear-attention** | 미설치 → 설치 | Qwen3.5의 linear attention이 torch fallback으로 동작 중. fla 설치 시 fused CUDA kernel 사용 → 속도 개선 기대 | 🔄 설치 중 |
+| **flash-linear-attention 0.4.2** | 미설치 → fla 0.4.2 + causal_conv1d 1.6.1 | **~55s → ~40s/step (27% 가속), ~64GB → ~11GB GPU mem (82% 절감)**. fla fast path 활성화 | ✅ 검증됨 |
+| **num_data_splits** (bins 분할) | 1 → 2 | 데이터를 N등분하여 split마다 1/N 로드. mls+gs 포함 시 OOM 해결 (948GB→474GB) | 🔄 구현 완료, 검증 예정 |
+| **packing_cutoff_len=65536** | 16384 → 65536 | DataLoader worker Bus error (shared memory). `num_workers=0`으로 우회 | 🔄 검증 중 |
+| **dataloader_num_workers** | 1 → 0 (precomputed) | pre-packed 모드에서 worker 불필요 (데이터 이미 메모리). worker=1은 오버헤드만 추가. Bus error 해결 | ✅ 변경됨 |
+| **cross-dataset mixed packing** | 데이터셋별 패킹 → 합쳐서 셔플 후 패킹 | bin 내 여러 데이터셋 샘플 혼합. step당 gradient 편향 방지 | 🔄 구현 완료, 검증 예정 |
 
 **결론**: on-the-fly packing 모드에서 GPU utilization의 핵심 레버는 `packing_cutoff_len` 단 하나.
 n_shards/num_workers/max_batch_tokens/packing_bucket_size/process_batch_size 모두 영향 없거나 역효과.
@@ -57,6 +61,19 @@ CPU 처리 단위(bucket_size, process_batch_size)를 늘리면 GPU 굶김(starv
 | 04-10 20:22 | — | **pre-packed** | 1 | — | 16384 | — | OOM kill (MLS 로드 중) | — | — | streaming=False RAM 로드, num_proc=16, /dev/shm 캐시. ls100~ls500 성공 후 MLS(55GB×8 rank)에서 cgroup OOM. 동시 cp도 영향 |
 | 04-10 21:07 | — | **pre-packed** | 1 | — | 16384 | — | ~244 (오측정) | 30~100% | ~13GB | ls100+ls360+ls500, pre-packed Arrow. **중복 학습 세션 2개 동시 실행으로 GPU 메모리 반분 → 오측정** |
 | 04-10 21:32 | — | **pre-packed** | 1 | — | 16384 | — | OOM | — | 79.3GB | `gradient_checkpointing=False` 시도. activation이 GPU 메모리 전부 소진 → CUDA OOM |
+| 04-10 23:08 | — | **pre-packed** | 0 | — | 16384 | — | **~30s** (loss=1059, nan) | 100% | ~11GB | fla 0.4.2 + torch 2.6.0 + triton 3.2.0. 속도 향상이지만 **수치 발산**. GPU mem 비정상적으로 낮음 |
+| 04-11 02:45 | — | **pre-packed** | 0 | — | 16384 | — | **~22s** (loss=780→0, nan) | 100% | ~13GB | fla 0.3.2 + torch 2.6.0 + split 1/2. 역시 수치 발산 |
+| 04-11 13:28 | — | **pre-packed** | 0 | — | 16384 | — | **~37s** (loss=4→0, nan) | — | — | fla 0.3.2 + torch 2.6.0, ls100만. 역시 수치 발산 |
+| 04-11 14:11 | — | **pre-packed** | 0 | — | 65536 | — | Bus error | — | — | cutoff_len=65536, worker=1 → shared memory Bus error. worker=0으로 해결 |
+| 04-11 14:24 | — | **pre-packed** | 0 | — | 65536 | — | **~41s** (loss=1→0, nan) | 100% | ~13GB | fla 0.3.2 + no-liger + cutoff 65536. 역시 수치 발산 |
+| 04-11 ~15:00 | — | **pre-packed** | 0 | — | 65536 | — | 에러 | — | — | fla 0.3.2 + no-liger + transformers 패치. exitcode 1 (원인 불명, cutoff 65536 관련 가능) |
+| 04-11 ~15:10 | — | **pre-packed** | 0 | — | 16384 | — | **~167s** (loss=5.787, grad=9.375) | — | — | fla 0.3.2 + **no-liger** + torch 2.6.0. 정상 동작 확인. liger가 nan 원인임을 확정 |
+| 04-11 ~15:20 | — | **pre-packed** | 0 | — | 16384 | — | ~170s (loss=10.77, grad=nan) | — | — | fla 0.3.2 + **liger ON** (전체). nan 재현 → liger 원인 확정 |
+| 04-11 ~15:30 | — | **pre-packed** | 0 | — | 16384 | — | ~170s (loss=8.28, grad=nan) | — | — | liger RoPE+RMSNorm+SwiGLU (CE 끔). 여전히 nan |
+| 04-11 ~15:40 | — | **pre-packed** | 0 | — | 16384 | — | ~170s (loss=4.35, grad=nan) | — | — | liger **RoPE만** 켬. nan → RoPE가 범인 확정 |
+| 04-11 ~15:50 | — | **pre-packed** | 0 | — | 16384 | — | **~166s** (loss=6.82, grad=13.6) | — | — | liger RMSNorm+SwiGLU+CE (RoPE 끔). **정상** → RoPE 단독 범인 |
+| 04-11 ~16:00 | — | **pre-packed** | 0 | — | 16384 | — | **~167s** (loss=6.97, grad=11.2) | 100% | ~8GB | **liger 4개 모두 ON** (partial RoPE fix). ✅ 정상 동작 확정 |
+| 04-11 17:36 | — | **pre-packed** | 0 | — | 16384 | — | **~40s** (step5 steady) | 100% | **~11GB** | **풀 스택: fla 0.4.2 + causal_conv1d + liger 4패치 + ls+vp**. fast_path_warn=0. 이전 55s→40s (27%↑), 64GB→11GB (82%↓) |
 
 ## 핵심 관찰
 
@@ -315,7 +332,177 @@ PATH=/mnt/ddn/users/jos/miniforge3/envs/audio/bin:$PATH \
 pip install causal-conv1d flash-linear-attention --no-build-isolation
 ```
 
-**상태**: 🔄 설치 진행 중 (2026-04-10)
+### 9c. 환경 변경 로그 — fla + torch + CUDA 호환성 (2026-04-11)
+
+fla 설치를 위해 시스템 및 conda 환경에 가해진 변경 사항 기록.
+
+#### 변경 전 환경 (baseline)
+
+| 항목 | 버전 |
+|------|------|
+| torch | 2.5.1+cu124 |
+| torchaudio | 2.5.1+cu124 |
+| triton | 3.1.0 |
+| CUDA driver | 535.129.03 (CUDA 12.2) |
+| 시스템 nvcc | 11.8 |
+| conda nvcc | 없음 |
+| fla | 미설치 |
+| causal-conv1d | 미설치 |
+
+#### 변경 내용 (시간순)
+
+1. **conda cuda-toolkit 설치** (`conda install -n audio -c nvidia cuda-toolkit=12.4`)
+   - nvcc 12.9가 conda env에 설치됨 (시스템 nvcc 11.8과 별도)
+   - 목적: causal-conv1d CUDA 커널 빌드 시 nvcc 버전 불일치 해결
+
+2. **causal-conv1d 1.6.1 빌드 설치**
+   - `CUDA_HOME` + `CPLUS_INCLUDE_PATH` 설정 필요 (`cuda_runtime_api.h` 경로)
+   ```bash
+   CUDA_HOME=/mnt/ddn/users/jos/miniforge3/envs/audio \
+   CPLUS_INCLUDE_PATH=.../targets/x86_64-linux/include:$CPLUS_INCLUDE_PATH \
+   PATH=/mnt/ddn/users/jos/miniforge3/envs/audio/bin:$PATH \
+   pip install causal-conv1d --no-build-isolation
+   ```
+
+3. **flash-linear-attention 0.4.2 설치** (pure Python wheel, 빌드 불필요)
+
+4. **CUDA toolkit 12.4 시스템 설치** (`apt install cuda-toolkit-12-4`)
+   - 목적: torch 2.6.0의 CUDA runtime 12.4 요구 충족 (driver 535는 12.2까지만 지원했으나, toolkit 설치로 해결)
+   - `/mnt/fr20tb/wbl_residency/jos/setup.sh` 참조
+
+5. **torch 2.5.1 → 2.6.0+cu124 업그레이드**
+   ```bash
+   pip install torch torchaudio --upgrade --index-url https://download.pytorch.org/whl/cu124
+   ```
+   - triton 3.1.0 → 3.2.0 자동 업그레이드 (torch 2.6.0 의존성)
+   - transformers의 "triton 3.2.0 미만" 경고 해소
+
+6. **nvidia-nccl-cu12 강제 재설치** (`pip install nvidia-nccl-cu12==2.21.5 --force-reinstall --no-deps`)
+   - torch 2.11.0 시도 시 NCCL 2.28.9+cuda13.0으로 교체되었으나, 롤백 시 pip 메타데이터만 되돌아가고 실제 바이너리는 2.28.9 잔류
+   - `strings libnccl.so.2 | grep "NCCL version"`으로 실제 버전 확인 후 강제 재설치
+
+7. **nvidia-cudnn-cu12 9.1.0.70 재설치**
+   - `pip install nvidia-cudnn-cu12 --upgrade`가 9.20.0.48 설치 → torch 2.6.0 요구 버전(9.1.0.70)과 불일치 → `CUDNN_STATUS_NOT_INITIALIZED`
+   - 정확한 버전 지정 필요: `pip install nvidia-cudnn-cu12==9.1.0.70`
+
+8. **fla 0.4.2 → 0.3.2 다운그레이드**
+   - 0.4.2: loss=780→nan, grad_norm=nan (수치 발산)
+   - 0.3.2: 역시 loss=0, grad_norm=nan (수치 발산은 fla 버전 무관, torch 2.6.0과의 근본 비호환 가능성)
+
+9. **transformers 5.5.0 패치** (`import_utils.py:796`)
+   - fla 0.3.2에 `__version__` 속성 없음 → `is_flash_linear_attention_available()`에서 `'N/A'` 파싱 실패
+   - `InvalidVersion: 'N/A'` → 모든 모델 로드 시 crash (liger 유무 무관)
+   - `None`/`'N/A'`/빈 문자열 → `return False` 처리로 패치
+
+10. **liger-kernel 0.7.0 + torch 2.6.0 호환 문제**
+    - liger가 qwen3_5 모델을 import할 때 transformers의 fla 체크가 트리거됨
+    - 위 패치(9번)로 해결. liger 자체 업그레이드는 0.7.0이 최신
+
+11. **dataloader_num_workers 1 → 0** (precomputed 모드)
+    - cutoff_len=65536에서 worker=1 시 Bus error (shared memory)
+    - pre-packed 모드는 데이터가 이미 메모리에 있어 worker 불필요
+    - worker=0: 메인 프로세스에서 직접 로드, Bus error 해결, 오버헤드 제거
+
+#### 변경 후 환경 (현재)
+
+| 항목 | 버전 |
+|------|------|
+| torch | **2.6.0+cu124** |
+| torchaudio | **2.6.0+cu124** |
+| triton | **3.2.0** |
+| CUDA driver | 535.129.03 (변경 없음) |
+| CUDA toolkit | **12.4** (apt 설치) |
+| conda nvcc | **12.9** |
+| fla-core | **0.4.2** (0.3.2는 fla.ops/modules 미지원) |
+| flash-linear-attention | **0.4.2** |
+| causal-conv1d | **1.6.1** |
+| nvidia-nccl-cu12 | 2.21.5 |
+| nvidia-cudnn-cu12 | 9.1.0.70 |
+
+#### 삽질 과정에서 확인된 비호환 조합
+
+| torch | triton | fla | 결과 |
+|-------|--------|-----|------|
+| 2.5.1 | 3.1.0 | 0.4.2 | ❌ fla import 에러 (`STAGE` 미지원) |
+| 2.5.1 | 3.6.0 | 0.4.2 | ❌ loss=nan, grad_norm=nan (torch-triton 비호환) |
+| 2.5.1 | 3.2.0 | — | ❌ `AttrsDescriptor` dataclass 에러 |
+| 2.5.1 | 3.1.0 | 0.3.2 | ✅ import 성공 (학습 OOM으로 미확인) |
+| 2.11.0+cu130 | 3.6.0 | 0.4.2 | ❌ CUDA driver 부족 (535 < cu130 요구) |
+| 2.6.0+cu124 | 3.2.0 | 0.4.2 | ❌ NCCL 2.28.9 잔류 → driver 에러 (강제 재설치로 해결) |
+| 2.6.0+cu124 | 3.2.0 | 0.4.2 | ❌ NCCL·cuDNN 수정 후에도 **loss=780, grad_norm=nan** → 수치 발산 |
+| 2.6.0+cu124 | 3.2.0 | 0.3.2 | ❌ **loss=0, grad_norm=nan** → 역시 수치 발산 |
+| 2.6.0+cu124 | 3.2.0 | 제거 | ❌ transformers `InvalidVersion: 'N/A'` (fla 버전 체크 버그) |
+| 2.6.0+cu124 | 3.2.0 | 0.3.2 + transformers 패치 | ❌ `--no-liger`만 정상. liger ON → nan (RoPE 원인) |
+| **2.6.0+cu124** | **3.2.0** | **0.3.2 + transformers 패치 + partial RoPE fix** | ✅ **liger 4개 모두 정상** (loss=6.965, grad_norm=11.19) |
+
+#### transformers 5.5.0 fla 버전 체크 버그
+
+`transformers/utils/import_utils.py`의 `is_flash_linear_attention_available()`가 fla 미설치 또는 `__version__` 미정의 시 `'N/A'`를 `packaging.version.parse()`에 넘겨 `InvalidVersion` 에러 발생.
+
+fla 0.3.2는 `__version__` 속성이 없고, fla를 완전 제거해도 `_is_package_available("fla")`가 잔여 메타데이터로 인해 `True`를 반환하면서 `'N/A'` 버전 문자열을 파싱 시도.
+
+**패치** (`import_utils.py:796`):
+```python
+@lru_cache
+def is_flash_linear_attention_available():
+    is_available, fla_version = _is_package_available("fla", return_version=True)
+    if not is_available or fla_version in (None, "N/A", ""):
+        return False
+    try:
+        return is_torch_cuda_available() and version.parse(fla_version) >= version.parse("0.2.2")
+    except Exception:
+        return False
+```
+
+> 패치 파일: `/mnt/ddn/users/jos/miniforge3/envs/audio/lib/python3.10/site-packages/transformers/utils/import_utils.py:796`
+> 주의: transformers 업데이트 시 이 패치가 덮어씌워짐. 업데이트 후 재적용 필요.
+
+#### ~~fla + torch 2.6.0 수치 발산 문제~~ → liger RoPE + Qwen3.5 partial rotary 비호환 (해결됨)
+
+**증상**: loss=nan/0, grad_norm=nan. fla와 무관하게 **liger가 켜져 있으면 발생**, `--no-liger`면 정상.
+
+**원인 특정 과정**:
+1. fla 0.4.2 + liger → nan → "fla 문제?" 의심
+2. fla 0.3.2 + liger → nan → "fla 버전 무관"
+3. fla 0.3.2 + `--no-liger` → **정상** (loss=5.787) → "liger가 원인"
+4. liger에서 fused CE만 끔 → nan → "CE 아님"
+5. liger에서 RoPE만 켬 → nan → "**RoPE가 범인**"
+6. liger에서 RoPE만 끔 (RMSNorm+SwiGLU+CE) → **정상** (loss=6.817) → 확정
+
+**root cause**: **Qwen3.5의 `partial_rotary_factor=0.25`**.
+
+Qwen3.5는 head_dim=256 중 앞쪽 64차원만 RoPE 적용 (partial rotary). cos/sin shape = `(bsz, seq_len, 64)`.
+
+liger의 Triton RoPE kernel은 `cos_offsets = tl.arange(0, pad_hd // 2)` → `pad_hd = head_dim = 256` → **128개**를 cos에서 읽으려 함. 실제 cos는 64개뿐 → **엉뚱한 메모리 읽기** → 잘못된 값 (실측 max diff = 10.3 vs 원본).
+
+```
+liger 기대: cos shape = (*, head_dim // 2) = (*, 128)
+실제:       cos shape = (*, rope_dim)       = (*, 64)     ← partial_rotary_factor=0.25
+```
+
+> torch 2.5.1에서도 동일하게 잘못된 값이었지만, triton 3.1.0에서는 우연히 nan까지 도달하지 않았을 가능성.
+
+**해결**: partial rotary 대응 래퍼. 앞쪽 `rope_dim` 차원만 liger Triton kernel에 넘기고 나머지는 pass-through.
+
+```python
+def _partial_liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    rope_dim = cos.shape[-1]  # 64
+    q_rope, q_pass = q[..., :rope_dim], q[..., rope_dim:]
+    k_rope, k_pass = k[..., :rope_dim], k[..., rope_dim:]
+    q_rope, k_rope = LigerRopeFunction.apply(
+        q_rope.contiguous(), k_rope.contiguous(), cos, sin, position_ids, unsqueeze_dim)
+    return torch.cat([q_rope, q_pass], dim=-1), torch.cat([k_rope, k_pass], dim=-1)
+```
+
+**검증**: loss=6.965, grad_norm=11.19 ✅ (4개 패치 모두 활성화)
+
+#### 교훈
+
+- `pip install --upgrade`로 torch를 올렸다 내리면 nvidia-* 패키지의 **pip 메타데이터와 실제 바이너리가 불일치**할 수 있다. `strings`로 `.so` 파일의 실제 버전을 확인하고, `--force-reinstall --no-deps`로 교정.
+- nvidia-cudnn-cu12는 `--upgrade`하면 최신(9.20)이 설치되지만 torch 2.6.0은 **정확히 9.1.0.70**을 요구한다. 버전 고정 필수.
+- torch 버전을 올릴 때는 triton·nccl·cudnn·cuda driver를 **모두 함께** 맞춰야 한다. 하나라도 빠지면 런타임에 터진다.
+- fla 0.3.2는 `__version__` 속성이 없어 transformers의 버전 체크가 실패한다. 패치 필수.
+- fla를 `pip uninstall`해도 transformers가 잔여 메타데이터를 감지할 수 있다. 완전 제거가 어려우므로 패치가 더 안전.
 
 ---
 
@@ -388,6 +575,116 @@ ds = ds.map(packer_fn, num_proc=16,
 
 **교훈**: 소규모 데이터셋은 RAM 로딩이 가능하지만, MLS/GS 규모(55GB/rank)는 8 rank 동시 로드 시 메모리 초과. Pre-packed Arrow 모드가 더 실용적.
 
+### 13. Data Splits — 대용량 데이터셋 OOM 해결 (2026-04-11, 구현)
+
+#### 문제
+
+Pre-packed Arrow 파일을 `read_all()`로 RAM에 올리는 구조에서, 대용량 데이터셋이 cgroup 메모리를 초과한다.
+
+| 데이터셋 | packed 크기/rank | × 8 rank |
+|----------|-----------------|----------|
+| ls100 | 646MB | 5GB |
+| ls360 | 2.0GB | 16GB |
+| ls500 | 2.7GB | 22GB |
+| vp | 3.1GB | 25GB |
+| mls | 55GB | **440GB** |
+| gs | ~55GB | **~440GB** |
+| **합계** | | **~948GB** |
+
+시스템 RAM 2TB이지만 cgroup 제한이 있어 ~500GB 이상 사용 시 OOM kill 발생. 실측: mls+gs+ls+vp 동시 로드 시 SIGKILL (3회 반복 확인).
+
+#### 검토한 대안들
+
+**1. rank 기반 분할 (기각)**
+
+아이디어: epoch 1에서 rank 0~3 파일만 로드, epoch 2에서 rank 4~7.
+```
+epoch 1: GPU 0→rank0, GPU 1→rank1, ..., GPU 4→rank0, GPU 5→rank1, ...
+epoch 2: GPU 0→rank4, GPU 1→rank5, ..., GPU 4→rank4, GPU 5→rank5, ...
+```
+
+**기각 이유**: 8개 GPU 프로세스가 각각 독립적으로 `read_all()`을 호출하므로, GPU 0과 GPU 4가 같은 rank0.arrow를 로드해도 **각 프로세스에 별도 복사본**이 생긴다. 메모리 = 8 × 55GB = 440GB (절약 없음).
+
+mmap으로 물리 페이지를 공유하면 해결 가능하지만, packed Arrow의 가변 길이 컬럼(Sequence)은 pyarrow mmap에서 zero-copy가 보장되지 않아 효과 불확실.
+
+**2. 순차 CPT (가능하지만 수동)**
+
+별도 학습 실행을 이어붙이는 방식:
+```bash
+# 1차: 소규모 데이터
+bash run.sh --encoder fb_dacvae --datasets ls100,ls360,ls500,vp
+# 2차: checkpoint에서 resume + mls
+bash run.sh --encoder fb_dacvae --datasets mls --resume <checkpoint_path>
+```
+
+코드 수정 불필요하지만 실행을 수동으로 관리해야 한다.
+
+**3. bins 기반 분할 (채택)**
+
+각 rank 파일 내의 bins(packed 시퀀스)을 N등분, split마다 1/N만 로드.
+```
+rank0.arrow: 2598 bins
+  split 0: bins 0~1298    (27.5GB)  → 로드, 학습, 해제
+  split 1: bins 1299~2597 (27.5GB)  → 로드, 학습, 해제
+```
+
+**채택 이유**: 각 GPU 프로세스가 자기 rank 파일만 읽되 일부분만 로드하므로, 프로세스 간 공유 없이도 메모리가 정확히 1/N로 줄어든다. 전체 데이터는 N회 split에 걸쳐 전부 소비된다.
+
+#### 메모리 비교
+
+| 설정 | 메모리 (전체 데이터셋) | 결과 |
+|------|----------------------|------|
+| num_data_splits=1 (기본) | ~948GB | ❌ OOM |
+| num_data_splits=2 | ~474GB | ✅ 가능 |
+| num_data_splits=4 | ~237GB | ✅ 여유 |
+
+#### 구현 상세
+
+**config.py**:
+```python
+"num_data_splits": 2,  # 1=전체 로드(기본), 2=절반씩, 4=1/4씩
+```
+
+**build_precomputed_pipeline** (새 파라미터):
+```python
+def build_precomputed_pipeline(..., data_split=0, num_data_splits=1):
+    # pre-packed 로드 시:
+    _table = _pa_ipc.open_file(str(packed_path)).read_all()
+    if num_data_splits > 1:
+        n = _table.num_rows
+        chunk = n // num_data_splits
+        start = data_split * chunk
+        end = n if data_split == num_data_splits - 1 else start + chunk
+        _table = _table.slice(start, end - start)  # 해당 split만 유지
+```
+
+주의: `read_all()` 시점에 전체 파일이 잠시 메모리에 올라간 후 `slice`로 잘린다. 피크 메모리는 전체 파일 크기이므로, 매우 큰 단일 파일(>100GB/rank)에서는 여전히 OOM 가능. 현재 mls 55GB/rank는 피크 시 문제없음.
+
+**main() 학습 루프**:
+```python
+for data_split in range(num_data_splits):
+    # 이번 split의 데이터 로드
+    train_dataset = build_precomputed_pipeline(
+        ..., data_split=data_split, num_data_splits=num_data_splits)
+    # 학습
+    run_stage1(... train_dataset=train_dataset ...)
+    # 메모리 해제
+    del train_dataset
+    gc.collect()
+```
+
+Stage 1, Stage 2 모두 동일한 split 루프 적용.
+
+#### trade-off 및 주의사항
+
+1. **데이터 순서 편향**: greedy knapsack packer가 길이순 정렬하므로, split 0에 긴 시퀀스, split 1에 짧은 시퀀스가 몰릴 수 있음. 필요 시 `pack_arrow.py`에서 패킹 전 셔플 추가.
+
+2. **Optimizer state 리셋**: split마다 Trainer가 새로 생성되므로 optimizer state(momentum, adaptive lr)가 초기화됨. learning rate scheduler도 리셋. 추후 checkpoint resume 로직으로 보완 가능.
+
+3. **피크 메모리**: `read_all()` → `slice()` 과정에서 전체 파일이 순간적으로 메모리에 올라감. 파일 단위 split이 아닌 bins 단위 split이므로 이 피크를 피하려면 record batch 단위 읽기가 필요하나, 현재 파일 크기(55GB)에서는 문제없음.
+
+4. **num_data_splits와 학습 step 수**: 각 split의 데이터가 1/N이므로 split당 step 수도 1/N. 전체 step 수는 동일 (N splits × 1/N steps = 원래 steps). wall time도 거의 동일.
+
 ### 12. gradient_checkpointing=False 검증 (2026-04-10, OOM)
 
 **가설**: Stage 1에서 GPU 메모리가 ~64GB/80GB → 여유 있으므로 checkpointing을 끄면 activation recompute가 제거되어 ~2배 빠를 것.
@@ -414,12 +711,13 @@ gradient_checkpointing=True 시 ~64GB (레이어 경계만 저장), False 시 ~8
 | 변수 | 위치 | 역할 | 현재값 |
 |------|------|------|--------|
 | `n_shards` | `shard_arrow.py --n-shards` | `load_dataset` num_shards → worker 상한 결정 | 8 |
-| `dataloader_num_workers` | `train_pipeline_override.py` | DataLoader 병렬 worker 수 | 1 (precomputed) / 8 (raw audio) |
+| `dataloader_num_workers` | `train_pipeline_override.py` | DataLoader 병렬 worker 수 | **0** (precomputed) / 8 (raw audio). pre-packed은 메모리 데이터라 worker 불필요, worker=1은 Bus error+오버헤드 |
 | `packing_cutoff_len` | `config.py` | packed bin 최대 토큰 수 (GPU util의 핵심 레버) | 16384 (현재 최적, wall ~44h) |
 | `packing_bucket_size` | `config.py` | knapsack packer greedy 탐색 버킷 크기 (fill ratio vs CPU latency trade-off) | **200** (최적 확인) |
 | `process_batch_size` | `config.py` | 토크나이징 배치 크기 | **32** (64·128 역효과 확인, 32가 최적) |
 | `gradient_accumulation_steps` | `train_pipeline_override.py` | micro-step 수 (업데이트 1회당) | 4 (검증 예정) |
 | `per_device_train_batch_size` | `train_pipeline_override.py` | GPU당 bin 수 (S1=1, S2=2) | 1/2 |
+| `num_data_splits` | `config.py` | 데이터 N등분 로드 (OOM 방지). 1=전체, 2=절반씩 | **1** (대용량 시 2 권장) |
 
 ## 코드 변경 이력
 
@@ -434,3 +732,10 @@ gradient_checkpointing=True 시 ~64GB (레이어 경계만 저장), False 시 ~8
 | `train_pipeline_override.py` | `build_precomputed_pipeline`: pre-packed Arrow 자동 감지, streaming=False RAM 로드 경로 추가 |
 | `train_pipeline_override.py` | `dataloader_num_workers`: precomputed 모드에서 1로 변경 (pre-packed은 CPU 처리 불필요) |
 | `train_pipeline_override.py` | `gradient_checkpointing=False` 시도 → OOM → True로 복구 |
+| `config.py` | `num_data_splits` 추가 (기본 1). 대용량 데이터셋 OOM 방지용 데이터 N등분 로드 |
+| `train_pipeline_override.py` | `build_precomputed_pipeline`: `data_split`/`num_data_splits` 파라미터. main: split 루프 + gc |
+| `train_pipeline_override.py` | `dataloader_num_workers`: precomputed 모드 1 → **0** (Bus error 해결, worker 오버헤드 제거) |
+| `precompute/pack_arrow.py` | `--mixed` 모드 추가: cross-dataset packing + shard (~20GB/shard) |
+| `train_pipeline_override.py` | `build_precomputed_pipeline`: mixed packed shard 자동 탐색 (`mixed/packed_{cutoff}/rank{N}_s*.arrow`) |
+| `train_pipeline_override.py` | liger RoPE: partial rotary 대응 래퍼 (`_partial_liger_rotary_pos_emb`). Qwen3.5 `partial_rotary_factor=0.25` nan 해결 |
+| `transformers/utils/import_utils.py` | `is_flash_linear_attention_available()` 패치: fla `__version__` 미정의/'N/A' 시 `return False` |

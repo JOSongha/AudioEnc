@@ -94,6 +94,19 @@ per-sample Arrow → pyarrow.ipc.read_all() → HF Dataset (in-memory)
 
 Pre-pack 생성: `bash precompute/run_pack.sh --encoder fb_dacvae`
 
+**Data splits** (대용량 데이터셋 OOM 방지):
+
+mls(55GB/rank)+gs(~55GB/rank) 등 대용량 데이터셋은 8 rank 동시 로드 시 ~948GB → cgroup OOM.
+`num_data_splits=2` 설정 시 각 rank 파일의 bins를 N등분, split마다 1/N만 로드 후 학습, 해제를 반복한다.
+
+```
+num_data_splits=2:
+  for split in [0, 1]:
+    각 rank 파일에서 해당 split의 bins만 slice → 학습 → del + gc.collect()
+```
+
+자세한 내용: `dataloader_trials.md` §13 참조.
+
 ### 2-3. OmniCollator
 
 | FA2 경로 | Eager/SDPA 경로 |

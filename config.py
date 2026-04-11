@@ -57,6 +57,7 @@ TRAIN_CONFIG = {
     #   (Flash Attention 2: 메모리 O(T), gradient checkpointing 병행 시 실측 스케일 ~1.7×/2×bin)
     #   실측: 2048→13GB/24%util, 4096→20GB/46%util, 8192→35GB/82%util (fb_dacvae, 8×A100-80GB)
     "packing_cutoff_len":  16384,
+    # "packing_cutoff_len":  65536,
 
     # packing_bucket_size : packer(greedy knapsack)가 한 번에 받는 processed 샘플 수.
     #   greedy knapsack: bucket 내 샘플을 길이 내림차순 정렬 후 각 bin에 남은 공간에
@@ -75,7 +76,13 @@ TRAIN_CONFIG = {
     "attn_implementation": "flash_attention_2",   # "eager" | "flash_attention_2" | sdpa
     "use_liger_kernel":    True,
     "use_fsdp":            False,
-    "log_every":           10,         # WandB 로깅 주기 (step 수), previously 1
+    "log_every":           1,
+
+    # ── Data splits (메모리 절약) ─────────────────────────────────────────
+    # num_data_splits: pre-packed 데이터를 N등분하여 epoch마다 1/N만 로드.
+    #   1 = 전체 로드 (기본), 2 = 절반씩 2회, 4 = 1/4씩 4회.
+    #   mls+gs 등 대용량 데이터셋에서 OOM 방지용.
+    "num_data_splits":     2,
 }
 
 # ==========================================

@@ -233,14 +233,37 @@ class AudioQwen(nn.Module):
                     # liger-kernel 0.7.0은 qwen3_5 미지원 → 직접 패치
                     # qwen3 fallback은 Qwen3_5 클래스를 건드리지 않아 사실상 no-op이므로 사용 금지
                     import copy
+                    # fla를 먼저 import해야 modeling_qwen3_5 import 시 fla.modules를 찾을 수 있음
+                    try:
+                        import fla.modules  # noqa: F401
+                        import fla.ops  # noqa: F401
+                    except ImportError:
+                        pass
                     import transformers.models.qwen3_5.modeling_qwen3_5 as _q35
                     from liger_kernel.transformers.monkey_patch import (
                         liger_rotary_pos_emb, LigerRMSNorm, LigerSwiGLUMLP,
                     )
                     from liger_kernel.transformers.model.qwen3 import lce_forward as _qwen3_lce_forward
 
-                    # 1) RoPE: 동일 함수 시그니처, 직접 교체
-                    _q35.apply_rotary_pos_emb = liger_rotary_pos_emb
+                    # 1) RoPE: Qwen3.5는 partial_rotary_factor=0.25 (head_dim=256 중 64만 RoPE)
+                    #    liger Triton kernel은 full head_dim RoPE를 가정하므로 직접 사용 불가.
+                    #    해결: 앞쪽 rope_dim=64만 liger에 넘기고 나머지 192는 pass-through.
+                    from liger_kernel.transformers.rope import LigerRopeFunction as _LigerRope
+
+                    def _partial_liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+                        # cos shape: (bsz, seq_len, rope_dim) where rope_dim = head_dim * partial_rotary_factor
+                        rope_dim = cos.shape[-1]
+                        # q shape: (bsz, n_heads, seq_len, head_dim)
+                        q_rope, q_pass = q[..., :rope_dim], q[..., rope_dim:]
+                        k_rope, k_pass = k[..., :rope_dim], k[..., rope_dim:]
+                        # liger expects cos/sin as (bsz, seq_len, rope_dim) — matches
+                        q_rope, k_rope = _LigerRope.apply(
+                            q_rope.contiguous(), k_rope.contiguous(),
+                            cos, sin, position_ids, unsqueeze_dim,
+                        )
+                        return torch.cat([q_rope, q_pass], dim=-1), torch.cat([k_rope, k_pass], dim=-1)
+
+                    _q35.apply_rotary_pos_emb = _partial_liger_rotary_pos_emb
 
                     # 2) RMSNorm: Qwen3.5는 weight=zeros + (1+weight) 공식 → offset=1.0 필요
                     class _Qwen3_5LigerRMSNorm(LigerRMSNorm):
@@ -260,7 +283,7 @@ class AudioQwen(nn.Module):
                     _q35.Qwen3_5ForCausalLM.forward = _qwen3_lce_forward
 
                     logger.info("Liger kernel manually patched for qwen3_5 "
-                                "(rope, rms_norm+offset, swiglu, fused_linear_ce).",
+                                "(rms_norm+offset, swiglu, fused_linear_ce). RoPE SKIPPED (torch 2.6.0 compat).",
                                 main_process_only=True)
             except Exception as e:
                 logger.warning(f"Liger kernel 적용 실패: {e}. 계속 진행합니다...",)
@@ -1263,7 +1286,8 @@ def make_precomputed_processor_fn(cfg, tokenizer):
 
 def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, packer_fn,
                                selected_datasets=None, shuffle: bool = True,
-                               word_aug: bool = False):
+                               word_aug: bool = False,
+                               data_split: int = 0, num_data_splits: int = 1):
     """Pre-computed Arrow 파일 기반 데이터 파이프라인.
 
     각 rank는 자신의 rank{process_index}.arrow 파일만 로드한다.
@@ -1274,6 +1298,11 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
         processor_fn / packer_fn map을 건너뛰고 Arrow를 직접 로드한다.
         → DataLoader 학습 중 CPU packing 부하 제거.
         생성: bash precompute/run_pack.sh --encoder {encoder}
+
+    data_split / num_data_splits:
+        메모리 절약을 위해 데이터를 N등분하여 한 번에 1/N만 로드.
+        예: num_data_splits=2 → epoch 0은 각 rank 파일의 전반부,
+            epoch 1은 후반부만 로드. 학습 루프에서 split마다 반복 호출.
     """
     from pathlib import Path
     rank       = accelerator.process_index
@@ -1304,6 +1333,41 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
     dataset_list    = []
     any_needs_pack  = False   # pre-packed 아닌 데이터셋이 하나라도 있으면 True
 
+    # ── Mixed packed Arrow 우선 (cross-dataset packing) ────────────────
+    mixed_dir = base_dir / "mixed" / f"packed_{cutoff_len}"
+    mixed_shards = sorted(mixed_dir.glob(f"rank{rank}_s*.arrow"))
+    mixed_single = mixed_dir / f"rank{rank}.arrow"
+    if mixed_shards or mixed_single.exists():
+        import pyarrow.ipc as _pa_ipc
+        from datasets import Dataset as _HFDataset
+        import pyarrow as _pa
+        if mixed_shards:
+            _tables = [_pa_ipc.open_file(str(f)).read_all() for f in mixed_shards]
+            _table = _pa.concat_tables(_tables) if len(_tables) > 1 else _tables[0]
+            file_info = f"{len(mixed_shards)} shard(s)"
+        else:
+            _table = _pa_ipc.open_file(str(mixed_single)).read_all()
+            file_info = mixed_single.name
+        if num_data_splits > 1:
+            n = _table.num_rows
+            chunk = n // num_data_splits
+            start = data_split * chunk
+            end = n if data_split == num_data_splits - 1 else start + chunk
+            _table = _table.slice(start, end - start)
+        ds = _HFDataset(_table).to_iterable_dataset()
+        split_info = f" [split {data_split+1}/{num_data_splits}]" if num_data_splits > 1 else ""
+        logger.info(
+            f"[rank {rank}] Mixed pre-packed (in-memory): {file_info}"
+            f" ({_table.num_rows} bins){split_info}",
+            main_process_only=False,
+        )
+        dataset_list.append(ds)
+        # mixed 있으면 per-dataset packed 탐색 스킵
+        ds = interleave_datasets(dataset_list, seed=cfg.get("seed", 42))
+        if shuffle:
+            ds = ds.shuffle(buffer_size=10000, seed=cfg.get("seed", 42))
+        return ds
+
     for ds_key in selected:
         # ── Pre-packed Arrow 우선 ──────────────────────────────────────────
         packed_path = base_dir / ds_key / f"packed_{cutoff_len}" / f"rank{rank}.arrow"
@@ -1311,9 +1375,18 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
             import pyarrow.ipc as _pa_ipc
             from datasets import Dataset as _HFDataset
             _table = _pa_ipc.open_file(str(packed_path)).read_all()
+            # data_split: 테이블을 N등분하여 해당 split만 유지 (메모리 절약)
+            if num_data_splits > 1:
+                n = _table.num_rows
+                chunk = n // num_data_splits
+                start = data_split * chunk
+                end = n if data_split == num_data_splits - 1 else start + chunk
+                _table = _table.slice(start, end - start)
             ds = _HFDataset(_table).to_iterable_dataset()
+            split_info = f" [split {data_split+1}/{num_data_splits}]" if num_data_splits > 1 else ""
             logger.info(
-                f"[rank {rank}] Pre-packed {ds_key} (in-memory): {packed_path.name}",
+                f"[rank {rank}] Pre-packed {ds_key} (in-memory): {packed_path.name}"
+                f" ({_table.num_rows} bins){split_info}",
                 main_process_only=False,
             )
             dataset_list.append(ds)
@@ -1765,8 +1838,8 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
 
         # precomputed 모드: rank당 파일 1개 → num_shards=1 → worker 1개면 충분.
         # raw audio 모드: 여러 shard 파일 → worker 8개로 병렬 로딩.
-        dataloader_num_workers=1 if cfg.get("precomputed_dir") else 8,
-        dataloader_prefetch_factor=2,
+        dataloader_num_workers=0 if cfg.get("precomputed_dir") else 8,
+        dataloader_prefetch_factor=2 if not cfg.get("precomputed_dir") else None,
     )
 
     wer_callback = WerCallback(
@@ -1923,8 +1996,8 @@ def run_stage2(cfg, train_packed, val_dataset, train_eval_dataset, collator,
         save_total_limit=3,
 
         remove_unused_columns=False,
-        dataloader_num_workers=1 if cfg.get("precomputed_dir") else 8,
-        dataloader_prefetch_factor=2,
+        dataloader_num_workers=0 if cfg.get("precomputed_dir") else 8,
+        dataloader_prefetch_factor=2 if not cfg.get("precomputed_dir") else None,
 
         **({
             "fsdp": "full_shard auto_wrap",
@@ -2099,6 +2172,8 @@ def main():
 
     precomputed_dir = cfg.get("precomputed_dir")   # None = raw audio 모드
 
+    num_data_splits = cfg.get("num_data_splits", 1)
+
     if precomputed_dir:
         # ── Precomputed 모드: Arrow 파일에서 인코더 피처 직접 로드 ──────────
         logger.info(f"Precomputed mode: loading encoder features from {precomputed_dir}")
@@ -2108,17 +2183,6 @@ def main():
             attn_implementation=cfg.get("attn_implementation", "sdpa"),
             block_diag_attn=True,
             enc_out_dim=model.encoder.out_dim,
-        )
-        # 3. Build precomputed pipeline
-        logger.info("Building Precomputed Pipeline...",)
-        train_streaming_dataset = build_precomputed_pipeline(
-            cfg=cfg,
-            accelerator=accelerator,
-            precomputed_dir=precomputed_dir,
-            processor_fn=processor_fn,
-            packer_fn=packer_fn,
-            selected_datasets=selected_datasets,
-            word_aug=args.word_aug,
         )
     else:
         # ── Raw audio 모드 (기존): HF streaming + on-the-fly encoding ───────
@@ -2135,17 +2199,6 @@ def main():
             block_diag_attn=True,
             enc_out_dim=0,   # raw waveform 모드
         )
-        # 3. Build streaming dataset (Load → Shard → Shuffle → Process → Pack)
-        logger.info("Building Streaming Pipeline...",)
-        train_streaming_dataset = build_multi_dataset_streaming_pipeline(
-            cfg=cfg,
-            accelerator=accelerator,
-            processor_fn=processor_fn,
-            packer_fn=packer_fn,
-            shuffle=True,
-            selected_datasets=selected_datasets,
-            word_aug=args.word_aug,
-        )
 
     # 5. Static eval datasets for WER callback
     val_dataset, train_eval_dataset = build_static_eval_datasets(cfg, tokenizer)
@@ -2153,33 +2206,99 @@ def main():
     # 7. Stage 1: projector alignment
     s1_output_dir = os.path.join(cfg["model_cache_dir"], cfg["encoder_name"], f"s1_outputs_{run_id}")
     if args.stage in ("all", "1"):
-        s1_output_dir, _ = run_stage1(
-            cfg=cfg,
-            accelerator=accelerator,
-            model=model,
-            train_dataset=train_streaming_dataset,
-            val_dataset=val_dataset,
-            train_eval_dataset=train_eval_dataset,
-            collator=collator,
-            run_id=run_id,
-            resume=args.resume,
-        )
+        for data_split in range(num_data_splits):
+            if num_data_splits > 1:
+                logger.info(f"{'='*55}")
+                logger.info(f" Data split {data_split+1}/{num_data_splits}")
+                logger.info(f"{'='*55}")
+
+            # Build dataset for this split
+            if precomputed_dir:
+                logger.info("Building Precomputed Pipeline...",)
+                train_streaming_dataset = build_precomputed_pipeline(
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    precomputed_dir=precomputed_dir,
+                    processor_fn=processor_fn,
+                    packer_fn=packer_fn,
+                    selected_datasets=selected_datasets,
+                    word_aug=args.word_aug,
+                    data_split=data_split,
+                    num_data_splits=num_data_splits,
+                )
+            else:
+                logger.info("Building Streaming Pipeline...",)
+                train_streaming_dataset = build_multi_dataset_streaming_pipeline(
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    processor_fn=processor_fn,
+                    packer_fn=packer_fn,
+                    shuffle=True,
+                    selected_datasets=selected_datasets,
+                    word_aug=args.word_aug,
+                )
+
+            s1_output_dir, _ = run_stage1(
+                cfg=cfg,
+                accelerator=accelerator,
+                model=model,
+                train_dataset=train_streaming_dataset,
+                val_dataset=val_dataset,
+                train_eval_dataset=train_eval_dataset,
+                collator=collator,
+                run_id=run_id,
+                resume=args.resume if data_split == 0 else None,
+            )
+            # 이전 split 데이터 해제
+            del train_streaming_dataset
+            import gc; gc.collect()
 
     accelerator.wait_for_everyone()
 
     # 8. Stage 2: LoRA fine-tuning
     if args.stage in ("all", "2"):
-        run_stage2(
-            cfg=cfg,
-            train_packed=train_streaming_dataset,
-            val_dataset=val_dataset,
-            train_eval_dataset=train_eval_dataset,
-            collator=collator,
-            accelerator=accelerator,
-            s1_output_dir=s1_output_dir,
-            run_id=run_id,
-            args=args,
-        )
+        for data_split in range(num_data_splits):
+            if num_data_splits > 1:
+                logger.info(f"{'='*55}")
+                logger.info(f" Stage 2 — Data split {data_split+1}/{num_data_splits}")
+                logger.info(f"{'='*55}")
+
+            if precomputed_dir:
+                train_streaming_dataset = build_precomputed_pipeline(
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    precomputed_dir=precomputed_dir,
+                    processor_fn=processor_fn,
+                    packer_fn=packer_fn,
+                    selected_datasets=selected_datasets,
+                    word_aug=args.word_aug,
+                    data_split=data_split,
+                    num_data_splits=num_data_splits,
+                )
+            else:
+                train_streaming_dataset = build_multi_dataset_streaming_pipeline(
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    processor_fn=processor_fn,
+                    packer_fn=packer_fn,
+                    shuffle=True,
+                    selected_datasets=selected_datasets,
+                    word_aug=args.word_aug,
+                )
+
+            run_stage2(
+                cfg=cfg,
+                train_packed=train_streaming_dataset,
+                val_dataset=val_dataset,
+                train_eval_dataset=train_eval_dataset,
+                collator=collator,
+                accelerator=accelerator,
+                s1_output_dir=s1_output_dir,
+                run_id=run_id,
+                args=args,
+            )
+            del train_streaming_dataset
+            import gc; gc.collect()
 
 
 if __name__ == "__main__":

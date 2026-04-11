@@ -146,6 +146,140 @@ def pack_rank(
     return n_bins
 
 
+SHARD_MAX_BYTES = 20 * 1024 ** 3   # ~20GB per shard
+
+
+def pack_rank_mixed(
+    selected: list[str],
+    rank: int,
+    base_dir: Path,
+    cutoff_len: int,
+    processor_fn,
+    packer_fn,
+    process_batch_size: int,
+    packing_bucket_size: int,
+    seed: int = 42,
+):
+    """여러 데이터셋의 per-sample 데이터를 합쳐서 셔플 후 cross-dataset packing.
+
+    출력: {base_dir}/mixed/packed_{cutoff_len}/rank{N}_s{S}.arrow (shard별 ~20GB)
+    각 bin에 여러 데이터셋의 샘플이 섞여 들어간다.
+    """
+    import random
+
+    out_dir = base_dir / "mixed" / f"packed_{cutoff_len}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 이미 shard 파일이 있으면 스킵
+    existing = sorted(out_dir.glob(f"rank{rank}_s*.arrow"))
+    if existing:
+        print(f"  [skip] {len(existing)} shard(s) already exist for rank {rank}")
+        return -1
+
+    # 1. 모든 데이터셋의 per-sample 데이터를 processor_fn으로 처리하여 수집
+    all_processed = []
+    for ds_key in selected:
+        ds_dir = base_dir / ds_key
+        shard_files = sorted(ds_dir.glob(f"rank{rank}_s*.arrow"))
+        if shard_files:
+            data_files = [str(p) for p in shard_files]
+        else:
+            single = ds_dir / f"rank{rank}.arrow"
+            if not single.exists():
+                print(f"  [skip] {ds_key} rank {rank}: no Arrow files found")
+                continue
+            data_files = [str(single)]
+
+        print(f"  Processing {ds_key} rank {rank} ({len(data_files)} shard(s))...")
+        ds = load_dataset("arrow", data_files=data_files, split="train", streaming=True)
+        ds = ds.map(
+            processor_fn,
+            batched=True,
+            batch_size=process_batch_size,
+            remove_columns=["utterance_id", "text", "features", "feat_len"],
+        )
+        count = 0
+        for item in tqdm(ds, desc=f"{ds_key}/rank{rank} (process)", leave=False):
+            all_processed.append(item)
+            count += 1
+        print(f"    {ds_key}: {count:,} samples processed")
+
+    if not all_processed:
+        print(f"  [warn] rank {rank}: no samples collected")
+        return 0
+
+    # 2. 셔플
+    print(f"  Shuffling {len(all_processed):,} samples (seed={seed})...")
+    random.seed(seed + rank)
+    random.shuffle(all_processed)
+
+    # 3. 패킹 + 샤딩 (shard당 ~20GB)
+    print(f"  Packing into bins (cutoff_len={cutoff_len}, bucket_size={packing_bucket_size})...")
+    buf = defaultdict(list)
+    writer = None
+    shard_idx = 0
+    shard_bytes = 0
+    n_bins = 0
+    total_bins = 0
+
+    def _flush_buf():
+        nonlocal writer, buf, shard_idx, shard_bytes, n_bins
+        if not buf["input_ids"]:
+            return
+        table = _to_pa_table(buf)
+        if writer is None:
+            shard_path = out_dir / f"rank{rank}_s{shard_idx}.arrow"
+            writer = ipc.new_file(str(shard_path), table.schema)
+        writer.write_table(table)
+        shard_bytes += table.nbytes
+        buf = defaultdict(list)
+
+    def _rotate_shard():
+        nonlocal writer, shard_idx, shard_bytes, n_bins
+        if writer:
+            writer.close()
+            shard_path = out_dir / f"rank{rank}_s{shard_idx}.arrow"
+            size_mb = shard_path.stat().st_size / 1e6
+            print(f"    Shard {shard_idx}: {n_bins:,} bins ({size_mb:.0f} MB)")
+        shard_idx += 1
+        shard_bytes = 0
+        n_bins = 0
+        writer = None
+
+    for i in tqdm(range(0, len(all_processed), packing_bucket_size),
+                  desc=f"rank{rank} (pack)", leave=False):
+        batch_items = all_processed[i:i + packing_bucket_size]
+        batch = defaultdict(list)
+        for item in batch_items:
+            for k in item:
+                batch[k].append(item[k])
+        packed = packer_fn(dict(batch))
+
+        n_packed = len(packed["input_ids"])
+        for j in range(n_packed):
+            for k in PACKED_SCHEMA.names:
+                buf[k].append(packed[k][j])
+            n_bins += 1
+            total_bins += 1
+
+            if n_bins % WRITE_BATCH == 0:
+                _flush_buf()
+                if shard_bytes >= SHARD_MAX_BYTES:
+                    _rotate_shard()
+
+    _flush_buf()
+    if writer:
+        writer.close()
+        shard_path = out_dir / f"rank{rank}_s{shard_idx}.arrow"
+        size_mb = shard_path.stat().st_size / 1e6
+        print(f"    Shard {shard_idx}: {n_bins:,} bins ({size_mb:.0f} MB)")
+
+    del all_processed
+
+    print(f"  Done: {total_bins:,} bins across {shard_idx + 1} shard(s)")
+    return total_bins
+
+
 def main():
     parser = argparse.ArgumentParser(description="Offline packing: per-sample Arrow → packed Arrow")
     parser.add_argument("--encoder",        required=True, help="인코더 이름 (e.g. fb_dacvae)")
@@ -156,6 +290,8 @@ def main():
     parser.add_argument("--cutoff-len",     type=int, default=None,
                         help="packing cutoff 길이 (기본: config의 packing_cutoff_len)")
     parser.add_argument("--precomputed-dir", default="/mnt/ddn/users/jos/precomputed")
+    parser.add_argument("--mixed",          action="store_true",
+                        help="cross-dataset packing: 모든 데이터셋을 합쳐서 셔플 후 패킹")
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
@@ -166,6 +302,7 @@ def main():
     print(f"Cutoff len    : {cutoff_len}")
     print(f"Datasets      : {args.datasets}")
     print(f"Precomputed   : {args.precomputed_dir}")
+    print(f"Mixed packing : {'✓' if args.mixed else '✗'}")
     print()
 
     # Tokenizer
@@ -185,9 +322,9 @@ def main():
     selected      = [k.strip() for k in args.datasets.split(",") if k.strip()]
     total_bins    = 0
 
-    for ds_key in selected:
-        n = pack_rank(
-            ds_key=ds_key,
+    if args.mixed:
+        total_bins = pack_rank_mixed(
+            selected=selected,
             rank=args.rank,
             base_dir=base_dir,
             cutoff_len=cutoff_len,
@@ -196,8 +333,20 @@ def main():
             process_batch_size=cfg.get("process_batch_size", 32),
             packing_bucket_size=cfg.get("packing_bucket_size", 200),
         )
-        if n > 0:
-            total_bins += n
+    else:
+        for ds_key in selected:
+            n = pack_rank(
+                ds_key=ds_key,
+                rank=args.rank,
+                base_dir=base_dir,
+                cutoff_len=cutoff_len,
+                processor_fn=processor_fn,
+                packer_fn=packer_fn,
+                process_batch_size=cfg.get("process_batch_size", 32),
+                packing_bucket_size=cfg.get("packing_bucket_size", 200),
+            )
+            if n > 0:
+                total_bins += n
 
     print(f"\nRank {args.rank} complete. Total packed bins: {total_bins:,}")
 
