@@ -8,6 +8,19 @@
 - 디렉토리는 원래 역할 기준으로 `data/` `docs/` `scripts/` 분류.
 - §43 (2026-04-19): `scripts/` 를 `train/`, `precompute/`, `debug/` 하위 카테고리로 재정리.
 
+## scripts/train/accel/
+
+HF `accelerate launch` 기반 최신 세대 학습 파이프라인들. Stage 1 projector collapse (cos sim 0.95+, γ=1.0 lock, dev-clean WER 110%+) 확정되어 전량 아카이브 (§43, 2026-04-19). `docs/prompt_format_regression.md` 참조.
+
+| 파일 | 원래 역할 | 아카이브 사유 |
+|---|---|---|
+| [train_pipeline_override.py](scripts/train/accel/train_pipeline_override.py) | 주력 학습 스크립트. HF Trainer + Sequence Packing (cutoff_len=16384) + Liger + FSDP + precomputed features. 자체 `AudioQwen` 클래스 내장 | Stage 1 loss plateau 3.6-4.0, projector collapse 확정. A/B/C/D combo (γ small init, diversity reg, LR 5e-4, tag-mask, LN 제거) 모두 실패. |
+| [run.sh](scripts/train/accel/run.sh) | `train_pipeline_override.py` launcher wrapper (conda env, LD_PRELOAD, accelerate launch) | 대상 스크립트 아카이브와 함께 이동 |
+| [calculate_max_steps.py](scripts/train/accel/calculate_max_steps.py) | raw audio streaming 모드용 max_steps 추정 유틸 (hop, proj_strides, batch 기반) | override 에만 쓰이므로 함께 이동 |
+| [train_pipeline_arrow_torch.py](scripts/train/accel/train_pipeline_arrow_torch.py) | per-sample precomputed Arrow + runtime pack, 자체 `AudioQwen` / `PackedStreamingDataset` 포함. 과거 Stage 2 loss → 1 달성 기록 | 재현 시도 실패 — 현재 infrastructure (cgroup, NCCL) 에서 재구성 어려움. Stage 2 rescue 가설 미확정 |
+| [train_pipeline_ctc.py](scripts/train/accel/train_pipeline_ctc.py) | CTC auxiliary loss 실험 브랜치 (projector 에 phoneme 직접 supervision) | 검증 미완료 상태로 보류. 후속 실험에서 재시작 가능 |
+| [train_legacy_precomp.py](scripts/train/accel/train_legacy_precomp.py) | §43 (2026-04-17): legacy `train.py` 구조 + precomputed Arrow + DynamicBatchSampler + DistributedSampler. collapse 우회 시도 | NCCL deadlock 재현 (step 59 고정, rank 간 batch 수 불균형), 근본 fix 전 보류 |
+
 ## scripts/train/legacy/
 
 초기 2-stage 학습 루프 (raw audio + 작은 DynamicBatchSampler 배치). precomputed Arrow + Sequence Packing 경로로 전환된 후 모두 아카이브.
