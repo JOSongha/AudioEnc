@@ -1,0 +1,1011 @@
+{
+  "ckpt": "s1_proj_split6.pt",
+  "stage": "s1",
+  "saved_at": "04/16 16:39:16",
+  "saved_ts": 1776357556.9691799,
+  "wer": 1.0973292244478685,
+  "n_samples": 200,
+  "elapsed_sec": 256.22283029556274,
+  "pairs": [
+    {
+      "idx": 0,
+      "ref": "he was in a fevered state of mind owing to the blight his wife's action threatened to cast upon his entire future",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nDavid. And today we're going to be"
+    },
+    {
+      "idx": 1,
+      "ref": "he would have to pay her the money which she would now regularly demand or there would be trouble it did not matter what he did",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 2,
+      "ref": "hurstwood walked the floor mentally arranging the chief points of his situation",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 3,
+      "ref": "he also thought of his managerial position",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 4,
+      "ref": "how would the papers talk about it",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 5,
+      "ref": "many little wrinkles gathered between his eyes as he contemplated this and his brow moistened",
+      "hyp": "0:00\nHello and welcome to the podcast.\nI'm your host, David.\nAnd today we're going to be talking about a very"
+    },
+    {
+      "idx": 6,
+      "ref": "he could arrange that satisfactorily for carrie would be glad to wait if necessary",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0036"
+    },
+    {
+      "idx": 7,
+      "ref": "he would see how things turned out to morrow and then he would talk to her they were going to meet as usual",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking"
+    },
+    {
+      "idx": 8,
+      "ref": "for some reason he felt as if something might come that way and was relieved when all the envelopes had been scanned and nothing suspicious noticed",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nKathleen. And today we're going"
+    },
+    {
+      "idx": 9,
+      "ref": "while the danger had not lessened it had not as yet materialised and with him no news was good news",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 10,
+      "ref": "so little did he consider drouet that it never once occurred to him to worry about his finding out",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 11,
+      "ref": "he grew restless as he ruminated and then decided that perhaps it was nothing",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nDr. Sarah Smith. Today we're"
+    },
+    {
+      "idx": 12,
+      "ref": "she had not been able to get away this morning",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 13,
+      "ref": "he would get one to day it would probably be on his desk when he got back he would look for it at once",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 14,
+      "ref": "after a time he gave up waiting and drearily headed for the madison car",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 15,
+      "ref": "he went in and examined his letters but there was nothing from carrie",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 16,
+      "ref": "fortunately there was nothing from his wife either",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 17,
+      "ref": "at one thirty he went to rector's for lunch and when he returned a messenger was waiting for him",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 18,
+      "ref": "his first impulse was to write but four words in reply go to the devil",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 19,
+      "ref": "but he compromised by telling the boy that there would be no reply",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 20,
+      "ref": "then he sat down in his chair and gazed without seeing contemplating the result of his work",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nDr. Sarah K. We're going to"
+    },
+    {
+      "idx": 21,
+      "ref": "what would she do about that the confounded wretch",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 22,
+      "ref": "later however his old discretion asserted itself",
+      "hyp": "0:00\nHello, and welcome to the podcast.\nI'm your host, Dr.\nDr.\nDruskin.\nAnd today"
+    },
+    {
+      "idx": 23,
+      "ref": "something had to be done a climax was near and she would not sit idle",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 24,
+      "ref": "he knew her well enough to know that when she had decided upon a plan she would follow it up",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0035"
+    },
+    {
+      "idx": 25,
+      "ref": "he arose from his chair and went and looked out into the street",
+      "hyp": "0:00\nHello, welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr."
+    },
+    {
+      "idx": 26,
+      "ref": "the long drizzle had begun pedestrians had turned up collars and trousers at the bottom",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. David H.\n0:03\nHartman"
+    },
+    {
+      "idx": 27,
+      "ref": "hurstwood almost exclaimed out loud at the insistency of this thing",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 28,
+      "ref": "he put on his hat and looked around for his umbrella",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. John H.\n0:03\nHarris,"
+    },
+    {
+      "idx": 29,
+      "ref": "he would have some arrangement of this thing",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 30,
+      "ref": "he began to wish that he had compromised in some way or other that he had sent the money perhaps he could do it up here",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr. Sarah K.\n0:02\nI'm a"
+    },
+    {
+      "idx": 31,
+      "ref": "he would go in and see anyhow he would have no row",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\nand today we're going to be talking about a very important topic"
+    },
+    {
+      "idx": 32,
+      "ref": "by the time he reached his own street he was keenly alive to the difficulties of his situation and wished over and over that some solution would offer itself that he could see his way out",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. Sarah K.\n0:03\nI'm a"
+    },
+    {
+      "idx": 33,
+      "ref": "then he rang the bell no answer",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 34,
+      "ref": "he rang again this time harder still no answer",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 35,
+      "ref": "when hurstwood got back to his office again he was in a greater quandary than ever",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 36,
+      "ref": "he could hardly realise how it had all come about",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 37,
+      "ref": "no letter had come no word of any kind and yet here it was late in the evening and she had agreed to meet him that morning",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. Sarah Smith. And today we're going to be talking about"
+    },
+    {
+      "idx": 38,
+      "ref": "he saw that in the excitement of recent events he had not formulated a plan upon that score",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 39,
+      "ref": "he was getting some vague comfort out of a good cigar but it was no panacea for the ill which affected him",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 40,
+      "ref": "it was with great opposition after two or three hours of the most urgent mental affirmation and denial that at last he got an envelope placed in it the requested amount and slowly sealed it up",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nKathleen Kozlowski. And"
+    },
+    {
+      "idx": 41,
+      "ref": "then he called harry the boy of all work around the place",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Alex.\n0\nAnd today we"
+    },
+    {
+      "idx": 42,
+      "ref": "you take this to this address he said handing him the envelope and give it to missus hurstwood yes sir said the boy",
+      "hyp": "0:01\nHello, I'm Dr. John H.\n0:02\nHartman and I am here to talk about the"
+    },
+    {
+      "idx": 43,
+      "ref": "any answer i guess not",
+      "hyp": "0:00\nHello, welcome to the podcast.\n0:02\nI'm your host, and I'm here with\n0:1"
+    },
+    {
+      "idx": 44,
+      "ref": "the boy hastened away and the manager fell to his musings",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 45,
+      "ref": "he was beaten for to night and he might just as well make the best of it",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Alex.\n0\nAnd today we"
+    },
+    {
+      "idx": 46,
+      "ref": "she would take the envelope and know that she had triumphed",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 47,
+      "ref": "if he only had that letter back he wouldn't send it",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 48,
+      "ref": "for relief he arose and joined in conversation with a few friends who were drinking",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 49,
+      "ref": "all the time his thoughts would run out to his home and see the scene being therein enacted",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 50,
+      "ref": "in about an hour and three quarters the boy returned",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 51,
+      "ref": "he fancied as he sat at his desk that nothing would be done for a week or two meanwhile he would have time to think",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 52,
+      "ref": "how about that now his pain at her failure to meet or write him rapidly increased as he devoted himself to this subject",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. Sarah K.\n0:03\nI'm a"
+    },
+    {
+      "idx": 53,
+      "ref": "he decided to write her care of the west side post office and ask for an explanation as well as to have her meet him",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. David H.\n0:03\nHartman"
+    },
+    {
+      "idx": 54,
+      "ref": "three o'clock came four five six and no letter",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 55,
+      "ref": "the helpless manager paced the floor and grimly endured the gloom of defeat",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr. Sarah Smith.\n0"
+    },
+    {
+      "idx": 56,
+      "ref": "he saw a busy saturday ushered out the sabbath in and nothing done",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 57,
+      "ref": "all day the bar being closed he brooded alone shut out from home from the excitement of his resort from carrie and without the ability to alter his condition one iota",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is talk about what we call a \"transformational\" experience"
+    },
+    {
+      "idx": 58,
+      "ref": "it was the worst sunday he had spent in his life",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 59,
+      "ref": "it seemed as if his family troubles were just beginning",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 60,
+      "ref": "he was quite certain now that she knew he was married and was angered at his perfidy",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 61,
+      "ref": "he had loved her earnestly enough but now that the possibility of losing her stared him in the face she seemed much more attractive",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 62,
+      "ref": "he would go to her and tell her all his family complications",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 63,
+      "ref": "he would explain to her just where he stood and how much he needed her",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 64,
+      "ref": "he did manage to bring himself into the mood to go out to carrie but when he got in ogden place he thought he saw a man watching him and went away",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 65,
+      "ref": "he did not go within a block of the house",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 66,
+      "ref": "he troubled over many little details and talked perfunctorily to everybody",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 67,
+      "ref": "he stayed at his desk long after all others had gone and only quitted it when the night watchman on his round pulled at the front door to see if it was safely locked",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 68,
+      "ref": "on wednesday he received another polite note from mc gregor james and hay it read",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 69,
+      "ref": "dear sir we beg to inform you that we are instructed to wait until to morrow thursday at one o'clock before filing suit against you on behalf of missus julia hurstwood for divorce and alimony",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 70,
+      "ref": "very truly yours et cetera compromise",
+      "hyp": "0:01\nHello, welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025\nDr"
+    },
+    {
+      "idx": 71,
+      "ref": "so here it was spread out clear before him and now he knew what to expect",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 72,
+      "ref": "if he didn't go and see them they would sue him promptly",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 73,
+      "ref": "minnie's flat as the one floor resident apartments were then being called was in a part of west van buren street inhabited by families of labourers and clerks men who had come and were still coming with the rush of population pouring in at the rate of fifty thousand a year",
+      "hyp": "0:01\nI'm going to talk about the history of the United States.\n0:03\nAnd I'll start with a little bit"
+    },
+    {
+      "idx": 74,
+      "ref": "to carrie the sound of the little bells upon the horse cars as they tinkled in and out of hearing was as pleasing as it was novel",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 75,
+      "ref": "to him the presence or absence of his wife's sister was a matter of indifference",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr. Sarah\n0:12"
+    },
+    {
+      "idx": 76,
+      "ref": "he was of a clean saving disposition and had already paid a number of monthly instalments on two lots far out on the west side",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 77,
+      "ref": "his ambition was some day to build a house on them",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 78,
+      "ref": "she had some slight gift of observation and that sense so rich in every woman intuition",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 79,
+      "ref": "the walls of the rooms were discordantly papered",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 80,
+      "ref": "the floors were covered with matting and the hall laid with a thin rag carpet",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 81,
+      "ref": "then she walked and sang to it until hanson disturbed in his reading came and took it",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 82,
+      "ref": "one could see that he was very much wrapped up in his offspring",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr. Sarah Smith.\n0"
+    },
+    {
+      "idx": 83,
+      "ref": "now now he said walking there there and there was a certain swedish accent noticeable in his voice",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nDr. Sarah Hargreaves. And"
+    },
+    {
+      "idx": 84,
+      "ref": "he seemed to be thinking of something else",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 85,
+      "ref": "minnie began to explain but her husband took this part of the conversation to himself",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host,\nand today we're going to be talking about a very important topic"
+    },
+    {
+      "idx": 86,
+      "ref": "you could get home easy too it isn't very far",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr.\nDr.\nDr\nDr. Dr.\n0"
+    },
+    {
+      "idx": 87,
+      "ref": "she asked minnie for ink and paper which were upon the mantel in the dining room and when the latter had gone to bed at ten got out drouet's card and wrote him",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 88,
+      "ref": "she wanted to make some reference to their relations upon the train but was too timid",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 89,
+      "ref": "anything was good enough so long as it paid say five dollars a week to begin with",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 90,
+      "ref": "a shop girl was the destiny prefigured for the newcomer",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 91,
+      "ref": "it was under such auspicious circumstances that she started out this morning to look for work",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 92,
+      "ref": "narrow board walks extended out passing here a house and there a store at far intervals eventually ending on the open prairie",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 93,
+      "ref": "it gave an imposing appearance to most of the wholesale houses whose offices were upon the ground floor and in plain view of the street",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. David H.\nHoffman, and today we're"
+    },
+    {
+      "idx": 94,
+      "ref": "these vast buildings what were they",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 95,
+      "ref": "she was four years older than i to be sure and had seen more of the world but i was a boy and she was a girl and i resented her protecting manner",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, David. And today we're going to be talking about a very important"
+    },
+    {
+      "idx": 96,
+      "ref": "this change came about from an adventure we had together",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr. Sarah Johnson. And today we're going to be talking about"
+    },
+    {
+      "idx": 97,
+      "ref": "one day when i rode over to the shimerdas i found antonia starting off on foot for russian peter's house to borrow a spade ambrosch needed",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 98,
+      "ref": "there had been another black frost the night before and the air was clear and heady as wine",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr. David H.\nHoffman, and today we're"
+    },
+    {
+      "idx": 99,
+      "ref": "it was on one of these gravel beds that i met my adventure",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 100,
+      "ref": "i whirled round and there on one of those dry gravel beds was the biggest snake i had ever seen",
+      "hyp": "0:01\nHello, I'm Dr.\n0:02\nKatherine Hsu from the University of California, San Diego School of Medicine"
+    },
+    {
+      "idx": 101,
+      "ref": "i know i am just awful jim i was so scared",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 102,
+      "ref": "i never know you was so brave jim she went on comfortingly",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0035"
+    },
+    {
+      "idx": 103,
+      "ref": "a faint fetid smell came from him and a thread of green liquid oozed from his crushed head",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking"
+    },
+    {
+      "idx": 104,
+      "ref": "look tony that's his poison i said",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 105,
+      "ref": "i explained to antonia how this meant that he was twenty four years old that he must have been there when white men first came left on from buffalo and indian times",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 106,
+      "ref": "we decided that antonia should ride dude home and i would walk",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 107,
+      "ref": "i followed with the spade over my shoulder dragging my snake",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 108,
+      "ref": "otto fuchs was the first one we met",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 109,
+      "ref": "he could stand right up and talk to you he could did he fight hard",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr. Sarah\n0:12"
+    },
+    {
+      "idx": 110,
+      "ref": "otto winked at me",
+      "hyp": "0:00\nHello, and welcome to the podcast.\nI'm your host, Dr. John H.\nHillman.\n0:"
+    },
+    {
+      "idx": 111,
+      "ref": "a snake of his size in fighting trim would be more than any boy could handle",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 112,
+      "ref": "throughout this century the power of the church was constantly on the increase and is visible in many important changes",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 113,
+      "ref": "the ancestors of the present pretender congal surnamed the squint eyed had twice received and cherished the licentious bards when under the ban of tara and his popularity with that still powerful order was one prop of his ambition",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, Sarah.\n0:03\nI'm so excited to be here"
+    },
+    {
+      "idx": 114,
+      "ref": "it is pretty clear also that the last rally of druidism against christianity took place behind his banner on the plain of moira",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 115,
+      "ref": "the poets of succeeding ages have dwelt much in detail on the occurrences of this memorable day",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 116,
+      "ref": "like the two kings of sparta they reigned jointly dividing between them the labours and cares of state",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 117,
+      "ref": "it was the season when the ancient sun god had been accustomed to receive his annual oblations and we can well believe that those whose hearts still trembled at the name of bel must have connected the eclipse and the plague with the revolution in the national worship and the overthrow of the ancient gods on that plain of prostration where they had so long received the homage of an entire people",
+      "hyp": "0:01\nI'm going to talk about the first of three things that I want to say.\n0:03\nThe first thing is"
+    },
+    {
+      "idx": 118,
+      "ref": "lastly the royal brothers fell themselves victims to the epidemic which so sadly signalizes their reign",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 119,
+      "ref": "the only conflicts that occurred on irish soil with a pictish or an anglo saxon force if we except those who formed a contingent of congal's army at moira occurred in the time of the hospitable finnacta",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Sarah. And today we're going to be talking about a very important"
+    },
+    {
+      "idx": 120,
+      "ref": "as leading to the mention of other interesting events we must set this inroad clearly before the reader",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 121,
+      "ref": "the saxons of kent and the southern kingdoms generally were converted by missionaries from france or rome or native preachers of the first or second christian generation those of northumbria recognise as their apostles saint aidan and saint cuthbert two fathers from iona",
+      "hyp": "0:01\nHello and welcome to the podcast. I'm your host, Sarah.\n0:03\nI'm so excited to be here"
+    },
+    {
+      "idx": 122,
+      "ref": "the kingdom of northumbria as the name implies embraced nearly all the country from the humber to the pictish border",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Sarah. And today we're going to be talking about a very important"
+    },
+    {
+      "idx": 123,
+      "ref": "the barren rock about three miles in length was covered with monastic buildings and its cemetery was already adorned with the tombs of saints and kings",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nDr. Sarah K. We're going to"
+    },
+    {
+      "idx": 124,
+      "ref": "now every missionary that ever went out from iona had taught that to reduce christians to slavery was wholly inconsistent with a belief in the doctrines of the gospel",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 125,
+      "ref": "while the liberated exiles rejoiced on the plain of meath the tent of the abbot of iona was pitched on the rath of tara a fact which would seem to indicate that already in little more than a century since the interdict had fallen on it the edifices which made so fine a show in the days of patrick were ruined and uninhabitable",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is explain what a \"transformation\" is.\n0:"
+    },
+    {
+      "idx": 126,
+      "ref": "so slow and patient is the process by which christianity infuses itself into the social life of a converted people",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 127,
+      "ref": "here the holy prelate of ferns met him and related a vision in which he had been instructed to demand the abolition of the impost",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nAlexa. Today we're going to be"
+    },
+    {
+      "idx": 128,
+      "ref": "the tribute was at this period enormous fifteen thousand head of cattle annually",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Sarah. And today we're going to be talking about a very important"
+    },
+    {
+      "idx": 129,
+      "ref": "saint moling survived him three years and saint adamnan so intimately connected with his reign ten years",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 130,
+      "ref": "nothing could be more natural than such an assembly in such a place at such a period",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 131,
+      "ref": "peter told his troubles to mister shimerda he was unable to meet a note which fell due on the first of november had to pay an exorbitant bonus on renewing it and to give a mortgage on his pigs and horses and even his milk cow",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr. David H.\nHartman, a professor of history"
+    },
+    {
+      "idx": 132,
+      "ref": "peter could give no very clear account of his transactions with cutter",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n003\nDr"
+    },
+    {
+      "idx": 133,
+      "ref": "she asked peter to wait a moment and when she came back from the kitchen she brought a bag of sandwiches and doughnuts for us",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 134,
+      "ref": "we lay still and did not talk",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 135,
+      "ref": "the little house on the hillside was so much the color of the night that we could not see it as we came up the draw",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 136,
+      "ref": "they made me think of defeated armies retreating or of ghosts who were trying desperately to get in for shelter and then went moaning on",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 137,
+      "ref": "i could not take my eyes off the man in the bed",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 138,
+      "ref": "the sharp smell of spirits went through the room",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about a\nvery important topic"
+    },
+    {
+      "idx": 139,
+      "ref": "it seemed to me that he despised him for being so simple and docile",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 140,
+      "ref": "the sick man raged and shook his fist",
+      "hyp": "0:00\nHello and welcome to the podcast. I'm your host,\nand today we're going to be talking about a very important topic for"
+    },
+    {
+      "idx": 141,
+      "ref": "he seemed to be cursing people who had wronged him",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 142,
+      "ref": "quickly it was covered with bright red spots i thought i had never seen any blood so bright",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 143,
+      "ref": "he lay patiently fighting for breath like a child with croup",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Alex.\n0\n0:1"
+    },
+    {
+      "idx": 144,
+      "ref": "antonia's father uncovered one of his long bony legs and rubbed it rhythmically",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0035"
+    },
+    {
+      "idx": 145,
+      "ref": "from our bench we could see what a hollow case his body was",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 146,
+      "ref": "gradually relief came to all of us",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 147,
+      "ref": "without a word peter got up and lit his lantern",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 148,
+      "ref": "mister shimerda went with him",
+      "hyp": "0:00\nHello, and welcome to the podcast.\nI'm your host, Dr.\nDr.\nDrummond.\nAnd today"
+    },
+    {
+      "idx": 149,
+      "ref": "after the ceremony at the church the party went to a dinner given by the parents of the bride",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0036"
+    },
+    {
+      "idx": 150,
+      "ref": "the first howls were taken up and echoed and with quickening repetitions",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host, Dr.\nDr.\nDr\nDr. 0:0"
+    },
+    {
+      "idx": 151,
+      "ref": "a black drove came up over the hill behind the wedding party",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 152,
+      "ref": "something happened to the hindmost sledge the driver lost control he was probably very drunk the horses left the road the sledge was caught in a clump of trees and overturned",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:02\nI'm your host, Dr.\n0035"
+    },
+    {
+      "idx": 153,
+      "ref": "the shrieks that followed made everybody sober",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 154,
+      "ref": "the road was clear and white and the groom's three blacks went like the wind",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 155,
+      "ref": "there are only three sledges left he whispered",
+      "hyp": "0:00\nHello, and welcome to the podcast.\nI'm your host, Dr.\nDr.\nDr\nDr. Dr."
+    },
+    {
+      "idx": 156,
+      "ref": "and the wolves pavel asked enough enough for all of us",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr.\nDr.\nDr\nDr. Dr.\n0"
+    },
+    {
+      "idx": 157,
+      "ref": "they were within a few miles of their village now",
+      "hyp": "0:00\nHello, and welcome to the podcast.\n0:01\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 158,
+      "ref": "yes how many",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 159,
+      "ref": "twenty thirty enough",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host,\nand today we're going to be talking about\nthe most important thing"
+    },
+    {
+      "idx": 160,
+      "ref": "now his middle horse was being almost dragged by the other two",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    },
+    {
+      "idx": 161,
+      "ref": "pavel knocked him over the side of the sledge and threw the girl after him",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 162,
+      "ref": "peter crouching in the front seat saw nothing",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 163,
+      "ref": "the first thing either of them noticed was a new sound that broke into the clear air louder than they had ever heard it before the bell of the monastery of their own village ringing for early prayers",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is talk about what we call a \"transformational\" experience"
+    },
+    {
+      "idx": 164,
+      "ref": "they were run out of their village",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 165,
+      "ref": "wherever they went the story followed them",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 166,
+      "ref": "they worked in chicago des moines fort wayne but they were always unfortunate",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nDr. Sarah K. We're going to"
+    },
+    {
+      "idx": 167,
+      "ref": "during the auction he went about with his head down and never lifted his eyes",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 168,
+      "ref": "every one said peter kissed the cow before she was led away by her new owner",
+      "hyp": "0:00\nHello, and welcome to the podcast.\nI'm your host, Dr.\nDr.\nDr\nDr. Dr."
+    },
+    {
+      "idx": 169,
+      "ref": "the loss of his two friends had a depressing effect upon old mister shimerda",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 170,
+      "ref": "when he was out hunting he used to go into the empty log house and sit there brooding",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 171,
+      "ref": "this cabin was his hermitage until the winter snows penned him in his cave",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 172,
+      "ref": "the narrative it may be is woven of so humble a texture as to require this advantage and at the same time to render it the more difficult of attainment",
+      "hyp": "0:01\nHello, welcome to the podcast.\n0:02\nI'm your host, Dr.\n0035\nDr"
+    },
+    {
+      "idx": 173,
+      "ref": "in good faith however he is not sufficiently imaginative to flatter himself with the slightest hope of this kind",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 174,
+      "ref": "the author has considered it hardly worth his while therefore relentlessly to impale the story with its moral as with an iron rod or rather as by sticking a pin through a butterfly thus at once depriving it of life and causing it to stiffen in an ungainly and unnatural attitude",
+      "hyp": "0:01\nI'm going to talk about the first of three things that I want to say.\n0:03\nThe first thing is"
+    },
+    {
+      "idx": 175,
+      "ref": "if permitted by the historical connection which though slight was essential to his plan the author would very willingly have avoided anything of this nature",
+      "hyp": "0:01\n[Music]\n0:02\nHello, and welcome to the podcast.\n0:13\nI'm your host"
+    },
+    {
+      "idx": 176,
+      "ref": "he trusts not to be considered as unpardonably offending by laying out a street that infringes upon nobody's private rights and appropriating a lot of land which had no visible owner and building a house of materials long in use for constructing castles in the air",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 177,
+      "ref": "the enclosure had formerly been very extensive but was now contracted within small compass and hemmed about partly by high wooden fences and partly by the outbuildings of houses that stood on another street",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is explain what a\n0:03\ntranscript is"
+    },
+    {
+      "idx": 178,
+      "ref": "the white double rosebush had evidently been propped up anew against the house since the commencement of the season and a pear tree and three damson trees which except a row of currant bushes constituted the only varieties of fruit bore marks of the recent amputation of several superfluous or defective limbs",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is just give you a little bit of an overview of what we"
+    },
+    {
+      "idx": 179,
+      "ref": "there were also a few species of antique and hereditary flowers in no very flourishing condition but scrupulously weeded as if some person either out of love or curiosity had been anxious to bring them to such perfection as they were capable of attaining",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is just give you a little bit of an overview of what we"
+    },
+    {
+      "idx": 180,
+      "ref": "summer squashes almost in their golden blossom cucumbers now evincing a tendency to spread away from the main stock and ramble far and wide two or three rows of string beans and as many more that were about to festoon themselves on poles tomatoes occupying a site so sheltered and sunny that the plants were already gigantic and promised an early and abundant harvest",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want to do is explain what a \"transformation\" is.\n0:"
+    },
+    {
+      "idx": 181,
+      "ref": "phoebe wondered whose care and toil it could have been that had planted these vegetables and kept the soil so clean and orderly",
+      "hyp": "0:00\nHello and welcome to the podcast. I'm your host,\n0:02\nand today we're going to be talking about"
+    },
+    {
+      "idx": 182,
+      "ref": "bees too strange to say had thought it worth their while to come hither possibly from the range of hives beside some farm house miles away",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Sarah.\n0 04"
+    },
+    {
+      "idx": 183,
+      "ref": "this was a fountain set round with a rim of old mossy stones and paved in its bed with what appeared to be a sort of mosaic work of variously colored pebbles",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 184,
+      "ref": "it now contained only chanticleer his two wives and a solitary chicken",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 185,
+      "ref": "it was evident that the race had degenerated like many a noble race besides in consequence of too strict a watchfulness to keep it pure",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking about"
+    },
+    {
+      "idx": 186,
+      "ref": "these feathered people had existed too long in their distinct variety a fact of which the present representatives judging by their lugubrious deportment seemed to be aware",
+      "hyp": "0:01\nHello and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025\nDr"
+    },
+    {
+      "idx": 187,
+      "ref": "they kept themselves alive unquestionably and laid now and then an egg and hatched a chicken not for any pleasure of their own but that the world might not absolutely lose what had once been so admirable a breed of fowls",
+      "hyp": "0:01\nHello and welcome to the podcast.\n0:03\nI'm your host, Sarah.\n0025\nToday"
+    },
+    {
+      "idx": 188,
+      "ref": "the distinguishing mark of the hens was a crest of lamentably scanty growth in these latter days but so oddly and wickedly analogous to hepzibah's turban that phoebe to the poignant distress of her conscience but inevitably was led to fancy a general resemblance betwixt these forlorn bipeds and her respectable relative",
+      "hyp": "0:01\nI'm going to read you a story.\n0:02\nIt's called The Last of the Lovers.\n0"
+    },
+    {
+      "idx": 189,
+      "ref": "the chicken crept through the pales of the coop and ran with some show of liveliness to her feet while chanticleer and the ladies of his household regarded her with queer sidelong glances and then croaked one to another as if communicating their sage opinions of her character",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 190,
+      "ref": "so wise as well as antique was their aspect as to give color to the idea not merely that they were the descendants of a time honored race but that they had existed in their individual capacity ever since the house of the seven gables was founded and were somehow mixed up with its destiny",
+      "hyp": "0:01\nI'm going to talk about the first thing that I want you to know is that there are two different ways of thinking about this."
+    },
+    {
+      "idx": 191,
+      "ref": "he held a hoe in his hand and while phoebe was gone in quest of the crumbs had begun to busy himself with drawing up fresh earth about the roots of the tomatoes",
+      "hyp": "0:01\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 192,
+      "ref": "they have known me much longer but never honor me with any familiarity though hardly a day passes without my bringing them food",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 193,
+      "ref": "miss hepzibah i suppose will interweave the fact with her other traditions and set it down that the fowls know you to be a pyncheon",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 194,
+      "ref": "ah but these hens answered the young man these hens of aristocratic lineage would scorn to understand the vulgar language of a barn yard fowl",
+      "hyp": "0:01\nHello, and welcome to the podcast.\n0:03\nI'm your host, Dr.\n0025"
+    },
+    {
+      "idx": 195,
+      "ref": "i prefer to think and so would miss hepzibah that they recognize the family tone for you are a pyncheon",
+      "hyp": "0:01\nHello, welcome to the podcast.\n0:03\nI'm your host, and I'm here with\n0:1"
+    },
+    {
+      "idx": 196,
+      "ref": "my name is phoebe pyncheon said the girl with a manner of some reserve for she was aware that her new acquaintance could be no other than the daguerreotypist of whose lawless propensities the old maid had given her a disagreeable idea",
+      "hyp": "0:01\nHello, welcome to the podcast.\n0:02\nI'm your host, Sarah.\n0035\nAnd"
+    },
+    {
+      "idx": 197,
+      "ref": "i turn up the earth by way of pastime",
+      "hyp": "0:00\nHello, welcome to the podcast. I'm your host, and today we're going to be talking about a very important topic for all"
+    },
+    {
+      "idx": 198,
+      "ref": "it is like a bandage over one's eyes to come into it",
+      "hyp": "0:00\nHello, and welcome to the podcast. I'm your host, Dr.\nDr.\nDrummond. And today we're"
+    },
+    {
+      "idx": 199,
+      "ref": "if you would permit me said the artist looking at phoebe i should like to try whether the daguerreotype can bring out disagreeable traits on a perfectly amiable face",
+      "hyp": "0:01\nHello, and welcome to the podcast. I'm your host,\n0:03\nand today we're going to be talking"
+    }
+  ]
+}

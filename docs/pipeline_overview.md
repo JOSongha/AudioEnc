@@ -97,15 +97,25 @@ Pre-pack 생성: `bash precompute/run_pack.sh --encoder fb_dacvae`
 **Data splits** (대용량 데이터셋 OOM 방지):
 
 mls(55GB/rank)+gs(~55GB/rank) 등 대용량 데이터셋은 8 rank 동시 로드 시 ~948GB → cgroup OOM.
-`num_data_splits=2` 설정 시 각 rank 파일의 bins를 N등분, split마다 1/N만 로드 후 학습, 해제를 반복한다.
+`num_data_splits=N` 설정 시 데이터를 N등분, split마다 1/N만 로드 후 학습, 해제를 반복한다.
+
+**현재 구현 (mixed packing 기준, [arXiv §13](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-13))**: bins 단위가 아니라 **shard 파일 단위** 로 split. mixed packing 결과는 shard 로 나뉘므로 `num_data_splits` 를 shard 수에 맞춤.
+
+- Whole-only pack ([arXiv §13](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-13)): rank 당 5 shard → `num_data_splits=5`
+- **Word-aug pack ([trials §20](dataloader_trials.md#20-word-aug-offline-pre-pack--문장--단어-레벨-혼합-2026-04-1213))**: rank 당 8 shard (~24 GB 7개 + 12 GB 1개) → `num_data_splits=8`
 
 ```
-num_data_splits=2:
-  for split in [0, 1]:
-    각 rank 파일에서 해당 split의 bins만 slice → 학습 → del + gc.collect()
+num_data_splits=8 (word-aug mixed):
+  for split in [0..7]:
+    rank N → rank{N}_s{split}.arrow (3500 bins, 마지막은 1822) 만 read_all
+    → run_stage1(num_train_epochs=1) → 109 (또는 57) optimizer step 자동
+    → del table + gc.collect()
+  총 7 × 109 + 57 ≈ 820 step ≈ 1 full epoch over 210,000 bins
 ```
 
-자세한 내용: `dataloader_trials.md` §13 참조.
+자세한 내용:
+- arXiv [§13](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-13) (shard 단위 split), [§15](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-15) (numpy format), [§16](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-16) (TORCH_WARM_POOL), [§17](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-17) (shuffle 제거), [§19](../arXiv/docs/mixed_packing_memory_evolution_apr10-12.md#section-19) (max_steps 폐기 최종)
+- `dataloader_trials.md` §20 (word-aug offline pre-pack), §32~§35 (최신 scheduler/split/save fix)
 
 ### 2-3. OmniCollator
 
@@ -226,12 +236,13 @@ samples_per_token = hop * (16000/tgt_sr) * prod(proj_strides)
 |---|---|
 | 학습 파라미터 | LoRA (r=16, q/k/v/o_proj × 24 layers) + projector |
 | LLM LoRA 파라미터 | ~5M |
-| LR | 2e-5, cosine, warmup_ratio=0.03 |
-| Epochs | 2 (기본) |
-| 평가 | WER + val_loss every `eval_steps` steps |
-| 저장 주기 | `save_steps`(기본 5000) steps, `save_total_limit=3` |
-| 저장 경로 | `{cache_dir}/{encoder}/s2_outputs_{run_id}/` |
+| LR | 2e-5, cosine, warmup_ratio=0.1 (dataloader_trials.md §32 scheduler fix 기반) |
+| Epochs | 2 (기본). 내부적으로 `num_data_splits × stage2_epochs` 회 `trainer.train()` 호출 (§32/§34) |
+| 평가 | WerCallback 은 FSDP in-loop eval NCCL deadlock (§6.20) 때문에 Stage 2 에서 **완전 비활성화**. val metric 은 checkpoint offline 에서 측정 |
+| 저장 주기 | 매 split 종료 후 `trainer.save_model` 수동 호출 (§34). `checkpoint_fe{N}_split{M}` 명명으로 split 간 이름 충돌 회피 |
+| 저장 경로 | `{cache_dir}/{encoder}/s2_outputs_{run_id}/checkpoint_fe{N}_split{M}/` + main() 끝의 `{s2_output_dir}` 최종 save |
 | FSDP | ✓ (full_shard + auto_wrap, encoder excluded) |
+| Split 배정 로그 | 매 split 시작 시 rank/GPU/shard 표 rank-0 출력 (§35). `rankN_sX.arrow` 형식 |
 
 ---
 

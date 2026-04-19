@@ -1,0 +1,162 @@
+{
+  "run_dir": "/mnt/tmp/cache/hf/fb_dacvae/s2_outputs_0414_1442",
+  "encoder": "fb_dacvae",
+  "split": "dev-clean",
+  "n_samples": 200,
+  "checkpoints": [
+    {
+      "ckpt": "checkpoint_fe1_split1",
+      "saved_at": "04/14 16:00:41",
+      "saved_ts": 1776182441.4756005,
+      "wer": 1.3438623523369286,
+      "n_samples": 200,
+      "elapsed_sec": 250.85739588737488,
+      "json": "checkpoint_fe1_split1.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split4",
+      "saved_at": "04/14 17:01:34",
+      "saved_ts": 1776186094.451195,
+      "wer": 1.5485362095531587,
+      "n_samples": 200,
+      "elapsed_sec": 280.1917099952698,
+      "json": "checkpoint_fe1_split4.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split7",
+      "saved_at": "04/14 18:02:29",
+      "saved_ts": 1776189749.5295076,
+      "wer": 1.5975860297894195,
+      "n_samples": 200,
+      "elapsed_sec": 286.8242189884186,
+      "json": "checkpoint_fe1_split7.json"
+    },
+    {
+      "ckpt": "checkpoint-25",
+      "saved_at": "04/14 18:26:11",
+      "saved_ts": 1776191171.9124794,
+      "wer": 1.6037493579866462,
+      "n_samples": 200,
+      "elapsed_sec": 293.0276415348053,
+      "json": "checkpoint-25.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split8",
+      "saved_at": "04/14 18:26:40",
+      "saved_ts": 1776191200.0298738,
+      "wer": 1.613251155624037,
+      "n_samples": 200,
+      "elapsed_sec": 267.1847274303436,
+      "json": "checkpoint_fe1_split8.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split2",
+      "saved_at": "04/14 19:27:39",
+      "saved_ts": 1776194859.858132,
+      "wer": 1.610939907550077,
+      "n_samples": 200,
+      "elapsed_sec": 265.14411520957947,
+      "json": "checkpoint_fe1_split2.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split3",
+      "saved_at": "04/14 20:29:04",
+      "saved_ts": 1776198544.2777035,
+      "wer": 1.6150487930148947,
+      "n_samples": 200,
+      "elapsed_sec": 262.52206349372864,
+      "json": "checkpoint_fe1_split3.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split6",
+      "saved_at": "04/14 21:30:16",
+      "saved_ts": 1776202216.1215274,
+      "wer": 1.6076014381099126,
+      "n_samples": 200,
+      "elapsed_sec": 267.48184728622437,
+      "json": "checkpoint_fe1_split6.json"
+    },
+    {
+      "ckpt": "checkpoint_fe1_split5",
+      "saved_at": "04/14 22:31:22",
+      "saved_ts": 1776205882.9379625,
+      "wer": 1.6124807395993837,
+      "n_samples": 200,
+      "elapsed_sec": 270.5872073173523,
+      "json": "checkpoint_fe1_split5.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split2",
+      "saved_at": "04/14 23:32:40",
+      "saved_ts": 1776209560.4655516,
+      "wer": 1.6124807395993837,
+      "n_samples": 200,
+      "elapsed_sec": 264.06611347198486,
+      "json": "checkpoint_fe2_split2.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split7",
+      "saved_at": "04/15 00:33:33",
+      "saved_ts": 1776213213.7307966,
+      "wer": 1.615819209039548,
+      "n_samples": 200,
+      "elapsed_sec": 261.60537695884705,
+      "json": "checkpoint_fe2_split7.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split4",
+      "saved_at": "04/15 01:34:30",
+      "saved_ts": 1776216870.6130626,
+      "wer": 1.6317411402157165,
+      "n_samples": 200,
+      "elapsed_sec": 272.0989809036255,
+      "json": "checkpoint_fe2_split4.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split5",
+      "saved_at": "04/15 02:35:22",
+      "saved_ts": 1776220522.5573497,
+      "wer": 1.6286594761171032,
+      "n_samples": 200,
+      "elapsed_sec": 267.78574681282043,
+      "json": "checkpoint_fe2_split5.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split6",
+      "saved_at": "04/15 03:36:30",
+      "saved_ts": 1776224190.0350375,
+      "wer": 1.625834617360041,
+      "n_samples": 200,
+      "elapsed_sec": 263.3430025577545,
+      "json": "checkpoint_fe2_split6.json"
+    },
+    {
+      "ckpt": "checkpoint-60",
+      "saved_at": "04/15 04:35:32",
+      "saved_ts": 1776227732.4327939,
+      "wer": 1.6250642013353878,
+      "n_samples": 200,
+      "elapsed_sec": 262.05476236343384,
+      "json": "checkpoint-60.json"
+    },
+    {
+      "ckpt": "checkpoint-63",
+      "saved_at": "04/15 04:39:14",
+      "saved_ts": 1776227954.6329212,
+      "wer": 1.6263482280431434,
+      "n_samples": 200,
+      "elapsed_sec": 267.83749628067017,
+      "json": "checkpoint-63.json"
+    },
+    {
+      "ckpt": "checkpoint_fe2_split3",
+      "saved_at": "04/15 04:39:42",
+      "saved_ts": 1776227982.9853203,
+      "wer": 1.6276322547508988,
+      "n_samples": 200,
+      "elapsed_sec": 265.604519367218,
+      "json": "checkpoint_fe2_split3.json"
+    }
+  ],
+  "merged_at": "2026-04-15 05:04:37"
+}

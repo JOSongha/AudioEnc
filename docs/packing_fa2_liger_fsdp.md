@@ -364,18 +364,63 @@ GPU 메모리 ~11GB/80GB → **cutoff_len을 크게 올릴 여지**가 있음. 6
 
 ### 4. FSDP
 
+현재 Stage 2 는 HF TrainingArguments 의 `fsdp="full_shard auto_wrap"` 경로로 FSDP 활성화 (Accelerate plugin 직접 구성 안 함):
+
 ```python
-# Accelerate FullyShardedDataParallelPlugin 사용
-fsdp_plugin = FullyShardedDataParallelPlugin(
-    state_dict_config=FullStateDictConfig(offload_to_cpu=True, rank0_only=False),
-    optim_state_dict_config=FullOptimStateDictConfig(...),
+training_args = TrainingArguments(
+    ...
+    gradient_checkpointing=not cfg.get("use_fsdp", True),   # FSDP 시 off
+    ...
+    fsdp="full_shard auto_wrap",
+    fsdp_config={
+        "fsdp_transformer_layer_cls_to_wrap": ["Qwen3_5DecoderLayer"],
+        "fsdp_use_orig_params": True,                 # LoRA 필수
+        "fsdp_backward_prefetch": "backward_pre",
+        "fsdp_state_dict_type": "SHARDED_STATE_DICT",
+        "limit_all_gathers": True,
+        "fsdp_ignored_modules": ["encoder"],          # 인코더는 frozen fp32 유지
+        "activation_checkpointing": True,             # HF grad checkpoint redundant allgather 회피 ([arXiv §30](../arXiv/docs/stage2_fsdp_nccl_resolution_apr14.md#section-30))
+    },
 )
-accelerator = Accelerator(..., fsdp_plugin=fsdp_plugin)
 ```
 
-**LoRA + FSDP**: `use_orig_params=True` 필수.  
-8×A100 80GB + Qwen3.5-2B 기준으로도 **FSDP 적용** — sequence packing + FA2 + Liger 조합 시 메모리 여유가 줄어들기 때문.  
-FSDP 없는 DDP는 이 조합에서 권장하지 않음.
+**LoRA + FSDP**: `fsdp_use_orig_params=True` 필수 (LoRA adapter 파라미터를 FlatParameter 로 flatten 하지 않고 개별 접근).
+
+#### 실효성 분석 (2026-04-14, Qwen3.5-2B 한정)
+
+8×A100 80GB + Qwen3.5-**2B** + LoRA 조합에서 FSDP 의 순 메모리 이득은 실측/계산 상 제한적:
+
+| 메모리 항목 | DDP + LoRA | FSDP + LoRA | 차이 |
+|-------------|------------|-------------|------|
+| LLM 파라미터 | 4 GB (full) | 0.5 GB (1/8 샤드) | **-3.5 GB** |
+| LoRA grads | ~10 MB | ~10 MB | 0 |
+| LoRA optimizer state | ~40 MB | ~40 MB | 0 |
+| Activation (packed 16384) | ~25 GB | ~25 GB | 0 |
+| FSDP all-gather buffer | 0 | ~1 GB | **+1 GB** |
+| **순 절약** | | | **~2.5 GB** |
+
+- LoRA 는 trainable param 0.08% 밖에 안 되므로 optimizer/grad 샤딩 이득 없음
+- activation 이 peak 지배 (gradient_checkpointing 적용에도 불구)
+- all-gather 로 오히려 약간 추가 소비 + step time 통신 overhead
+
+**권장**:
+- **4B 이상 모델** (Qwen3.5-4B): FSDP 필수. LLM param 8 GB → 1 GB/rank (~7 GB 이득)
+- **2B 모델**: FSDP 이득 ~2.5 GB 수준, 80 GB 카드 여유 고려 시 DDP (`--no-fsdp`) + 배치/seq 상향이 throughput 관점에서 더 유리할 가능성. 벤치마크 가치 있음 (별도 trial)
+
+현재 운영: Stage 2 코드 안정화 우선이라 FSDP 유지. 검증 후 2B DDP 벤치 스케줄.
+
+#### FSDP in-loop eval 호환성 이슈 ([arXiv §29](../arXiv/docs/stage2_fsdp_nccl_resolution_apr14.md#section-29))
+
+Stage 2 에서 `WerCallback.on_step_end` 가 `FSDP.summon_full_params` + rank-0 eval 패턴으로 구현돼 있었으나, FSDP + PEFT + HF TrainerCallback 조합에서 **NCCL deadlock 재발**. `rank0_only=True`/`False` 양쪽 시도 모두 실패.
+
+- `rank0_only=True`: rank 0 의 `generate()` 내부 FSDP hook 이 재-allgather 시도 → 다른 rank 는 param 버린 상태라 데드락
+- `rank0_only=False`: rank 0 만 summon 에 진입, rank 1~7 은 그 앞 barrier 에 갇힘 (HF Trainer callback rank 경로 분기 원인 미확인)
+
+**최종 해결**: `WerCallback.on_step_end` 에서 FSDP 활성 시 즉시 return → Stage 2 in-loop eval 완전 비활성화. 체크포인트는 매 split 종료 후 `trainer.save_model` 수동 호출 (dataloader_trials.md §34) 로 저장, WER/val_loss 는 offline 계산 (별도 스크립트).
+
+> **Note** (§34, 2026-04-14): HF `save_strategy="steps"` 에 의존하면 **Stage 2 에서 save 가 한 번도 발화 안 함**. 이유는 `num_data_splits>1` 환경에서 split 당 optimizer step (~58) 이 `save_steps=60` 보다 작고, 각 `trainer.train()` 호출마다 `state.global_step` 이 0 으로 리셋되기 때문. main() split 루프 안에서 `_save_split(fe, split)` helper 로 `checkpoint_fe{N}_split{M}` 명명 수동 저장하여 우회.
+
+자세한 분석은 [train_pipeline_errors.md §6.20](train_pipeline_errors.md#620-stage-2-wercallback-fsdp-in-loop-eval-nccl-deadlock-완전-비활성화로-우회) 및 [arXiv §29](../arXiv/docs/stage2_fsdp_nccl_resolution_apr14.md#section-29) / [dataloader_trials.md §34](dataloader_trials.md#34-stage-2-매-split-종료-수동-save_model-2026-04-14) 참조.
 
 ---
 

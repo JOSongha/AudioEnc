@@ -13,6 +13,7 @@ CUTOFF_LEN=""
 PRECOMPUTED_DIR="/mnt/ddn/users/jos/precomputed"
 NUM_RANKS=8
 MIXED=0
+WORD_AUG=0
 PYTHON="/mnt/ddn/users/jos/miniforge3/envs/audio/bin/python"
 
 while [[ $# -gt 0 ]]; do
@@ -23,6 +24,7 @@ while [[ $# -gt 0 ]]; do
         --precomputed-dir) PRECOMPUTED_DIR="$2"; shift 2 ;;
         --num-ranks)      NUM_RANKS="$2";       shift 2 ;;
         --mixed)          MIXED=1;              shift ;;
+        --word-aug)       WORD_AUG=1;           shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -39,6 +41,7 @@ mkdir -p "$LOG_DIR"
 EXTRA_ARGS=""
 [[ -n "$CUTOFF_LEN" ]] && EXTRA_ARGS="$EXTRA_ARGS --cutoff-len $CUTOFF_LEN"
 [[ "$MIXED" -eq 1 ]] && EXTRA_ARGS="$EXTRA_ARGS --mixed"
+[[ "$WORD_AUG" -eq 1 ]] && EXTRA_ARGS="$EXTRA_ARGS --word-aug"
 
 echo "========================================"
 echo "  Offline packing"
@@ -47,6 +50,7 @@ echo "  Ranks    : $NUM_RANKS"
 echo "  Datasets : $DATASETS"
 echo "  Cutoff   : ${CUTOFF_LEN:-from config}"
 echo "  Mixed    : $([ "$MIXED" -eq 1 ] && echo '✓' || echo '✗')"
+echo "  Word-aug : $([ "$WORD_AUG" -eq 1 ] && echo '✓' || echo '✗')"
 echo "========================================"
 echo ""
 
@@ -83,6 +87,18 @@ done
 if [[ $FAILED -eq 0 ]]; then
     echo ""
     echo "Packing complete."
+    # mixed 모드는 자동 rebalance 로 rank 간 bin 개수 불일치 제거.
+    # (per-dataset packed 모드는 해당 없음 — 학습 시 rank 간 독립 로드)
+    if [[ "$MIXED" -eq 1 ]]; then
+        echo ""
+        echo "Running rebalance (mixed rank-balance)..."
+        "$PYTHON" "$SCRIPT_DIR/pack_arrow.py" \
+            --encoder "$ENCODER" \
+            --num-ranks "$NUM_RANKS" \
+            --precomputed-dir "$PRECOMPUTED_DIR" \
+            ${CUTOFF_LEN:+--cutoff-len $CUTOFF_LEN} \
+            --rebalance
+    fi
 else
     echo ""
     echo "Some ranks failed. Check logs."

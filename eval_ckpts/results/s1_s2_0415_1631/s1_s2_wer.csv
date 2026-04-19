@@ -1,0 +1,26 @@
+order,stage,name,wer_percent,elapsed_sec,mtime
+1,s1,s1_proj_split1.pt,126.30,287.1,04-15 17:01:10
+2,s1,s1_proj_split2.pt,118.13,280.7,04-15 17:25:36
+3,s1,s1_proj_split3.pt,120.93,289.2,04-15 17:49:03
+4,s1,s1_proj_split4.pt,124.81,267.2,04-15 18:12:11
+5,s1,s1_proj_split5.pt,128.25,242.4,04-15 18:35:19
+6,s1,s1_proj_split6.pt,126.81,248.5,04-15 18:58:24
+7,s1,s1_proj_split7.pt,123.09,239.6,04-15 19:21:42
+8,s1,s1_proj_split8.pt,123.45,233.7,04-15 19:38:02
+9,s1,s1_proj.pt,123.22,218.8,04-15 19:38:02
+10,s2,checkpoint_fe1_split2,127.30,256.2,04-15 20:05:37
+11,s2,checkpoint_fe1_split6,125.24,256.5,04-15 20:32:48
+12,s2,checkpoint_fe1_split4,125.14,260.3,04-15 21:00:08
+13,s2,checkpoint_fe1_split7,125.73,254.6,04-15 21:27:25
+14,s2,checkpoint_fe1_split8,127.43,260.2,04-15 21:46:41
+15,s2,checkpoint_fe1_split1,129.48,256.0,04-15 22:13:56
+16,s2,checkpoint_fe1_split3,130.10,254.3,04-15 22:41:22
+17,s2,checkpoint_fe1_split5,130.84,255.7,04-15 23:08:37
+18,s2,checkpoint_fe2_split5,133.62,263.4,04-15 23:35:48
+19,s2,checkpoint_fe2_split2,133.13,269.7,04-16 00:02:54
+20,s2,checkpoint_fe2_split6,134.90,274.7,04-16 00:29:57
+21,s2,checkpoint_fe2_split4,133.82,279.1,04-16 00:57:09
+22,s2,checkpoint_fe2_split1,135.18,283.3,04-16 01:24:14
+23,s2,checkpoint_fe2_split3,134.54,267.7,04-16 01:51:39
+24,s2,checkpoint_fe2_split8,134.23,273.6,04-16 02:10:53
+25,s2,checkpoint_fe2_split7,134.69,272.7,04-16 02:38:08

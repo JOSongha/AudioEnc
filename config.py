@@ -11,11 +11,19 @@ TRAIN_CONFIG = {
 
     "gradient_accumulation_steps": 4,
 
-    "stage1_lr": 2e-4,
-    "stage1_epochs": 1,
+    "stage1_lr": 2e-4,   # baseline
+    "stage1_epochs": 3,
+
+    # ── Projector collapse 대응 옵션 (§42+) ───────────────────────────────
+    # proj_norm_mode: "ln" (default, γ=1) | "ln_small_gamma" | "none"
+    # §43 "none": LayerNorm 완전 제거 (Identity). γ lock-in 수학적 원인 제거.
+    # projector 마지막 Conv init std=0.02 → 자연 output norm ≈ 0.9 (Qwen 0.67 와 근사).
+    "proj_norm_mode":        "none",
+    # stage1_diversity_reg: 0.0 = off
+    "stage1_diversity_reg":  0.0,
 
     "stage2_lr": 2e-5,
-    "stage2_epochs": 2,
+    "stage2_epochs": 3,
 
     "max_grad_norm": 1.0,
     "warmup_ratio": 0.1,
@@ -37,8 +45,10 @@ TRAIN_CONFIG = {
     "model_cache_dir": "/mnt/tmp/cache/hf",
     "wandb_mode": "online",
 
-    "eval_steps": 5000,
-    "save_steps": 5000,
+    # "eval_steps":35,
+    # "save_steps": 35,
+    "eval_steps":60,
+    "save_steps": 60,
 
     "lora_r": 16,
     "lora_alpha": 32,
@@ -82,7 +92,13 @@ TRAIN_CONFIG = {
     # num_data_splits: pre-packed 데이터를 N등분하여 epoch마다 1/N만 로드.
     #   1 = 전체 로드 (기본), 2 = 절반씩 2회, 4 = 1/4씩 4회.
     #   mls+gs 등 대용량 데이터셋에서 OOM 방지용.
-    "num_data_splits":     2,
+    # §42+ shards-per-rank=4 로 packing 한 경우 (packed_sentence_16384) 와 매칭.
+    "num_data_splits":     4,
+
+    # ── Batch (단일 source of truth) ─────────────────────────────────────
+    # stage1/stage2 모두 동일 값 사용. build_precomputed_pipeline 가 max_steps 계산 시
+    # 이 값을 읽어 _table.num_rows 와 함께 사용 (§19).
+    "per_device_train_batch_size": 14,
 }
 
 # ==========================================

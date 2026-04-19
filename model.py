@@ -3,6 +3,7 @@ import os
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from huggingface_hub import try_to_load_from_cache
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -94,7 +95,13 @@ class AudioQwen(nn.Module):
         layers.append(nn.Conv1d(llm_dim, llm_dim, kernel_size=1))
         self.projector = nn.Sequential(*layers)
 
-        self.proj_norm = nn.LayerNorm(llm_dim)
+        # §42+ Projector norm mode: collapse 대응 (config.py 참고)
+        _pn_mode = cfg.get("proj_norm_mode", "ln")
+        if _pn_mode == "none":
+            self.proj_norm = nn.Identity()
+        else:
+            self.proj_norm = nn.LayerNorm(llm_dim)
+        self._proj_norm_mode = _pn_mode
         self.ctc_head  = None  # init_ctc_head()로 활성화 (--debug c)
 
         # audio placeholder token id (Qwen2.5 <|image_pad|>=151655, packed forward에서 사용)
@@ -113,6 +120,17 @@ class AudioQwen(nn.Module):
         # 마지막 1×1 conv: small-scale init — 초기 audio embed 스케일 억제 (fp16 안정성)
         nn.init.normal_(self.projector[-1].weight, std=0.02)
         nn.init.zeros_(self.projector[-1].bias)
+
+        # §42+ (B) proj_norm_mode == "ln_small_gamma":
+        #   audio_embeds L2 norm ≈ γ·√D. Qwen token embed norm 과 매칭하려면
+        #   γ = qwen_embed_norm / √D. 이 init 이 collapse basin 에서 멀어지게 함.
+        if _pn_mode == "ln_small_gamma":
+            with torch.no_grad():
+                emb_w = self.llm.get_input_embeddings().weight
+                emb_norm = emb_w.norm(dim=-1).mean().item()
+                target_g = emb_norm / (llm_dim ** 0.5)
+                self.proj_norm.weight.fill_(target_g)
+                print(f"proj_norm γ init = {target_g:.4f}  (qwen emb norm={emb_norm:.4f})")
 
         # projector 총 stride 자동 계산 (mask downsampling에 사용)
         self._proj_stride = 1
@@ -163,6 +181,28 @@ class AudioQwen(nn.Module):
 
         return audio_embeds, proj_mask
 
+    def _get_audio_embeds_from_features(self, enc_feats, feat_lens):
+        """§43: Legacy forward 용 precomputed feature 경로. encoder skip, projector 만 실행.
+
+        enc_feats: (B, T_enc_max, out_dim)  float32, 짧은 샘플은 zero-pad
+        feat_lens: (B,) long                 — 각 샘플의 유효 T_enc
+
+        Returns: (audio_embeds, proj_mask)  — _get_audio_embeds 와 동일 shape semantics
+        """
+        proj_dtype = self.projector[0].weight.dtype
+        llm_dtype  = self.llm.get_input_embeddings().weight.dtype
+        feats = enc_feats.to(proj_dtype)                          # (B, T, C)
+        proj  = self.projector(feats.transpose(1, 2))             # (B, D, T_proj_max)
+        audio_embeds = self.proj_norm(proj.transpose(1, 2))       # (B, T_proj_max, D)
+        audio_embeds = audio_embeds.to(llm_dtype)
+
+        B, T_proj_max, _ = audio_embeds.shape
+        proj_mask = torch.zeros(B, T_proj_max, dtype=torch.bool, device=audio_embeds.device)
+        for i in range(B):
+            tp = int(math.ceil(int(feat_lens[i].item()) / self._proj_stride))
+            proj_mask[i, :min(tp, T_proj_max)] = True
+        return audio_embeds, proj_mask
+
     def _project_precomputed(self, enc_feats, enc_feat_lengths):
         """사전 계산된 인코더 피처를 projector에 통과시킨다. 인코더 호출 없음.
 
@@ -186,7 +226,18 @@ class AudioQwen(nn.Module):
             T_proj_valid = math.ceil(T_enc_valid / self._proj_stride)
             clips.append(embeds[i, :T_proj_valid, :])            # (T_proj_valid, llm_dim)
 
-        return torch.cat(clips, dim=0).unsqueeze(0)              # (1, total_T_proj, llm_dim)
+        # §42+ (C) diversity reg: clip-mean cos sim → collapse 페널티
+        div_reg = self._cfg.get("stage1_diversity_reg", 0.0)
+        diversity_loss = None
+        if self.training and div_reg > 0 and len(clips) >= 2:
+            clip_means = torch.stack([c.float().mean(dim=0) for c in clips])   # (N, llm_dim) fp32
+            clip_means = F.normalize(clip_means, dim=-1)
+            cos_sim = clip_means @ clip_means.T                                  # (N, N)
+            N = clip_means.shape[0]
+            mask = ~torch.eye(N, dtype=torch.bool, device=cos_sim.device)
+            diversity_loss = cos_sim[mask].abs().mean()                          # scalar fp32
+
+        return torch.cat(clips, dim=0).unsqueeze(0), diversity_loss              # (1, total_T_proj, llm_dim), scalar|None
 
     # ------------------------------------------------------------------
     # Stage 1 / Stage 2 설정
@@ -271,7 +322,13 @@ class AudioQwen(nn.Module):
             )
 
         # ── 기존(legacy) 경로 ─────────────────────────────────────────────
-        audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
+        # §43 precomputed legacy: encoder skip, projector 만 실행 (raw audio 대비 1.5-2x 빠름)
+        if precomputed_enc_feats is not None:
+            audio_embeds, audio_mask = self._get_audio_embeds_from_features(
+                precomputed_enc_feats, audio_lengths
+            )
+        else:
+            audio_embeds, audio_mask = self._get_audio_embeds(audio, audio_lengths)
 
         if transcript_input_ids is None:
             return audio_embeds, audio_mask
@@ -354,10 +411,11 @@ class AudioQwen(nn.Module):
         position_ids:         (1, sum_nonpad) 샘플별 리셋 [FA2] 또는 None [eager]
         """
         # 1. 오디오 인코딩 또는 사전 계산 피처 로드
+        diversity_loss = None   # §42+ (C) auxiliary reg
         if precomputed_enc_feats is not None:
             # precomputed 모드: 인코더 호출 생략, projector만 실행
             # audio_feat_lengths = T_enc (인코더 프레임 수)
-            audio_embeds = self._project_precomputed(
+            audio_embeds, diversity_loss = self._project_precomputed(
                 precomputed_enc_feats, audio_feat_lengths
             )                                                            # (N, T_proj, llm_dim)
         else:
@@ -391,10 +449,17 @@ class AudioQwen(nn.Module):
         inputs_embeds[audio_pad_mask] = audio_flat.to(inputs_embeds.dtype)
 
         # 4. LLM forward
-        return self.llm(
+        output = self.llm(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
             position_ids=position_ids,
             labels=labels,
             use_cache=False,
         )
+
+        # 5. §42+ (C) diversity reg 추가 (Stage 1 에서만 활성화됨)
+        if diversity_loss is not None and output.loss is not None:
+            lam = self._cfg.get("stage1_diversity_reg", 0.0)
+            output.loss = output.loss + lam * diversity_loss.to(output.loss.dtype)
+
+        return output

@@ -62,6 +62,11 @@ export LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_comp
 # CUDA 메모리 단편화 완화 (word-aug 등으로 N_audio가 많아질 때 OOM 방지)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# torch._inductor compile worker pool eager spawn 차단 (§16).
+# 우리는 torch.compile 사용 안 하지만 PyTorch가 import 시점에 32 worker × 8 rank
+# = 256 subprocess를 미리 띄워 ~192 GB CPU RAM 낭비. 0=lazy spawn.
+export TORCH_WARM_POOL=0
+
 # -----------------------------------------------------------------------------
 # 인자 파싱
 # -----------------------------------------------------------------------------
@@ -97,6 +102,7 @@ accelerate launch \
     train_pipeline_override.py \
     --encoder "$ENCODER" \
     --datasets ls100,ls360,ls500,mls,gs,vp \
+    --precomputed-dir /mnt/fr20tb/wbl_residency/jos/AudioEnc/log/tmp/precomputed \
     --liger \
     --fsdp \
     "${EXTRA_ARGS[@]}"

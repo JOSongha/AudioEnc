@@ -23,6 +23,12 @@
   - [6. 런타임 실행 오류 (실행 테스트 2026-04-08)](#6-런타임-실행-오류-실행-테스트-2026-04-08)
     - [6.11 word-aug: CUDA OOM (메모리 단편화)](#611-word-aug-cuda-oom-메모리-단편화)
     - [6.12 word-aug: 300× 속도 저하 (혼합 길이 패딩 폭발)](#612-word-aug-300-속도-저하-혼합-길이-패딩-폭발)
+    - [6.13 word-aug (precomputed): `_project_precomputed` pad-stack OOM](#613-word-aug-precomputed-_project_precomputed-pad-stack-oom)
+    - [6.14 run.sh에 `--precomputed-dir` 누락 → raw audio fallback](#614-runsh-에-precomputed-dir-누락--raw-audio-fallback)
+    - [6.15 `evaluate_val_loss` raw waveform을 precomputed collator에 전달](#615-evaluate_val_loss-raw-waveform을-precomputed-collator에-전달)
+    - [6.16 §6.4 `_save` override regression + save_strategy/save_safetensors 우회](#616-64-_save-override-regression--save_strategysave_safetensors-우회)
+    - [6.17 NCCL timeout: rank 간 bin 개수 불균형 (split 8 deadlock)](#617-nccl-timeout-rank-간-bin-개수-불균형-split-8-deadlock)
+    - [6.18 wandb 내장 WandbCallback split 경계 finish → 로그 단절](#618-wandb-내장-wandbcallback-split-경계-finish--로그-단절)
 
 
 ## 0. 패키지 버전 
@@ -668,3 +674,334 @@ Stage 1 DDP에서도 sequential을 쓸 경우 약간의 루프 오버헤드가 �
 word-aug 없이도 클립 10~20개 × ~10ms/클립 = 100~200ms로 전체 step의 일부에 불과.
 
 **상태**: 미수정 (베이스라인 확인 후 적용 예정).
+
+---
+
+### 6.13 word-aug (precomputed): `_project_precomputed` pad-stack OOM
+
+**발생 시점**: §20 offline word-aug pre-pack 로 생성한 mixed shard 로 학습 중 Step 38 (epoch 0.35) 에서 rank2 OOM.
+
+```
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 17.47 GiB.
+GPU 2 has a total capacity of 79.33 GiB of which 3.74 GiB is free.
+  File "train_pipeline_override.py", line 484, in forward
+    audio_embeds = self._project_precomputed(...)
+  File "train_pipeline_override.py", line 390, in _project_precomputed
+    embeds = self.proj_norm(proj.transpose(1, 2))   # (N, T_proj_max, llm_dim)
+```
+
+steady-state 50~52 GB / GPU 로 돌던 rank 가 특정 bin 에서 LN 한방 할당 17 GB 요청 → OOM.
+
+**원인**: §6.12 와 같은 구조적 문제가 **precomputed 경로에도** 존재. raw audio 경로의 `_get_audio_embeds_batched` 대응으로, precomputed 경로의 `_project_precomputed` 가 bin 안의 모든 clip 을 `(N, T_enc_max, out_dim)` 로 zero-pad 해서 한 번에 projector+LN 에 먹임.
+
+word-aug 이전에는 bin 안 clip 이 whole utterance 만 있어서 길이가 균질 → pad 낭비 미미. word-aug 이후에는:
+- bin 당 clip 수 `N` 이 100+ 로 증가 (word clip 이 짧아 dense packing)
+- whole utterance 1개만 섞여도 `T_enc_max` 가 그 clip 기준으로 잡힘
+- 짧은 word clip 수십~수백 개가 동일 길이로 pad → `(N, T_enc_max, C)` 텐서 폭발
+- `(N, T_proj_max, llm_dim)` LayerNorm 입력 = 수십 GB
+
+**수정** ([train_pipeline_override.py:379-403](../train_pipeline_override.py#L379-L403)): §6.12 해법과 동일하게 clip 단위 loop 전환 — pad-stack 자체를 제거.
+
+```python
+def _project_precomputed(self, enc_feats, enc_feat_lengths):
+    proj_dtype = self.projector[0].weight.dtype
+    llm_dtype  = self.llm.get_input_embeddings().weight.dtype
+    clips = []
+    for i in range(enc_feats.shape[0]):
+        T_enc_valid = int(enc_feat_lengths[i].item())
+        if T_enc_valid == 0:
+            continue
+        feats_i = enc_feats[i:i+1, :T_enc_valid, :].to(proj_dtype)
+        proj_i  = self.projector(feats_i.transpose(1, 2))
+        emb_i   = self.proj_norm(proj_i.transpose(1, 2)).squeeze(0)
+        clips.append(emb_i.to(llm_dtype))
+    return torch.cat(clips, dim=0).unsqueeze(0)
+```
+
+핵심:
+- clip 하나씩 **유효 길이로만** projector+LN 통과 → peak 메모리 = 가장 긴 clip 1개 기준
+- 출력 shape `(1, total_T_proj, llm_dim)` 불변 → LLM forward 쪽 변경 0
+- packed bin 구조/schema 불변 → pre-packed Arrow 재생성 불필요
+
+**속도 영향 (예상)**: projector 는 Conv1d(k=5)×3 + LN 으로 연산량이 LLM forward 의 <1%. Python loop + kernel launch overhead 도 bin 당 ~5 ms 수준. 34 s/step 대비 <1% slowdown.
+
+**차이 — §6.11 / §6.12 / §6.13**:
+- §6.11: backward 단편화 회피 (env var)
+- §6.12: raw audio `_get_audio_embeds_batched` 의 N_audio 폭증 시 encoder forward 비용 (sequential 전환 제안만, 미적용)
+- §6.13: **precomputed** `_project_precomputed` 의 mixed-length pad-stack → 본 수정으로 적용
+
+**상태**: 수정 완료. 재시작 후 검증 중.
+
+### 6.14 run.sh 에 `--precomputed-dir` 누락 → raw audio fallback
+
+**증상**: §6.13 OOM 수정 후 재시작 시:
+```
+ValueError: The train_dataset does not implement __len__, max_steps has to be specified.
+```
+
+**원인**: `run.sh` 의 `accelerate launch` 커맨드가 `--precomputed-dir` 을 누락. `args.precomputed_dir=None` → main() 이 raw audio 경로로 분기 → `build_multi_dataset_streaming_pipeline` 이 `IterableDataset` 반환 → `__len__` 없음 → §19 의 `num_train_epochs` 자동 step 계산 실패.
+
+**수정**: [run.sh](../run.sh) 의 accelerate launch 블록에 하드코딩:
+```bash
+accelerate launch \
+    --num_processes "$GPUS" \
+    train_pipeline_override.py \
+    --encoder "$ENCODER" \
+    --datasets ls100,ls360,ls500,mls,gs,vp \
+    --precomputed-dir /mnt/ddn/users/jos/precomputed \
+    --liger --fsdp \
+    "${EXTRA_ARGS[@]}"
+```
+
+우리 작업 흐름에선 precomputed 모드 외엔 거의 안 쓰므로 기본 경로로 하드코딩. raw audio 모드 필요 시 EXTRA_ARGS 의 `--precomputed-dir ""` 로 오버라이드 가능 (argparse last-wins).
+
+---
+
+### 6.15 `evaluate_val_loss` raw waveform을 precomputed collator에 전달
+
+**발생 시점**: §6.13 fix 후 재시작, split 1/8 의 step 100 에서 `WerCallback.on_step_end` 첫 trigger.
+
+```
+ValueError: cannot reshape array of size 24960 into shape (48, 128)
+  File "train_pipeline_override.py", line 1049, in __call__
+    arr = np.asarray(flat_feat, dtype=np.float32).reshape(t_enc, out_dim)
+  File "train_pipeline_override.py", line 1745, in evaluate_val_loss
+    batch = collator(padded)
+```
+
+**원인**: [`evaluate_val_loss`](../train_pipeline_override.py#L1684) 은 `StaticEvalDataset` 의 `(waveform_1d, text)` 쌍을 받아 sample 을 구성할 때
+```python
+samples.append({
+    ...
+    "audio_features": [waveform],     # raw 1-D float tensor
+    "audio_lengths":  [t_audio],      # waveform.shape[0] // hop
+})
+```
+로 raw waveform 을 그대로 `audio_features` 에 넣는다.
+
+그러나 precomputed 모드에서 `collator = OmniCollator(enc_out_dim=model.encoder.out_dim)` 이라 [`__call__`](../train_pipeline_override.py#L1041) 이 `self.enc_out_dim > 0` 경로로 진입 → `flat_feat` 을 `(t_enc, out_dim)` 로 reshape 시도 → raw waveform 텐서 사이즈와 불일치.
+
+**왜 지금까지 숨어있었나**: 이전 run 들은 `eval_steps=500`. split 당 max 110 step 이라 `state.global_step` 이 500 에 도달하기 전에 run_stage1 이 끝나 다음 split 로 넘어감. 즉 callback 의 `on_step_end` 에서 `state.global_step % eval_every != 0` 조건이 항상 True → eval 경로 자체가 트리거된 적 없음. `eval_steps` 를 100 으로 내리면서 (§20) 첫 노출.
+
+**수정** ([train_pipeline_override.py:1790](../train_pipeline_override.py#L1790)):
+```python
+# evaluate_val_loss 는 raw waveform 기반 — precomputed collator 와 호환 안 됨.
+# precomputed 모드에선 건너뛰고 WER 만 사용.
+if self.cfg.get("precomputed_dir"):
+    val_loss = float("nan")
+else:
+    val_loss = evaluate_val_loss(...)
+```
+
+`evaluate_wer` 는 `_greedy_batch` 를 통해 내부에서 encoder 를 직접 돌리므로 collator schema 불일치 문제 없음. val_loss 는 로그용 보조 지표였으므로 NaN 으로 두어도 학습 흐름에 영향 없음.
+
+**근본 해결 (추후)**: `evaluate_val_loss` 내부에서 raw waveform 을 encoder 로 돌려 pre-encoded feature 로 변환한 뒤 collator 에 전달하는 방식. 지금은 precomputed 모드 우선이라 건너뜀.
+
+**갱신 (2026-04-13)**: §24 (`docs/dataloader_trials.md`) 에서 `evaluate_val_loss_precomputed` 신규 함수 추가. encoder 를 eval 시점에 직접 호출하여 precomputed 모드에서도 실제 val_loss 계산 가능. `nan` fallback 제거.
+
+---
+
+### 6.16 §6.4 `_save` override regression + save_strategy/save_safetensors 우회
+
+**배경**: §6.4 에서 `StreamingShardedTrainer._save` 를 override 해 `data_ptr` 중복 탐지 + clone 으로 tied embedding safetensors 저장 크래시를 우회했었음. 그러나 2026-04-13 시점 `train_pipeline_override.py` 에서는 이 override 가 **사라져있음** — 현재 `StreamingShardedTrainer` 는 `get_train_dataloader` 만 override. regression 또는 리팩터 과정에서 누락됨.
+
+**재현**: Stage 1 bs=12 / save_steps=100 run, step 100 에서 즉시 발생.
+```
+RuntimeError: Some tensors share memory, this will lead to duplicate memory on disk:
+  [{'llm.lm_head.weight', 'llm.model.embed_tokens.weight'}]
+  File "trainer.py", line 3823, in _save
+    safetensors.torch.save_file(...)
+  File "trainer.py", line 2088, in _maybe_log_save_evaluate
+    self._save_checkpoint(model, trial)
+```
+
+**원인**: Qwen3.5 의 tied embedding 이 `lm_head.weight` 와 `embed_tokens.weight` 를 같은 storage 로 공유. safetensors 가 shared storage 를 거부.
+
+**수정 (근본 fix 대신 우회)**:
+
+- **Stage 1** ([train_pipeline_override.py:1956](../train_pipeline_override.py#L1956)): `TrainingArguments(save_strategy="no")`. Stage 1 은 projector 만 학습이라 full-model snapshot 이 불필요. WerCallback 이 eval 시점에 projector state 만 torch.save 로 저장.
+
+- **Stage 2** ([train_pipeline_override.py:2152-2154](../train_pipeline_override.py#L2152)): `TrainingArguments(save_safetensors=False)` 추가. Stage 2 는 LoRA adapter + projector 를 저장해야 함. safetensors 대신 torch pickle (.bin) 로 저장하면 shared storage 문제 없음. `.bin` 은 pickle 기반이라 object graph 의 shared reference 를 그대로 보존 가능.
+
+**§6.4 복원은 하지 않은 이유**: 현재 `save_strategy="no"` / `save_safetensors=False` 우회가 목적 (WER 기반 best projector 저장 + Stage 2 full checkpoint) 에 충분. `_save` override 복원은 더 깔끔하지만 `TrainingArguments.save_safetensors` 인자가 transformers 5.5+ 에서 제거된 건지 확인 필요 (§6.5 참조). 현재 환경에서 `save_safetensors=False` 가 동작함을 확인했으므로 그쪽으로 고정.
+
+**관련 문서**: [dataloader_trials.md §22](dataloader_trials.md#22-hf-trainer-save_strategy--no-stage-1-save_safetensorsfalse-stage-2)
+
+---
+
+### 6.17 NCCL timeout: rank 간 bin 개수 불균형 (split 8 deadlock)
+
+**발생 시점**: Stage 1 bs=12 / num_data_splits=8 run, split 8 (마지막 split) step 29 → 30 transition 에서 collective deadlock.
+
+**로그**:
+```
+[rank 7]:[E413 16:51:14] Watchdog caught collective operation timeout:
+  WorkNCCL(SeqNum=3952, OpType=BROADCAST, NumelIn=64, NumelOut=64,
+           Timeout(ms)=600000) ran for 600066 ms before timing out.
+[rank 4/2/5]:[E413 16:51:42] Watchdog caught collective operation timeout:
+  WorkNCCL(SeqNum=3953, OpType=ALLREDUCE, NumelIn=4198400, NumelOut=4198400,
+           Timeout(ms)=600000) ran for 600002~600079 ms before timing out.
+```
+
+**증거** — split 8 로드 시 rank 별 bin 수:
+```
+[rank 6] 1374 bins   ← 최소
+[rank 7] 1395 bins
+[rank 5] 1697 bins
+[rank 3] 1661 bins
+[rank 1] 1796 bins
+[rank 2] 1802 bins
+[rank 0] 1822 bins
+[rank 4] 1851 bins   ← 최대 (477 bin 차)
+```
+
+**원인 체인**:
+1. `pack_arrow.py pack_rank_mixed` 는 **byte 기준** shard rotation 사용 (`SHARD_MAX_BYTES = 20 GB`). rank 별 bin 평균 size 가 조금씩 달라서 20 GB 를 채우는 데 필요한 bin 수 편차가 생김.
+2. 처음 7 개 shard 는 정확히 20 GB 근처에서 rotate → 비교적 균일한 bin 수. 그러나 **마지막 shard 는 residual** — rank 마다 서로 다른 크기.
+3. 학습 시 `num_data_splits=8` + `shard-level split` 설정이므로 각 split 은 각 rank 의 shard idx 하나씩 로드. split 8 이 하필 최악의 shard (마지막 residual) 를 뽑음.
+4. `StreamingShardedTrainer` 가 DistributedSampler 우회 설계라 **각 rank 의 DataLoader 는 자기 `len(dataset)` 기준으로 독립적으로 step 수 결정**.
+5. rank 6 (1374 bin) 은 `ceil(1374/12) = 115` iteration 로 종료. rank 4 (1851 bin) 은 155 iteration 목표.
+6. rank 6/7 이 먼저 train loop 빠져나가 collective 참여 안 함 → rank 4 가 다음 allreduce 에서 영원히 기다림 → 600 초 watchdog timeout → crash.
+
+**수정 (2단계 방어)**:
+
+1. **Runtime safety** ([train_pipeline_override.py:1408-1429](../train_pipeline_override.py#L1408)): `build_precomputed_pipeline` mixed 분기에서 shard 를 로드한 직후 전 rank 의 bin 수 최소값을 `torch.distributed.all_reduce(MIN)` 으로 구해서 truncate.
+   ```python
+   local_n = torch.tensor([_table.num_rows], device=accelerator.device)
+   dist.all_reduce(local_n, op=dist.ReduceOp.MIN)
+   min_n = int(local_n.item())
+   if _table.num_rows > min_n:
+       _table = _table.slice(0, min_n)
+   ```
+   → 모든 rank 가 동일한 `min_n` 으로 학습, collective 불일치 원천 차단.
+
+2. **Offline rebalance** ([precompute/pack_arrow.py](../precompute/pack_arrow.py)): 새 함수 `rebalance_mixed_shards(base_dir, cutoff_len, num_ranks)` — 기존 packed shard 에 소급 rebalance. 모든 rank 의 총 bin 수 스캔 → 최소값 산출 → 각 rank 의 shard 뒤쪽부터 bin 삭제 (전체 shard 삭제 or 마지막 shard 자르기).
+   - CLI: `python precompute/pack_arrow.py --encoder X --rebalance` (rebalance 모드에선 `--rank` optional)
+   - UX: `run_pack.sh --mixed` 가 packing 완료 직후 자동 rebalance 호출 → 사용자 개입 불필요
+
+**관련 문서**: [dataloader_trials.md §26](dataloader_trials.md#26-nccl-timeout-과-rank-간-bin-개수-불균형)
+
+---
+
+### 6.18 wandb 내장 WandbCallback split 경계 finish → 로그 단절
+
+**증상**: num_data_splits=8 학습에서 split 1 은 `Qwen3.5-2b-ASR-fb_dacvae` project 의 올바른 run 에 기록. split 2 부터 **자동으로 `huggingface` 기본 project 에 "pleasant-dew-1" 같은 랜덤 이름** 으로 떨어짐.
+
+**원인**: HF Trainer 내장 `WandbCallback.on_train_end` 가 split 1 끝에서 `wandb.finish()` 호출 → `wandb.run = None`. split 2 의 새 Trainer 가 report_to="wandb" 로 재진입 → WandbCallback 이 `wandb.init()` 새로 호출. 이때 `WANDB_PROJECT` 환경변수가 없어서 HF Trainer 가 기본값 `"huggingface"` 를 사용 + 랜덤 run name.
+
+더 심각한 문제: `WANDB_PROJECT` 를 고정해도 **wandb 내부 step counter 는 monotonic 증가만 허용**. split 2 가 step 0 로 재시작하면 wandb 가 이전 run 의 step 100+ 보다 낮은 값을 거부 → 차트에 split 2+ 가 안 그려짐.
+
+**수정** ([train_pipeline_override.py](../train_pipeline_override.py)):
+
+1. **새 callback `CumulativeWandbCallback`** — `on_log` 후크에서 `wandb.log(payload)` 호출 (step 인자 **생략** → wandb 내부 auto-increment 로 단조 증가 보장)
+   ```python
+   class CumulativeWandbCallback(TrainerCallback):
+       def on_log(self, args, state, control, logs=None, **kwargs):
+           if logs is None or wandb.run is None:
+               return
+           payload = {("train/" + k if not k.startswith(("train/","eval/","val/")) else k): v
+                      for k, v in logs.items() if isinstance(v, (int, float))}
+           if payload:
+               wandb.log(payload)
+   ```
+2. **Stage 1 / Stage 2 TrainingArguments `report_to="none"`** — HF Trainer 내장 WandbCallback 완전 disable
+3. **`run_stage1` / `run_stage2` 끝의 `wandb.finish()` 제거** — wandb run 이 split 경계를 넘어 살아있어야 함
+4. **main() 끝에서만 `wandb.finish()` 호출** — 모든 split 루프 완료 후 단일 종료
+5. **Env 안전망** — main() 시작 시 `os.environ["WANDB_PROJECT"] = cfg["project_name"]`, `WANDB_RUN_ID`, `WANDB_RESUME="allow"` 셋팅
+
+**검증**: split 1 이 `fb_dacvae_2b_S1_0413_0739` 로 시작 → split 2 에서 `Resuming run fb_dacvae_2b_S1_0413_0739` 로그 확인. 하나의 wandb run 에 연속 기록.
+
+**관련 문서**: [dataloader_trials.md §23](dataloader_trials.md#23-cumulative-wandb-logging-num_data_splits1-에서-split-경계-wandb-run-연속성)
+
+---
+
+### 6.19 Stage 2 `_greedy_batch` dtype mismatch (fp32 audio_embeds → bf16 Qwen3.5 linear)
+
+**증상**: Stage 2 첫 `eval_steps=35` 트리거 → `WerCallback.on_step_end` → `evaluate_wer` → `_greedy_batch` → `model.llm.generate` 호출 중 rank 0 crash.
+
+```
+RuntimeError: expected mat1 and mat2 to have the same dtype, but got: float != c10::BFloat16
+  at transformers/models/qwen3_5/modeling_qwen3_5.py:442 — self.in_proj_qkv(hidden_states)
+```
+
+`linear_attn.in_proj_qkv.weight` 는 bf16 이지만 입력 `hidden_states` 가 fp32 → F.linear 에서 dtype 불일치.
+
+**원인**: `_greedy_batch` 는 `_get_audio_embeds` 가 반환한 `audio_embeds` 를 그대로 `torch.cat([audio_embeds, corr_embeds])` → `model.llm.generate(inputs_embeds=...)` 로 넘김. `_get_audio_embeds_sequential` 내부에서 `proj_dtype = self.projector[0].weight.dtype` 로 출력 dtype 을 결정하는데, **FSDP `FlatParameter` 하에서 이 attribute 가 fp32 로 보이는 경로** 가 존재. 이유는 명확히 추적 안 됨 — FSDP 내부 master-weight 처리 / LoRA wrapping / `use_orig_params=True` 상호작용 추정.
+
+결과적으로 audio_embeds 가 fp32 로 빠져나와 LLM forward 전체가 fp32 activation 으로 진입, bf16 weight 에 F.linear → mismatch.
+
+**수정** ([train_pipeline_override.py:1662-1678](../train_pipeline_override.py#L1662-L1678)):
+
+```python
+audio_embeds = model._get_audio_embeds(audio_pad, audio_lengths)  # (B, T_proj, D)
+
+tokenizer = model.tokenizer
+embed     = model.llm.get_input_embeddings()
+
+# Qwen3.5 linear_attn.in_proj_qkv 가 bf16 weight → 입력 activation 도 bf16 이어야.
+# FSDP FlatParameter 하에서 proj_dtype 이 fp32 로 보이는 케이스 방어 (§6.19).
+audio_embeds = audio_embeds.to(torch.bfloat16)
+corr_embeds  = embed(corr_tensor).expand(B, -1, -1).to(torch.bfloat16)
+inputs_embeds = torch.cat([audio_embeds, corr_embeds], dim=1).to(torch.bfloat16)
+```
+
+명시적 bf16 cast 3 곳 추가. `embed.weight.dtype` 읽는 건 같은 FSDP 경로 이슈로 안전하지 않아 `torch.bfloat16` 리터럴 사용.
+
+**교훈**:
+- FSDP 내부에서 `module.weight.dtype` 조회는 **신뢰하지 말 것**. LoRA wrapping + `use_orig_params` + FSDP 조합에서 기대와 다른 dtype 반환 가능
+- Stage 2 eval 같은 "rank 0 부분 forward" 경로는 **항상 LLM 입력 dtype 을 명시 cast** 해서 방어
+
+**관련 문서**: [arXiv §28](../arXiv/docs/stage2_fsdp_nccl_resolution_apr14.md#section-28) — Stage 2 `_greedy_batch` dtype mismatch
+
+---
+
+### 6.20 Stage 2 `WerCallback` FSDP in-loop eval NCCL deadlock (완전 비활성화로 우회)
+
+**증상**: §6.19 수정 후 재시작 → 다시 `eval_steps=35` trigger 에서 **NCCL timeout 600s** 두 번 연속 발생.
+
+**첫 번째 timeout (v5)** — `FSDP.summon_full_params(model, writeback=False, rank0_only=True)` 사용:
+```
+[rank0]: stuck at _ALLGATHER_BASE (SeqNum=7300)
+[rank1-7]: stuck at ALLREDUCE(1,1) (SeqNum=7300)
+```
+`rank0_only=True` 는 collective gather 후 non-zero rank 는 param 을 즉시 discard. rank 0 가 context 안에서 `generate()` 를 호출 → FSDP hook 이 추가 allgather 시도 → 다른 rank 는 이미 param 버린 상태라 재진입 불가 → **데드락**.
+
+**두 번째 timeout (v6)** — `rank0_only=False, recurse=True` 로 변경:
+```
+[rank0]: stuck at _ALLGATHER_BASE (summon_full_params 자체의 gather)
+[rank1-7]: stuck at ALLREDUCE(1,1) (barrier 급)
+```
+이번엔 rank 0 만 `summon_full_params` 에 진입. 나머지 7 rank 는 그 앞의 tiny ALLREDUCE (아마 `wait_for_everyone()` 의 barrier) 에 갇힘. 즉 **HF Trainer 가 callback 을 rank 별로 다르게 부르거나, `model` kwarg 경로가 분기**. 정확한 원인 추적 실패.
+
+배경: FSDP + LoRA + 커스텀 in-callback eval 조합이 HF Trainer 내부 수명주기와 충돌. `rank0_only` 스위치로는 해결 불가.
+
+**최종 수정** ([train_pipeline_override.py:1905-1915](../train_pipeline_override.py#L1905-L1915)):
+
+`WerCallback.on_step_end` 진입 시 FSDP 활성 여부 체크 → 즉시 return. Stage 2 in-loop WER/val_loss eval **완전 비활성화**.
+
+```python
+def on_step_end(self, args, state, control, model=None, **kwargs):
+    if state.global_step > 0 and state.global_step % self.eval_every != 0:
+        return
+
+    # Stage 2 FSDP + LoRA + 커스텀 in-loop eval 조합에서 NCCL deadlock 반복 (§6.20).
+    # rank0 만 summon_full_params 에 진입하고 나머지는 barrier 에 남는 경로 문제.
+    # WER/val_loss 는 HF Trainer 의 save_steps 체크포인트에서 offline 계산.
+    if self.cfg.get("use_fsdp", False):
+        return
+    ...
+```
+
+**대체 경로**:
+- HF Trainer `save_strategy="steps" save_steps=35` 로 체크포인트는 정상 저장 (tied embedding 은 `StreamingShardedTrainer._save` override 가 처리 — §6.4, §6.16)
+- WER/val_loss 는 학습 종료 후 저장된 체크포인트에서 **offline 계산** 으로 전환 (별도 스크립트 TBD)
+
+**영향**:
+- Stage 2 training loop 복구, 검증 지표는 후처리로 이동
+- Stage 1 (DDP) 은 영향 없음 — 기존 WerCallback 경로 그대로 사용
+
+**교훈**:
+- FSDP in-loop eval 은 `summon_full_params` + rank-0-only 패턴으로 구현 금지. 전체 rank 참여 forward 또는 완전 분리된 eval worker 가 필요
+- "FSDP + PEFT + 커스텀 TrainerCallback" 조합은 HF Trainer 내부 가정 (DDP 기반 rank-0 특권 작업) 과 충돌
+
+**관련 문서**: [arXiv §29](../arXiv/docs/stage2_fsdp_nccl_resolution_apr14.md#section-29) — Stage 2 FSDP in-loop eval NCCL deadlock → WerCallback 완전 비활성화
