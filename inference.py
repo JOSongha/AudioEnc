@@ -2,6 +2,13 @@
 inference.py — ASR inference & WER evaluation (DAC-VAE encoder + AudioQwen)
 
 Usage:
+    # audiollm-trainer에서 stage 1 projector.pt로 평가
+      python inference.py --qwen3ae --eval \
+        --dacvae_path /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae \
+        --split test-clean --batch_size 128 --no_repeat_ngram 3 --no_think \
+        --out_dir ./results/opt12_combined
+
+
     # Single file transcription
     python inference.py --audio path/to/audio.wav
 
@@ -9,7 +16,17 @@ Usage:
     python inference.py --eval --split test-clean
 
     # Use a specific checkpoint
-    python inference.py --eval --ckpt /mnt/ddn/users/sehyun/ckpts/best_dac_vae_ckpt
+    LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+        python inference.py --eval --split test-clean --max_samples 10 \
+        --ckpt /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/outputs/fb_dacvae_v2/stage1/final/projector.pt \
+        --out_dir ./results/stage1/final
+
+    LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6:$CONDA_PREFIX/lib/glibc_compat.so" OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+        python inference.py --eval --split test-clean --max_samples 10 \
+        --ckpt /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/outputs/fb_dacvae_v2/stage2/step_26100 \
+        --out_dir ./results/stage2/step_26100
+    # (Requires full_merged_model.pt in the step dir — run merge_fsdp_shards.py first)
+
 
     # Multi-GPU evaluation (4 GPUs)
     python inference.py --eval --n_gpu 4
@@ -19,19 +36,23 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import tempfile
+import math
 
 import torch
+import torch.nn as nn
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch.multiprocessing as mp
 import torchaudio
 import torchaudio.functional as AF
 from tqdm import tqdm
+from torch.utils.data import DataLoader, Subset
 
 from config import get_config
 from dataset import LibriSpeechDataset
 from encoders.fb_dacvae import FbDACVAEEncoder
-from model import AudioQwen
 
 ENCODER_NAME = "fb_dacvae"
 DEFAULT_CKPT = "/mnt/tmp/cache/hf/s1_proj_fb_dacvae.pt"
@@ -42,18 +63,254 @@ LLM_MAP = {
     "7b":   "Qwen/Qwen2.5-7B-Instruct",
 }
 
+QWEN3AE_MODEL_DIR = "/mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3AE-ASR-Stage1/checkpoint-29000"
+DACVAE_PKG_PATH = "/mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae"  # local dacvae package (needed by Qwen3AE audio_encoder.py)
+DAC_HOP_LENGTH = 1920    # product of dac_encoder_rates [2, 8, 10, 12]
+DAC_SAMPLE_RATE = 48000  # Qwen3AE DAC-VAE requires 48 kHz
+
 
 # ==========================================
 # 1. Model loading
 # ==========================================
 
+def load_qwen3ae_model(device: str = "cuda", model_dir: str = None, dacvae_path: str = None):
+    if dacvae_path:
+        sys.path.insert(0, dacvae_path)
+    model_dir = model_dir or QWEN3AE_MODEL_DIR
+    model = AutoModelForCausalLM.from_pretrained(
+        model_dir,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        attn_implementation="eager",
+    ).to(device).eval()
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+    print("Qwen3AE model loaded.\n")
+    return model, tokenizer
+
+
+@torch.inference_mode()
+def transcribe_batch_qwen3ae(
+    waveforms: torch.Tensor,
+    lengths: torch.Tensor,
+    model,
+    tokenizer,
+    device: str = "cuda",
+    max_new_tokens: int = 256,
+    beam_size: int = 1,
+    no_repeat_ngram: int = 0,
+    no_think: bool = False,
+    sample_temp: float = 0.0,
+) -> list[str]:
+    """Batch transcription using Qwen3AEForCausalLM (ChatML + EOS training).
+
+    Matches the training format in llamafactory/data/omni_dataset.py:
+      <|im_start|>system\nYou are a helpful assistant.<|im_end|>
+      <|im_start|>user\n<|audio_start|>[audio_pad]*t_audio<|audio_end|>Transcribe the audio to text.<|im_end|>
+      <|im_start|>assistant\n<text><eos>
+    """
+    B = waveforms.shape[0]
+
+    # 1) Resample 16 kHz -> 48 kHz per training config
+    waveforms_48k, lengths_48k = [], []
+    for i in range(B):
+        w = waveforms[i, :lengths[i].item()]
+        w_48k = AF.resample(w, orig_freq=16000, new_freq=DAC_SAMPLE_RATE)
+        waveforms_48k.append(w_48k)
+        lengths_48k.append(w_48k.shape[0])
+
+    audio_lengths = torch.tensor([n // DAC_HOP_LENGTH for n in lengths_48k], dtype=torch.long)
+
+    # 2) Pack raw 48 kHz audio as (B, 1, max_samples)
+    max_samples = max(lengths_48k)
+    audio_features = torch.zeros(B, 1, max_samples, dtype=torch.bfloat16, device=device)
+    for i, w in enumerate(waveforms_48k):
+        audio_features[i, 0, :w.shape[0]] = w.to(torch.bfloat16)
+
+    # 3) Build ChatML-wrapped prompt — same wrapper tokens as training
+    audio_pad_id = tokenizer.convert_tokens_to_ids("<|audio_pad|>")
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+
+    sys_prompt = "You are a helpful assistant." + (" /no_think" if no_think else "")
+    chatml_prefix_ids = tokenizer.encode(
+        f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n<|audio_start|>",
+        add_special_tokens=False,
+    )
+    chatml_mid_ids = tokenizer.encode(
+        "<|audio_end|>Transcribe the audio to text.<|im_end|>\n<|im_start|>assistant\n",
+        add_special_tokens=False,
+    )
+
+    seq_lens = [len(chatml_prefix_ids) + al.item() + len(chatml_mid_ids) for al in audio_lengths]
+    max_seq_len = max(seq_lens)
+
+    input_ids = torch.full((B, max_seq_len), pad_id, dtype=torch.long, device=device)
+    attention_mask = torch.zeros((B, max_seq_len), dtype=torch.long, device=device)
+    for i in range(B):
+        n_frames = audio_lengths[i].item()
+        left = max_seq_len - seq_lens[i]
+        cursor = left
+        input_ids[i, cursor:cursor + len(chatml_prefix_ids)] = torch.tensor(chatml_prefix_ids, device=device)
+        cursor += len(chatml_prefix_ids)
+        input_ids[i, cursor:cursor + n_frames] = audio_pad_id
+        cursor += n_frames
+        input_ids[i, cursor:cursor + len(chatml_mid_ids)] = torch.tensor(chatml_mid_ids, device=device)
+        attention_mask[i, left:] = 1
+
+    # 4) Generate — model now emits EOS naturally (trained with EOS labels)
+    gen_kwargs = dict(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        audio_features=audio_features,
+        audio_lengths=audio_lengths.to(device),
+        max_new_tokens=max_new_tokens,
+        num_beams=beam_size,
+        pad_token_id=pad_id,
+        eos_token_id=tokenizer.eos_token_id,
+        use_cache=True,
+    )
+    if no_repeat_ngram > 0:
+        gen_kwargs["no_repeat_ngram_size"] = no_repeat_ngram
+    if sample_temp > 0:
+        gen_kwargs["do_sample"] = True
+        gen_kwargs["temperature"] = sample_temp
+    else:
+        gen_kwargs["do_sample"] = False
+    output_ids = model.generate(**gen_kwargs)
+
+    # 5) Strip prompt tokens and decode
+    new_tokens = output_ids[:, max_seq_len:]
+    texts = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+    return [t.strip().lower() for t in texts]
+
+
+def evaluate_qwen3ae(
+    model,
+    tokenizer,
+    split: str = "test-clean",
+    device: str = "cuda",
+    max_samples: int = None,
+    max_new_tokens: int = 256,
+    beam_size: int = 1,
+    batch_size: int = 4,
+    num_workers: int = 4,
+    out_dir: str = None,
+    mls_sample_ratio: float = 0.2,
+    no_repeat_ngram: int = 0,
+    no_think: bool = False,
+    sample_temp: float = 0.0,
+) -> float:
+    cfg = get_config(ENCODER_NAME)
+    max_len = cfg["max_audio_len"]
+
+    dataset = _load_dataset(split, cfg["data_path"], max_len, mls_sample_ratio)
+    indices = list(range(min(max_samples, len(dataset)))) if max_samples else list(range(len(dataset)))
+    subset = Subset(dataset, indices)
+
+    dataloader = DataLoader(subset, batch_size=batch_size, collate_fn=collate_fn,
+                            num_workers=num_workers, pin_memory=True)
+
+    hypotheses, references = [], []
+    processed_count = 0
+    for waveforms, lengths, transcripts in tqdm(dataloader, desc=f"Evaluating {split}"):
+        hyps = transcribe_batch_qwen3ae(
+            waveforms, lengths, model, tokenizer, device=device,
+            max_new_tokens=max_new_tokens, beam_size=beam_size,
+            no_repeat_ngram=no_repeat_ngram, no_think=no_think, sample_temp=sample_temp,
+        )
+        hypotheses.extend(hyps)
+        references.extend(transcripts)
+        processed_count += len(hyps)
+
+        if processed_count % (batch_size * 5) < batch_size:
+            wer_so_far = compute_wer(hypotheses, references)
+            print(f"  [{processed_count}/{len(indices)}] WER so far: {wer_so_far*100:.2f}%")
+            print(f"    REF: {references[-1]}")
+            print(f"    HYP: {hypotheses[-1]}\n")
+
+    wer = compute_wer(hypotheses, references)
+    print(f"\nFinal WER on {split}: {wer*100:.2f}%  ({len(hypotheses)} samples)")
+
+    out_dir = out_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    save_results(references, hypotheses, wer, split, out_dir)
+    return wer
+
+
+class AudioQwen(nn.Module):
+    def __init__(self, llm_model_name: str, encoder_dim: int, cache_dir: str = None, pad_token_id: int = 151655, 
+                 encoder: nn.Module = None):
+        super().__init__()
+        self.encoder = encoder        
+
+        self.pad_token_id = pad_token_id
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            llm_model_name, cache_dir=cache_dir, torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2", trust_remote_code=True
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(llm_model_name, cache_dir=cache_dir, trust_remote_code=True)
+        self.tokenizer.add_special_tokens({"additional_special_tokens": ["<|audio_correspond|>"]})
+        self.llm.resize_token_embeddings(len(self.tokenizer))
+
+        self.llm.to(torch.bfloat16)
+        llm_dim = self.llm.config.hidden_size
+        self.projector = nn.Sequential(
+            nn.Conv1d(encoder_dim, llm_dim, kernel_size=5, stride=2, padding=2),
+            nn.GELU(),
+            nn.Conv1d(llm_dim, llm_dim, kernel_size=5, stride=2, padding=2),
+            nn.GELU(),
+            nn.Conv1d(llm_dim, llm_dim, kernel_size=1)
+        ).to(torch.bfloat16)
+        self.proj_norm = nn.LayerNorm(llm_dim).to(torch.bfloat16)
+        
+        for m in self.projector.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None: nn.init.zeros_(m.bias)
+        nn.init.normal_(self.projector[-1].weight, std=0.02)
+
+    def get_audio_embeds(self, audio_features: torch.Tensor) -> torch.Tensor:
+        x = audio_features.transpose(1, 2).to(self.projector[0].weight.dtype)
+        x = self.projector(x)
+        x = x.transpose(1, 2)
+        return self.proj_norm(x) # (B, C, T)
+
+    def get_audio_embeds_from_waveform(self, audio, audio_lengths):
+        enc_dtype = next(self.encoder.parameters()).dtype
+        x, enc_mask = self.encoder(audio.to(enc_dtype), audio_lengths)  # (B, T_enc, C)
+        x = x.to(self.projector[0].weight.dtype)
+
+        # 프로젝터(Conv1d 등) 연산을 위해 (B, C, T)로 변환
+        x = self.projector(x.transpose(1, 2))
+        
+        # LayerNorm 적용 및 LLM 입력을 위해 다시 (B, T, C)로 복구
+        x = x.transpose(1, 2)
+        
+        # 정규화된 임베딩과 마스크를 튜플 형태로 반환
+        return self.proj_norm(x), enc_mask
+
+    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor, audio_features: torch.Tensor, audio_lengths: torch.Tensor, attention_mask: torch.Tensor = None, position_ids: torch.Tensor = None):
+        audio_embeds, _ = self.get_audio_embeds_from_waveform(audio_features, audio_lengths)
+        valid_embeds = []
+        for i, enc_len in enumerate(audio_lengths):
+            t_proj = math.ceil(math.ceil(enc_len.item() / 2) / 2)
+            valid_embeds.append(audio_embeds[i, :t_proj, :])
+        audio_flat = torch.cat(valid_embeds, dim=0) if valid_embeds else torch.empty((0, audio_embeds.shape[-1]), device=audio_embeds.device, dtype=audio_embeds.dtype)
+        
+        inputs_embeds = self.llm.get_input_embeddings()(input_ids).clone()
+        audio_mask = (input_ids == self.pad_token_id)
+        mask_flat = audio_mask.reshape(-1)
+        num_placeholders = mask_flat.sum().item()
+        min_len = min(num_placeholders, audio_flat.shape[0])
+        
+        if min_len > 0:
+            target_indices = mask_flat.nonzero(as_tuple=True)[0][:min_len]
+            inputs_embeds.view(-1, inputs_embeds.shape[-1])[target_indices] = audio_flat[:min_len]
+
+        return self.llm(inputs_embeds=inputs_embeds, attention_mask=attention_mask, position_ids=position_ids, labels=labels, use_cache=False)
+
+
 def load_model(ckpt_dir: str, device: str = "cuda",
                llm_size: str = None, encoder_name: str = None,
                no_lora: bool = False) -> AudioQwen:
-    """
-    AudioEncoder + AudioQwen 구성 후 checkpoint 로드.
-    --no_lora: Stage 1 projector-only checkpoint (model.safetensors 없이 .pt 파일도 지원)
-    """
     print(f"Loading checkpoint from: {ckpt_dir}")
 
     enc = encoder_name or ENCODER_NAME
@@ -65,44 +322,60 @@ def load_model(ckpt_dir: str, device: str = "cuda",
 
     from encoders import build_encoder
     encoder = build_encoder(enc, enc_cfg, cache_dir)
-    model   = AudioQwen(encoder, cfg)
-    if not no_lora:
-        model.apply_lora()
+    model = AudioQwen("Qwen/Qwen3.5-2B", encoder_dim=128, encoder=encoder).to(device)
 
-    # .pt (Stage 1) 또는 model.safetensors (Stage 2) 로드
-    pt_path  = ckpt_dir if ckpt_dir.endswith(".pt") else None
-    sf_path  = os.path.join(ckpt_dir, "model.safetensors") if not pt_path else None
+    # ── resolve checkpoint path ──
+    if ckpt_dir.endswith(".pt"):
+        pt_path = ckpt_dir
+        sf_path = None
+    else:
+        merged = os.path.join(ckpt_dir, "full_merged_model.pt")
+        pt_path = merged if os.path.exists(merged) else None
+        sf_path = os.path.join(ckpt_dir, "model.safetensors")
 
+    # ── load raw state dict ──
     if pt_path:
-        state_dict = torch.load(pt_path, map_location="cpu", weights_only=True)
+        raw = torch.load(pt_path, map_location="cpu", weights_only=False)
+        state_dict = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
     elif sf_path and os.path.exists(sf_path):
         from safetensors.torch import load_file
         state_dict = load_file(sf_path, device="cpu")
     else:
         raise FileNotFoundError(f"checkpoint not found: {ckpt_dir}")
 
+    # ── Stage 2 detection ──
+    is_stage2 = any("base_model.model" in k for k in state_dict)
+
+    if is_stage2:
+        from peft import LoraConfig, TaskType, get_peft_model
+        print("  Detected Stage 2 checkpoint (LoRA). Applying LoRA before loading…")
+        lora_cfg = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=16, lora_alpha=32,
+            target_modules=["q_proj", "v_proj"],
+        )
+        model.llm = get_peft_model(model.llm, lora_cfg)
+
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     if missing:
         print(f"  Missing keys   : {len(missing)}")
-        for k in missing[:5]:
-            print(f"    {k}")
     if unexpected:
         print(f"  Unexpected keys: {len(unexpected)}")
-        for k in unexpected[:5]:
-            print(f"    {k}")
 
-    model.to(device)
-    model.eval()
+    if is_stage2:
+        print("  Merging LoRA weights into base model…")
+        model.llm = model.llm.merge_and_unload()
+
+    model.to(torch.bfloat16).to(device).eval()
     print("Model loaded.\n")
     return model
 
 
 # ==========================================
-# 2. Audio preprocessing
+# 2. Audio preprocessing & Dataloading
 # ==========================================
 
 def load_audio(path: str, target_sr: int = 16000) -> torch.Tensor:
-    """Load audio file → mono waveform at 16kHz, shape (T,)."""
     waveform, sr = torchaudio.load(path)
     if sr != target_sr:
         waveform = AF.resample(waveform, orig_freq=sr, new_freq=target_sr)
@@ -110,38 +383,89 @@ def load_audio(path: str, target_sr: int = 16000) -> torch.Tensor:
         waveform = waveform.mean(dim=0, keepdim=True)
     return waveform.squeeze(0)   # (T,)
 
+def collate_fn(batch):
+    """Collate function for batching variable-length audio."""
+    waveforms = [item[0] for item in batch]
+    transcripts = [item[1] for item in batch]
+    lengths = torch.tensor([w.shape[0] for w in waveforms], dtype=torch.long)
+    max_len = lengths.max().item()
+    
+    padded_waveforms = torch.zeros(len(waveforms), max_len)
+    for i, w in enumerate(waveforms):
+        padded_waveforms[i, :w.shape[0]] = w
+        
+    return padded_waveforms, lengths, transcripts
+
 
 # ==========================================
-# 3. Inference
+# 3. Batch Inference
 # ==========================================
 
 @torch.inference_mode()
-def transcribe(
-    waveform: torch.Tensor,
+def transcribe_batch(
+    waveforms: torch.Tensor,
+    lengths: torch.Tensor,
     model: AudioQwen,
     device: str = "cuda",
     max_new_tokens: int = 256,
     beam_size: int = 1,
-) -> str:
+) -> list[str]:
     """
-    waveform: (T,) mono at 16kHz
-    Returns decoded transcript string.
+    Batch transcription supporting left-padding for reliable HF generation.
     """
-    audio        = waveform.unsqueeze(0).to(device)                  # (1, T)
-    audio_lengths = torch.tensor([waveform.shape[0]], device=device)
+    waveforms = waveforms.to(device)
+    lengths = lengths.to(device)
+    B = waveforms.shape[0]
 
-    audio_embeds, audio_mask = model._get_audio_embeds(audio, audio_lengths)
-    # (1, T_proj, llm_dim), (1, T_proj) bool
+    # Get embeddings and valid mask lengths
+    audio_embeds, audio_mask = model.get_audio_embeds_from_waveform(waveforms, lengths)
 
-    embed     = model.llm.get_input_embeddings()
-    p1_embeds = embed(model.prompt_p1_ids)   # (1, L1, dim)
-    p2_embeds = embed(model.prompt_p2_ids)   # (1, L2, dim)
+    # Prepare <|audio_correspond|> token
+    audio_corr_id = model.tokenizer.convert_tokens_to_ids("<|audio_correspond|>")
+    embed_layer = model.llm.get_input_embeddings()
+    corr_embed = embed_layer(torch.tensor([[audio_corr_id]], device=device))[0] # (1, C)
 
-    inputs_embeds = torch.cat([p1_embeds, audio_embeds, p2_embeds], dim=1)
+    # Prepare pad token embedding
+    pad_id = model.tokenizer.pad_token_id if model.tokenizer.pad_token_id is not None else model.tokenizer.eos_token_id
+    pad_embed = embed_layer(torch.tensor([[pad_id]], device=device))[0][0] # (C,)
 
-    p1_mask      = torch.ones(1, p1_embeds.shape[1], dtype=torch.long, device=device)
-    p2_mask      = torch.ones(1, p2_embeds.shape[1], dtype=torch.long, device=device)
-    attention_mask = torch.cat([p1_mask, audio_mask.long(), p2_mask], dim=1)
+    batched_embeds = []
+    batched_masks = []
+    max_seq_len = 0
+    seq_embeds_list = []
+
+    # 1) Append prompt token directly after the valid audio embeddings
+    for i in range(B):
+        v_len = int(audio_mask[i].sum().item())
+        valid_emb = audio_embeds[i, :v_len, :]
+        seq_emb = torch.cat([valid_emb, corr_embed], dim=0) # (v_len + 1, C)
+        seq_embeds_list.append(seq_emb)
+        max_seq_len = max(max_seq_len, seq_emb.shape[0])
+
+    # 2) Left-pad embeddings to max_seq_len for generation compatibility
+    for seq_emb in seq_embeds_list:
+        seq_len = seq_emb.shape[0]
+        pad_len = max_seq_len - seq_len
+        
+        if pad_len > 0:
+            pad_tensor = pad_embed.unsqueeze(0).expand(pad_len, -1)
+            padded_emb = torch.cat([pad_tensor, seq_emb], dim=0)
+            mask = torch.cat([
+                torch.zeros(pad_len, dtype=torch.long, device=device), 
+                torch.ones(seq_len, dtype=torch.long, device=device)
+            ], dim=0)
+        else:
+            padded_emb = seq_emb
+            mask = torch.ones(seq_len, dtype=torch.long, device=device)
+            
+        batched_embeds.append(padded_emb)
+        batched_masks.append(mask)
+
+    inputs_embeds = torch.stack(batched_embeds, dim=0)
+    attention_mask = torch.stack(batched_masks, dim=0)
+
+    # Force left padding in tokenizer setting (just in case)
+    model.tokenizer.padding_side = "left"
 
     output_ids = model.llm.generate(
         inputs_embeds=inputs_embeds,
@@ -154,8 +478,8 @@ def transcribe(
         use_cache=True,
     )
 
-    text = model.tokenizer.decode(output_ids[0], skip_special_tokens=True)
-    return text.strip()
+    texts = model.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    return [text.strip().lower() for text in texts]
 
 
 # ==========================================
@@ -163,7 +487,6 @@ def transcribe(
 # ==========================================
 
 def compute_wer(hypotheses: list[str], references: list[str]) -> float:
-    """Word error rate via jiwer."""
     import jiwer
     transform = jiwer.Compose([
         jiwer.ToLowerCase(),
@@ -178,64 +501,47 @@ def compute_wer(hypotheses: list[str], references: list[str]) -> float:
         hypothesis_transform=transform,
     )
 
-
 def save_results(references: list[str], hypotheses: list[str], wer: float,
                  split: str, out_dir: str):
-    """Save REF/HYP results as CSV, TXT, and Markdown."""
     os.makedirs(out_dir, exist_ok=True)
 
-    # --- CSV ---
     csv_path = os.path.join(out_dir, f"{split}_results.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["idx", "reference", "hypothesis"])
         for i, (ref, hyp) in enumerate(zip(references, hypotheses)):
             writer.writerow([i, ref, hyp])
-    print(f"Saved CSV  → {csv_path}")
 
-    # --- TXT ---
     txt_path = os.path.join(out_dir, f"{split}_results.txt")
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(f"WER: {wer*100:.2f}%  ({len(references)} samples)\n")
         f.write("=" * 80 + "\n\n")
         for i, (ref, hyp) in enumerate(zip(references, hypotheses)):
-            f.write(f"[{i:04d}]\n")
-            f.write(f"REF: {ref}\n")
-            f.write(f"HYP: {hyp}\n\n")
-    print(f"Saved TXT  → {txt_path}")
+            f.write(f"[{i:04d}]\nREF: {ref}\nHYP: {hyp}\n\n")
 
-    # --- Markdown ---
     md_path = os.path.join(out_dir, f"{split}_results.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(f"# ASR Results — {split}\n\n")
         f.write(f"**WER: {wer*100:.2f}%** ({len(references)} samples)\n\n")
-        f.write("| idx | Reference (GT) | Hypothesis (Pred) |\n")
-        f.write("|----:|:---------------|:------------------|\n")
+        f.write("| idx | Reference (GT) | Hypothesis (Pred) |\n|----:|:---------------|:------------------|\n")
         for i, (ref, hyp) in enumerate(zip(references, hypotheses)):
-            ref_esc = ref.replace("|", "\\|")
-            hyp_esc = hyp.replace("|", "\\|")
-            f.write(f"| {i} | {ref_esc} | {hyp_esc} |\n")
-    print(f"Saved MD   → {md_path}")
+            ref_escaped = ref.replace('|', '\\|')
+            hyp_escaped = hyp.replace('|', '\\|')
 
+            f.write(f"| {i} | {ref_escaped} | {hyp_escaped} |\n")
 
-LIBRISPEECH_SPLITS = [
-    "test-clean", "test-other", "dev-clean", "dev-other",
-    "train-clean-100", "train-clean-360", "train-other-500",
-]
+    print(f"Results saved to: {out_dir}")
 
 MLS_TOTAL = 4_050_000
 
-
 def _load_dataset(split: str, data_root: str, max_len: int, mls_sample_ratio: float = 0.2):
-    """Load LibriSpeech or MLS dataset depending on split."""
+    cfg = get_config(ENCODER_NAME)
     if split == "mls":
         from dataset import MLSDataset
-        cfg = get_config(ENCODER_NAME)
         num_samples = int(MLS_TOTAL * mls_sample_ratio)
         return MLSDataset(cache_dir=cfg["mls_data_path"], num_samples=num_samples, max_len=max_len)
     else:
-        return LibriSpeechDataset(root=data_root, url=split, max_len=max_len)
-
+        return LibriSpeechDataset(cache_dir=cfg["mls_data_path"], url=split, max_len=max_len)
 
 def evaluate(
     model: AudioQwen,
@@ -245,44 +551,51 @@ def evaluate(
     max_samples: int = None,
     max_new_tokens: int = 256,
     beam_size: int = 1,
+    batch_size: int = 8,
+    num_workers: int = 4,
     out_dir: str = None,
     mls_sample_ratio: float = 0.2,
 ) -> float:
-    """Run WER evaluation on a LibriSpeech split or MLS (single GPU)."""
     cfg = get_config(ENCODER_NAME)
-    if data_root is None:
-        data_root = cfg["data_path"]
-
+    data_root = data_root or cfg["data_path"]
     max_len = cfg["max_audio_len"]
+    
     dataset = _load_dataset(split, data_root, max_len, mls_sample_ratio)
-    indices = range(min(max_samples, len(dataset))) if max_samples else range(len(dataset))
+    indices = list(range(min(max_samples, len(dataset)))) if max_samples else list(range(len(dataset)))
+    subset = Subset(dataset, indices)
+    
+    dataloader = DataLoader(
+        subset, 
+        batch_size=batch_size, 
+        collate_fn=collate_fn, 
+        num_workers=num_workers, 
+        pin_memory=True
+    )
 
     hypotheses, references = [], []
+    processed_count = 0
 
-    for i in tqdm(indices, desc=f"Evaluating {split}"):
-        waveform, transcript = dataset[i]
-        # waveform: (T,) @ 16kHz mono, transcript: already lowercased
+    for waveforms, lengths, transcripts in tqdm(dataloader, desc=f"Evaluating {split}"):
+        hyps = transcribe_batch(
+            waveforms, lengths, model, device=device,
+            max_new_tokens=max_new_tokens, beam_size=beam_size
+        )
+        
+        hypotheses.extend(hyps)
+        references.extend(transcripts)
+        processed_count += len(hyps)
 
-        hyp = transcribe(waveform, model, device=device,
-                         max_new_tokens=max_new_tokens, beam_size=beam_size)
-        ref = transcript
-
-        hypotheses.append(hyp)
-        references.append(ref)
-
-        if (i + 1) % 50 == 0:
+        if processed_count % (batch_size * 5) < batch_size:
             wer_so_far = compute_wer(hypotheses, references)
-            print(f"  [{i+1}/{len(indices)}] WER so far: {wer_so_far*100:.2f}%")
-            print(f"    REF: {ref}")
-            print(f"    HYP: {hyp}\n")
+            print(f"  [{processed_count}/{len(indices)}] WER so far: {wer_so_far*100:.2f}%")
+            print(f"    REF: {references[-1]}")
+            print(f"    HYP: {hypotheses[-1]}\n")
 
     wer = compute_wer(hypotheses, references)
     print(f"\nFinal WER on {split}: {wer*100:.2f}%  ({len(hypotheses)} samples)")
 
-    if out_dir is None:
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    out_dir = out_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     save_results(references, hypotheses, wer, split, out_dir)
-
     return wer
 
 
@@ -291,7 +604,6 @@ def evaluate(
 # ==========================================
 
 def _worker(rank: int, args_dict: dict, shards: list, tmp_dir: str):
-    """Each GPU worker processes its shard of indices and saves results to tmp_dir."""
     indices = shards[rank]
     device = f"cuda:{rank}"
 
@@ -305,14 +617,30 @@ def _worker(rank: int, args_dict: dict, shards: list, tmp_dir: str):
     data_root = args_dict["data_root"] or cfg["data_path"]
     max_len = cfg["max_audio_len"]
     dataset = _load_dataset(args_dict["split"], data_root, max_len, args_dict["mls_sample_ratio"])
+    
+    subset = Subset(dataset, indices)
+    dataloader = DataLoader(
+        subset, 
+        batch_size=args_dict["batch_size"], 
+        collate_fn=collate_fn, 
+        num_workers=args_dict["num_workers"], 
+        pin_memory=True
+    )
 
-    results = []  # list of (original_idx, ref, hyp)
-    for i in tqdm(indices, desc=f"GPU {rank}", position=rank):
-        waveform, transcript = dataset[i]
-        hyp = transcribe(waveform, model, device=device,
-                         max_new_tokens=args_dict["max_new_tokens"],
-                         beam_size=args_dict["beam_size"])
-        results.append((i, transcript, hyp))
+    results = [] 
+    idx_ptr = 0
+    
+    for waveforms, lengths, transcripts in tqdm(dataloader, desc=f"GPU {rank}", position=rank):
+        hyps = transcribe_batch(
+            waveforms, lengths, model, device=device,
+            max_new_tokens=args_dict["max_new_tokens"],
+            beam_size=args_dict["beam_size"]
+        )
+        
+        for hyp, ref in zip(hyps, transcripts):
+            orig_idx = indices[idx_ptr]
+            results.append((orig_idx, ref, hyp))
+            idx_ptr += 1
 
     out_path = os.path.join(tmp_dir, f"rank{rank}.json")
     with open(out_path, "w") as f:
@@ -321,7 +649,6 @@ def _worker(rank: int, args_dict: dict, shards: list, tmp_dir: str):
 
 
 def evaluate_multi_gpu(args) -> float:
-    """Distribute evaluation across multiple GPUs using multiprocessing."""
     n_gpu = args.n_gpu
     if n_gpu <= 0:
         n_gpu = torch.cuda.device_count()
@@ -332,23 +659,22 @@ def evaluate_multi_gpu(args) -> float:
     max_len = cfg["max_audio_len"]
     mls_sample_ratio = getattr(args, "mls_sample_ratio", 0.2)
     dataset = _load_dataset(args.split, data_root, max_len, mls_sample_ratio)
+    
     total = min(args.max_samples, len(dataset)) if args.max_samples else len(dataset)
     all_indices = list(range(total))
-
-    # Shard indices across GPUs (round-robin keeps load balanced)
     shards = [all_indices[rank::n_gpu] for rank in range(n_gpu)]
 
     args_dict = {
         "ckpt": args.ckpt, "llm": args.llm, "encoder": args.encoder,
         "no_lora": args.no_lora, "split": args.split, "data_root": args.data_root,
         "max_new_tokens": args.max_new_tokens, "beam_size": args.beam_size,
-        "mls_sample_ratio": mls_sample_ratio,
+        "mls_sample_ratio": mls_sample_ratio, "batch_size": args.batch_size,
+        "num_workers": args.num_workers
     }
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         mp.spawn(_worker, args=(args_dict, shards, tmp_dir), nprocs=n_gpu, join=True)
 
-        # Merge results in original index order
         merged = []
         for rank in range(n_gpu):
             with open(os.path.join(tmp_dir, f"rank{rank}.json")) as f:
@@ -367,62 +693,101 @@ def evaluate_multi_gpu(args) -> float:
 
 
 # ==========================================
-# 5. Main
+# 6. Main
 # ==========================================
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ASR inference — DAC-VAE + AudioQwen")
-    parser.add_argument("--ckpt", type=str, default=DEFAULT_CKPT,
-                        help="Accelerate checkpoint directory")
+    parser.add_argument("--ckpt", type=str, default=DEFAULT_CKPT)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--n_gpu", type=int, default=0,
-                        help="Number of GPUs for evaluation (0 = use all available)")
-    parser.add_argument("--llm", type=str, default=None, choices=["2b", "4b", "7b"],
-                        help="LLM 크기: 2b=Qwen3.5-2B, 4b=Qwen3.5-4B, 7b=Qwen2.5-7B-Instruct")
-    parser.add_argument("--encoder", type=str, default=None,
-                        help="인코더 이름 (dac_vae, mimi_semantic 등, 기본: dac_vae)")
-    parser.add_argument("--no_lora", action="store_true",
-                        help="Stage 1 projector-only checkpoint (LoRA 없음)")
+    parser.add_argument("--n_gpu", type=int, default=0)
+    parser.add_argument("--llm", type=str, default=None, choices=["2b", "4b", "7b"])
+    parser.add_argument("--encoder", type=str, default=None)
+    parser.add_argument("--no_lora", action="store_true")
 
     # Single-file mode
-    parser.add_argument("--audio", type=str, default=None,
-                        help="Path to audio file for single transcription")
+    parser.add_argument("--audio", type=str, default=None)
 
     # Evaluation mode
-    parser.add_argument("--eval", action="store_true",
-                        help="Run WER evaluation on LibriSpeech")
-    parser.add_argument("--split", type=str, default="test-clean",
-                        choices=["test-clean", "test-other", "dev-clean", "dev-other",
-                                 "train-clean-100", "train-clean-360", "train-other-500", "mls"])
-    parser.add_argument("--mls_sample_ratio", type=float, default=0.2,
-                        help="MLS dataset 샘플링 비율 (기본 0.2 = 20%%)")
-    parser.add_argument("--data_root", type=str, default=None,
-                        help="LibriSpeech root dir (default: config data_path)")
-    parser.add_argument("--max_samples", type=int, default=None,
-                        help="Limit evaluation samples (None = full split)")
+    parser.add_argument("--eval", action="store_true")
+    parser.add_argument("--split", type=str, default="test-clean")
+    parser.add_argument("--mls_sample_ratio", type=float, default=0.2)
+    parser.add_argument("--data_root", type=str, default=None)
+    parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--beam_size", type=int, default=1, help="1 = greedy")
-    parser.add_argument("--out_dir", type=str, default=None,
-                        help="Directory to save results (default: ./results)")
+    parser.add_argument("--beam_size", type=int, default=1)
+    parser.add_argument("--out_dir", type=str, default=None)
+    
+    # Batch parameters
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for inference")
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")
+
+    # Qwen3AE model
+    parser.add_argument("--qwen3ae", action="store_true", help="Use Qwen3AE model")
+    parser.add_argument("--qwen3ae_model_dir", type=str, default=QWEN3AE_MODEL_DIR,
+                        help="Path to Qwen3AE checkpoint directory")
+    parser.add_argument("--dacvae_path", type=str, default=DACVAE_PKG_PATH,
+                        help="Local dacvae package path to prepend to sys.path (needed by Qwen3AE audio_encoder.py)")
+    parser.add_argument("--no_repeat_ngram", type=int, default=0, help="no_repeat_ngram_size (0=off)")
+    parser.add_argument("--no_think", action="store_true", help="Append /no_think to system prompt")
+    parser.add_argument("--sample_temp", type=float, default=0.0, help="Sampling temperature (0=greedy)")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    if args.audio:
+    if args.qwen3ae:
+        # ── Qwen3AE-4B_expand path ──
+        model, tokenizer = load_qwen3ae_model(
+            device=args.device,
+            model_dir=args.qwen3ae_model_dir,
+            dacvae_path=args.dacvae_path,
+        )
+
+        if args.audio:
+            waveform = load_audio(args.audio).unsqueeze(0)  # (1, T)
+            lengths = torch.tensor([waveform.shape[1]], dtype=torch.long)
+            result = transcribe_batch_qwen3ae(
+                waveform, lengths, model, tokenizer, device=args.device,
+                max_new_tokens=args.max_new_tokens, beam_size=args.beam_size,
+            )
+            print(f"Transcript: {result[0]}")
+
+        elif args.eval:
+            evaluate_qwen3ae(
+                model, tokenizer,
+                split=args.split,
+                device=args.device,
+                max_samples=args.max_samples,
+                max_new_tokens=args.max_new_tokens,
+                beam_size=args.beam_size,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                out_dir=args.out_dir,
+                mls_sample_ratio=args.mls_sample_ratio,
+                no_repeat_ngram=args.no_repeat_ngram,
+                no_think=args.no_think,
+                sample_temp=args.sample_temp,
+            )
+        else:
+            print("Specify --audio <file> for transcription or --eval for WER evaluation.")
+
+    elif args.audio:
         model = load_model(args.ckpt, device=args.device, llm_size=args.llm,
                            encoder_name=args.encoder, no_lora=args.no_lora)
-        waveform = load_audio(args.audio)
-        result = transcribe(waveform, model, device=args.device,
-                            max_new_tokens=args.max_new_tokens,
-                            beam_size=args.beam_size)
-        print(f"Transcript: {result}")
+        waveform = load_audio(args.audio).unsqueeze(0)  # (1, T)
+        lengths = torch.tensor([waveform.shape[1]], dtype=torch.long)
+
+        result = transcribe_batch(waveform, lengths, model, device=args.device,
+                                  max_new_tokens=args.max_new_tokens,
+                                  beam_size=args.beam_size)
+        print(f"Transcript: {result[0]}")
 
     elif args.eval:
         n_gpu = args.n_gpu if args.n_gpu > 0 else torch.cuda.device_count()
         if n_gpu > 1:
-            print(f"Multi-GPU evaluation: {n_gpu} GPUs")
+            print(f"Multi-GPU evaluation: {n_gpu} GPUs with batch size {args.batch_size}")
             evaluate_multi_gpu(args)
         else:
             model = load_model(args.ckpt, device=args.device, llm_size=args.llm,
@@ -435,11 +800,9 @@ if __name__ == "__main__":
                 max_samples=args.max_samples,
                 max_new_tokens=args.max_new_tokens,
                 beam_size=args.beam_size,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
                 out_dir=args.out_dir,
             )
-
     else:
         print("Specify --audio <file> for transcription or --eval for WER evaluation.")
-        print("Example:")
-        print("  python inference.py --audio sample.wav")
-        print("  python inference.py --eval --split test-clean --n_gpu 4")
