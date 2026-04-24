@@ -136,8 +136,9 @@ def main():
     py_files = ["modeling_qwen3_5AE.py", "configuration_qwen3_5AE.py", "audio_encoder.py", "tokenization_qwen3_5AE.py"]
     for fname in py_files:
         src = THIS_DIR / fname
-        if src.exists() and src != out_dir / fname:
-            shutil.copy2(src, out_dir / fname)
+        dst = (out_dir / fname).resolve()
+        if src.exists() and src.resolve() != dst:
+            shutil.copy2(src, dst)
 
     # Copy tokenizer + chat_template + generation_config from source
     aux_files = [
