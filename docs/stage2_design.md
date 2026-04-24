@@ -74,6 +74,20 @@ if self.training and self.noise_aug_enabled:
   unchanged).
 - Stage 2: `noise_aug_enabled=true` in `/mnt/tmp/s2_init_42k/config.json`.
 
+**Scope (noted 2026-04-24, mid-run)**: originally intended ASR-only, but the
+gate is `self.training and self.noise_aug_enabled` with no modality check, so
+in the 4-modality Stage 2 run the perturbation fires for **every audio sample
+(ASR + emotion + env_sound)**; text rows have no audio and skip the encoder.
+Left as-is — variance-preserving form keeps train/inference distributions
+continuous and `k ≤ 0.1` is mild (latent SNR ≥ ~13 dB), matching the
+feature-space augmentation regime (mixup / SpecAugment-style) routinely used
+in emotion and env-sound SOTA. The cost is that the current run cannot be
+used to ablate per-modality noise-aug effect cleanly; if an ablation becomes
+relevant later, re-train a comparator with a modality-gated variant
+(`audio_encoder.forward` would need to accept a per-sample ASR mask derived
+from the packed `modality_ids` tensor, since a single packed batch mixes all
+four modalities and a scalar flag cannot express it).
+
 ## 3. LoRA scope
 
 **Target**: Qwen LLM attention only (`q_proj`, `k_proj`, `v_proj`, `o_proj`).
@@ -256,6 +270,63 @@ omni_max_audio_samples: 1600000   # ~33.3 s @ 48 kHz (Stage 1 used 2.16 M = 45 s
 33 s cap covers DailyTalk / MELD / EmoV-DB / RAVDESS (all well under) and
 most of Clotho / FSD50K; a small fraction of FSD50K's long-form clips would
 truncate. Emotion-side: no effect.
+
+### 6.4 Per-modality interleave option (added 2026-04-24)
+
+For runs where the emotion pool is much smaller than the other modality pools
+and you want the large pools to be effectively re-sampled across epochs
+(instead of the combined-manifest behavior where every modality pulls from a
+fixed subsampled file), there is now an opt-in interleave path in
+[`data/loader.py`](../src/llamafactory/data/loader.py):
+
+```yaml
+# Mutually exclusive with omni_manifest: when set, overrides the single-manifest path.
+omni_per_modality_manifests:
+  audio_asr:        /mnt/tmp/listen_analysis/train_manifest/asr_full_shards
+  audio_emotion:    /mnt/tmp/listen_analysis/train_manifest/emotion_mcqa_shards
+  audio_env_sound:  /mnt/tmp/listen_analysis/train_manifest/env_full_shards
+  text:             /mnt/tmp/listen_analysis/train_manifest/text_full_shards
+omni_per_modality_probs:
+  audio_asr:       0.145
+  audio_emotion:   0.337
+  audio_env_sound: 0.346
+  text:            0.172
+omni_per_modality_stopping: all_exhausted   # or first_exhausted
+```
+
+Each modality manifest is loaded, per-node sharded, and shuffled with its own
+seed (`training_args.seed + idx * 1_000_003`) before being combined via
+`datasets.interleave_datasets(..., probabilities=..., seed=..., stopping_strategy=...)`.
+With `all_exhausted`, pools shorter than the largest are cycled automatically,
+so a ~40 k emotion pool keeps repeating inside one epoch while a ~1 M-row ASR
+superset pool is drawn mostly-fresh. The caller is responsible for supplying
+parent-pool manifests (sharded into multiple jsonl files to preserve worker
+parallelism). Schema must be consistent across modalities — the first-row peek
+in `_build_dataset` determines `col_names` for `map(remove_columns=...)`, so
+drift between modality schemas could leak leftover columns into the packed
+output.
+
+Leave `omni_per_modality_manifests: null` (the default) to preserve the
+existing single-manifest behavior used by the current Stage 2 run.
+
+**Schema requirement (important).** Each modality source JSONL has a different
+key set (ASR: `{source, nubes_path, text, modality}`, emotion MCQA:
+`{source, path, question, choices, answer, label, transcript, rationale,
+modality}`, env sound: `{source, path, labels, modality}`, text SFT:
+`{source, question, choices, answer, modality}`). `datasets.load_dataset(json,
+data_files=...)` infers Features per-file, so interleaving raw per-modality
+streams trips Arrow casts (e.g. `list<string>` vs `null` for `choices`).
+Before passing manifests to this option, **pre-normalize every row to a
+union schema** (missing scalar → `null`, missing list → `[]`). The reference
+implementation is in [`scripts/emo/smoke_interleave.py`](../scripts/emo/smoke_interleave.py)
+(`UNION_FEATURES` + `_normalize`): a 4 000-row drain with the current
+per-modality manifests produced realized probabilities within ≤ 0.7 pp of
+the 14.5 / 33.7 / 34.6 / 17.2 target. The same normalization should be
+baked into whatever script emits the parent-pool shard dirs.
+
+Normalization is intentionally kept out of `loader.py` so the loader stays
+agnostic of modality field names — keep it alongside the manifest builders
+under `scripts/emo/` and `scripts/env_sound/`.
 
 ## 7. Checkpoint format & eval
 

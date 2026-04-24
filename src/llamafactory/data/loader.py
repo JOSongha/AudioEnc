@@ -25,6 +25,7 @@ from datasets import (
     IterableDataset,
     Value,
     concatenate_datasets,
+    interleave_datasets,
     load_dataset,
     load_from_disk,
 )
@@ -645,40 +646,109 @@ def get_omni_dataset(
         neat_packing=data_args.neat_packing,
     )
 
-    def _build_dataset(
+    def _load_source(
         manifest_path: str,
-        shuffle: bool = False,
-        streaming: bool = True,
-        keep_in_memory: bool = False,
+        shuffle: bool,
+        streaming: bool,
+        seed: int,
+        tag: str = "",
     ):
-        # Use individual jsonl files as shards for HF's built-in worker splitting
+        """Load one manifest → sharded, (optionally) shuffled IterableDataset/Dataset.
+
+        Factored out so per-modality interleaving can build multiple sources with
+        distinct shuffle seeds before combining them via interleave_datasets.
+        """
         jsonl_files = resolve_jsonl_files(manifest_path)
+        prefix = f"[omni{(':' + tag) if tag else ''}]"
         logger.info_rank0(
-            f"[omni] Found {len(jsonl_files)} jsonl files, rank={rank}, world_size={world_size}, streaming={streaming}"
+            f"{prefix} Found {len(jsonl_files)} jsonl files, rank={rank}, world_size={world_size}, streaming={streaming}"
         )
-        ds = datasets.load_dataset(
+        sds = datasets.load_dataset(
             "json",
             data_files=jsonl_files,
             split="train",
             streaming=streaming,
         )
         if streaming:
-            logger.info_rank0(f"[omni] Before split_dataset_by_node: num_shards={ds.num_shards}")
+            logger.info_rank0(f"{prefix} Before split_dataset_by_node: num_shards={sds.num_shards}")
 
-        # DDP sharding — manual shard for both streaming and non-streaming
         if world_size > 1:
-            ds = ds.shard(num_shards=world_size, index=rank, contiguous=False)
+            sds = sds.shard(num_shards=world_size, index=rank, contiguous=False)
             if streaming:
-                logger.info_rank0(f"[omni] After split_dataset_by_node: num_shards={ds.num_shards}")
+                logger.info_rank0(f"{prefix} After split_dataset_by_node: num_shards={sds.num_shards}")
             else:
-                logger.info_rank0(f"[omni] After shard: {len(ds)} samples for rank={rank}")
+                logger.info_rank0(f"{prefix} After shard: {len(sds)} samples for rank={rank}")
 
         if shuffle:
             if streaming:
-                ds = ds.shuffle(seed=training_args.seed, buffer_size=data_args.omni_shuffle_buffer_size)
-                logger.info_rank0(f"[omni] After shuffle: num_shards={ds.num_shards}")
+                sds = sds.shuffle(seed=seed, buffer_size=data_args.omni_shuffle_buffer_size)
+                logger.info_rank0(f"{prefix} After shuffle (seed={seed}): num_shards={sds.num_shards}")
             else:
-                ds = ds.shuffle(seed=training_args.seed)
+                sds = sds.shuffle(seed=seed)
+
+        return sds
+
+    def _build_dataset(
+        manifest_path: str,
+        shuffle: bool = False,
+        streaming: bool = True,
+        keep_in_memory: bool = False,
+    ):
+        per_mod_manifests = data_args.omni_per_modality_manifests
+        if streaming and per_mod_manifests:
+            # Per-modality interleave path: each modality is its own stream with
+            # an independent shuffle seed; interleave_datasets draws per the
+            # configured probabilities. Smaller pools cycle (all_exhausted) so a
+            # small corpus like emotion repeats while larger ones are re-sampled.
+            per_mod_probs = data_args.omni_per_modality_probs or {}
+            missing_probs = [m for m in per_mod_manifests if m not in per_mod_probs]
+            if missing_probs:
+                raise ValueError(
+                    f"[omni] omni_per_modality_probs missing entries for: {missing_probs}. "
+                    f"Must cover all modalities in omni_per_modality_manifests."
+                )
+            modalities = list(per_mod_manifests.keys())
+            probs = [float(per_mod_probs[m]) for m in modalities]
+            prob_sum = sum(probs)
+            if abs(prob_sum - 1.0) > 1e-3:
+                logger.warning_rank0(
+                    f"[omni] omni_per_modality_probs sums to {prob_sum:.4f}, normalizing to 1.0."
+                )
+                probs = [p / prob_sum for p in probs]
+
+            sub_datasets = []
+            for idx, mod_name in enumerate(modalities):
+                # Distinct seed per source so modality streams shuffle independently.
+                sub_seed = training_args.seed + idx * 1_000_003
+                sub_datasets.append(
+                    _load_source(
+                        per_mod_manifests[mod_name],
+                        shuffle=shuffle,
+                        streaming=True,
+                        seed=sub_seed,
+                        tag=mod_name,
+                    )
+                )
+
+            logger.info_rank0(
+                f"[omni] interleave_datasets: modalities={modalities}, "
+                f"probs={[round(p, 4) for p in probs]}, "
+                f"stopping={data_args.omni_per_modality_stopping}, seed={training_args.seed}"
+            )
+            ds = interleave_datasets(
+                sub_datasets,
+                probabilities=probs,
+                seed=training_args.seed,
+                stopping_strategy=data_args.omni_per_modality_stopping,
+            )
+            logger.info_rank0(f"[omni] After interleave: num_shards={ds.num_shards}")
+        else:
+            ds = _load_source(
+                manifest_path,
+                shuffle=shuffle,
+                streaming=streaming,
+                seed=training_args.seed,
+            )
 
         map_kwargs = {"keep_in_memory": keep_in_memory} if not streaming else {}
         # IterableDataset.column_names is None for streaming; peek first example to get columns

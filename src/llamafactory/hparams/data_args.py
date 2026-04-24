@@ -80,6 +80,33 @@ class DataArguments:
             "help": "Number of samples per bucket for greedy knapsack packing in omni pipeline."
         },
     )
+    omni_per_modality_manifests: Optional[Dict[str, str]] = field(
+        default=None,
+        metadata={
+            "help": "{modality: manifest_path} for interleaved per-modality streaming. "
+                    "Each source is loaded, sharded, and shuffled independently, then "
+                    "combined via interleave_datasets with omni_per_modality_probs. Lets "
+                    "a small pool (e.g. emotion) cycle while larger pools (asr / env / "
+                    "text superset) are effectively re-sampled across epochs. When set, "
+                    "overrides omni_manifest for training."
+        },
+    )
+    omni_per_modality_probs: Optional[Dict[str, float]] = field(
+        default=None,
+        metadata={
+            "help": "Per-modality sampling probabilities for interleave_datasets. Keys "
+                    "must match omni_per_modality_manifests. Should sum to ~1."
+        },
+    )
+    omni_per_modality_stopping: str = field(
+        default="all_exhausted",
+        metadata={
+            "help": "stopping_strategy for interleave_datasets. 'all_exhausted' cycles "
+                    "shorter pools until the longest one is exhausted (recommended when a "
+                    "modality pool like emotion is much smaller than the others); "
+                    "'first_exhausted' ends the epoch at the shortest source."
+        },
+    )
     load_from_nubes: bool = field(
         default=False,
         metadata={"help": "Load from nubes directly rather than load from local file."},
