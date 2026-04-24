@@ -180,3 +180,16 @@ wandb/
 swanlog/
 generated_predictions.jsonl
 predictions_score.json
+
+# external/ runtime artifacts
+external/ckpts/
+external/datasets/
+external/scripts/wandb/
+external/models/**/*.safetensors
+external/models/**/*.bin
+external/models/**/*.pth
+external/models/**/*.pt
+external/models/**/global_step*/
+external/models/**/latest
+external/models/**/rng_state_*.pth
+external/models/**/__pycache__/
