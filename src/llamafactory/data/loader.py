@@ -606,6 +606,7 @@ def get_omni_dataset(
 ) -> "DatasetModule":
     """Build IterableDataset-based omni pipeline from JSONL manifest."""
     import torch.distributed as dist
+    from transformers import AutoConfig
 
     from .omni_dataset import (
         create_omni_packer,
@@ -632,14 +633,34 @@ def get_omni_dataset(
     if data_args.load_from_nubes:
         logger.info_rank0("[omni] Load from nubes on-the-fly data-processing")
 
-    processor_fn = create_omni_processor(
-        tokenizer=tokenizer,
-        audio_pad_token_id=audio_pad_token_id,
-        sample_rate=data_args.omni_sample_rate,
-        hop_length=data_args.omni_hop_length,
-        max_audio_samples=data_args.omni_max_audio_samples,
-        load_from_nubes=data_args.load_from_nubes,
-    )
+    # Auto-detect audio encoder type from model config (DAC vs Whisper).
+    # Whisper variant adds `whisper_model_id` to the audio sub-config; DAC variant has `dac_*` fields.
+    ae_cfg = AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+    audio_cfg = getattr(ae_cfg, "audio_config", None)
+    is_whisper = audio_cfg is not None and getattr(audio_cfg, "whisper_model_id", None) is not None
+
+    if is_whisper:
+        from .omni_dataset_whisper import create_omni_processor_whisper
+
+        whisper_id = audio_cfg.whisper_model_id
+        logger.info_rank0(f"[omni] audio encoder = whisper ({whisper_id})")
+        processor_fn = create_omni_processor_whisper(
+            tokenizer=tokenizer,
+            audio_pad_token_id=audio_pad_token_id,
+            whisper_model_id=whisper_id,
+            max_audio_samples=data_args.omni_max_audio_samples or (30 * 16000),
+            load_from_nubes=data_args.load_from_nubes,
+        )
+    else:
+        logger.info_rank0("[omni] audio encoder = dac (legacy)")
+        processor_fn = create_omni_processor(
+            tokenizer=tokenizer,
+            audio_pad_token_id=audio_pad_token_id,
+            sample_rate=data_args.omni_sample_rate,
+            hop_length=data_args.omni_hop_length,
+            max_audio_samples=data_args.omni_max_audio_samples,
+            load_from_nubes=data_args.load_from_nubes,
+        )
     packer_fn = create_omni_packer(
         cutoff_len=data_args.cutoff_len,
         pad_token_id=tokenizer.pad_token_id,

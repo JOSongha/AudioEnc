@@ -74,12 +74,26 @@ def run_omni(
 
     attn_impl = getattr(model.config, "_attn_implementation", "eager")
 
-    data_collator = OmniCollator(
-        pad_token_id=tokenizer.pad_token_id,
-        attn_implementation=attn_impl,
-        block_diag_attn=model_args.block_diag_attn,
-        compute_dtype=model_args.compute_dtype,
-    )
+    # Pick collator matching the audio encoder type (auto-detected from model config).
+    audio_cfg = getattr(model.config, "audio_config", None)
+    is_whisper = audio_cfg is not None and getattr(audio_cfg, "whisper_model_id", None) is not None
+    if is_whisper:
+        from ...data.omni_dataset_whisper import WhisperOmniCollator
+
+        logger.info_rank0("[omni] using WhisperOmniCollator (mel stack)")
+        data_collator = WhisperOmniCollator(
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation=attn_impl,
+            block_diag_attn=model_args.block_diag_attn,
+            compute_dtype=model_args.compute_dtype,
+        )
+    else:
+        data_collator = OmniCollator(
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation=attn_impl,
+            block_diag_attn=model_args.block_diag_attn,
+            compute_dtype=model_args.compute_dtype,
+        )
 
     # Override the decoding parameters of Seq2SeqTrainer
     training_args.generation_max_length = training_args.generation_max_length or data_args.cutoff_len
