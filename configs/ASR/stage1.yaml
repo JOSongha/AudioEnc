@@ -1,0 +1,65 @@
+### model
+model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B
+trust_remote_code: true
+flash_attn: fa2
+enable_liger_kernel: true
+
+### method
+stage: omni
+do_train: true
+do_eval: false
+finetuning_type: full
+deepspeed: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/examples/deepspeed/ds_z2_config.json  # choices: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: speechx_v9 # 의미 없음
+omni_manifest: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/datasets/libri_mls_vox
+load_from_nubes: true
+omni_packing_bucket_size: 256
+omni_max_audio_samples: 2160000
+
+template: omni # 의미 없음
+cutoff_len: 3584
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2048
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 4
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5AE-ASR-Stage2
+output_dir: /mnt/tmp/results  # 하위에 run_name 디렉터리 안에 저장됨
+logging_dir: /mnt/tmp/results  # tensorboard log 저장 위치
+logging_steps: 5
+save_steps: 1000
+save_total_limit: 8
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_steps: 100000
+lr_scheduler_type: warmup_stable_decay # or cosine
+warmup_steps: 3200
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_strategy: 'no'
+per_device_eval_batch_size: 1
+eval_steps: 0
