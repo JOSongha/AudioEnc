@@ -1,0 +1,65 @@
+### model
+model_name_or_path: /mnt/fr20tb/audiollm/sanghyuk/Qwen3.5AE-4B
+flash_attn: fa2
+enable_liger_kernel: true
+disable_gradient_checkpointing: false
+trust_remote_code: true
+
+### method
+stage: omni  # omni workflow freezes all params except audio_encoder.projector
+do_train: true
+do_eval: false
+finetuning_type: full
+deepspeed: /mnt/fr20tb/wbl_residency/jos/ddn/audiollm-trainer/examples/deepspeed/ds_z2_config.json
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: speechx_v9  # unused when omni_manifest is set
+omni_manifest: /mnt/fr20tb/wbl_residency/jos/AudioEnc/log/tmp/datasets/libri_mls_vox_shuffled_128
+load_from_nubes: true
+omni_packing_bucket_size: 128
+omni_max_audio_samples: 2160000
+template: omni  # unused when omni_manifest is set
+cutoff_len: 3584
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 4
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5AE-ASR-Stage1-libri_mls_vox
+output_dir: /mnt/tmp/results  # run_name subdir created inside
+logging_dir: /mnt/tmp/results  # tensorboard log location
+logging_steps: 5
+save_steps: 1000
+# save_total_limit intentionally omitted — keep every checkpoint so post-hoc eval can
+# sweep the full training trajectory. Rotation previously caused loss of early ckpts
+# (run on 2026-04-22: ckpt-40000 rotated out before eval could start).
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 3
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_steps: 100000
+lr_scheduler_type: warmup_stable_decay  # or cosine
+warmup_steps: 1000
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_dataset: speechx_v9  # unused

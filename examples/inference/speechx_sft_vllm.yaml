@@ -1,0 +1,3 @@
+model_name_or_path: /mnt/fr20tb/audiollm/voice_model/models/voice_model_v5/checkpoint-29500
+template: speechx_empty
+infer_backend: vllm

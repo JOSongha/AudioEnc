@@ -1,0 +1,105 @@
+# Config for Speech X v6 Stage 2
+
+################################################################################
+# YAML below
+################################################################################
+
+# This comment clarifies which environment label is being used:
+# (Useful for quick reference)
+# SPD Label: SuperPOD 2
+
+### model
+model_name_or_path: "/mnt/fr20tb/audiollm/sanghyuk/models/checkpoint-stage1"
+flash_attn: fa2
+enable_liger_kernel: true
+
+### method
+stage: speechx
+do_train: true
+finetuning_type: full
+deepspeed: "examples/deepspeed/ds_z3_config_universal.json"
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: speechx_v6  # 의미 없음
+speechx_dataset:
+  -
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/audio_len_2.5_asr", 0.1]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/audio_len_2.5_continue", 0.2]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/audio_len_2.5_tts", 0.1]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/sentence_asr", 0.1]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/sentence_tts", 0.1]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/word_asr", 0.1]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/word_continue", 0.2]
+    - ["/mnt/clovanap/audiollm/datasets/interleaving/train/v5_datasets/datasets/word_tts", 0.1]
+  - "/mnt/clovanap/audiollm/datasets/interleaving/train/v6_datasets/datasets/unsupervised/audio_clip_units_idx_split_4096"
+  - "/mnt/clovanap/audiollm/datasets/sanghyuk/v6_textonly_nonpack"
+
+speechx_tokenized_path:
+  - "/mnt/tmp/v6_interleave_packed"
+  - "/mnt/tmp/v6_audioclip_packed"
+  - "/mnt/tmp/v6_textonly_packed"
+
+speechx_dataset_ratios: [4, 1, 3]  # Before: [3, 1, 2]
+
+### eval_dataset
+eval_dataset:
+  hcx_text_only: "/mnt/tmp/audiollm/datasets/testset/hcx_textonly"
+  librispeech-test-clean: "/mnt/fr20tb/audiollm/datasets/testset/librispeech_test_clean"
+  librispeech-test-other: "/mnt/fr20tb/audiollm/datasets/testset/librispeech_test_other"
+  ksponspeech-eval-clean: "/mnt/fr20tb/audiollm/datasets/testset/ksponspeech_eval_clean"
+  ksponspeech-eval-other: "/mnt/fr20tb/audiollm/datasets/testset/ksponspeech_eval_other"
+  ksponspeech-eval-clean-asr: "/mnt/fr20tb/audiollm/datasets/testset/ksponspeech_eval_clean_asr"
+  ksponspeech-eval-clean-tts: "/mnt/fr20tb/audiollm/datasets/testset/ksponspeech_eval_clean_tts"
+  librispeech-test-clean-asr: "/mnt/fr20tb/audiollm/datasets/testset/librispeech_test_clean_asr"
+  librispeech-test-clean-tts: "/mnt/fr20tb/audiollm/datasets/testset/librispeech_test_clean_tts"
+
+eval_tokenized_path: "/mnt/tmp/eval_packed"
+
+template: speechx  # 의미 없음
+cutoff_len: 4096
+overwrite_cache: false
+preprocessing_num_workers: 32
+streaming: false
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2048
+predict_with_generate: false
+dataloader_pin_memory: true
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+output_dir: "/mnt/fr20tb/audiollm/results"
+logging_dir: "/mnt/fr20tb/audiollm/results"
+logging_steps: 50
+save_steps: 1000
+save_total_limit: 5
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+resume_from_checkpoint: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4  # Before: 7.5e-5
+weight_decay: 0.001  # Before: 0.0001
+max_steps: 237000
+lr_scheduler_type: warmup_stable_decay  # cooldown: 30000 steps
+lr_scheduler_kwargs:
+  num_stable_steps: 207000
+  num_decay_steps: 30000
+warmup_steps: 0
+bf16: true
+ddp_timeout: 180000000
+dataloader_prefetch_factor: 2
+dataloader_num_workers: 8
+dataloader_persistent_workers: false
+
+### eval
+per_device_eval_batch_size: 2
+eval_strategy: steps
+eval_steps: 500

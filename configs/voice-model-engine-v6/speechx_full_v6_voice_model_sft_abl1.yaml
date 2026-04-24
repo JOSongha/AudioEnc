@@ -1,0 +1,69 @@
+### model
+model_name_or_path: /mnt/fr20tb/audiollm/models/sx-jessica-002-tok2
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z2_config.json  # choices: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: v6_abl1_voice_model
+template: speechx_empty
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 16
+streaming: false
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2048
+predict_with_generate: false
+dataloader_pin_memory: true
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+tokenized_path: /mnt/fr20tb/audiollm/voice_model/packed_data/250422_voice_model_v6_abl1_sft_full
+
+### output
+output_dir: /mnt/fr20tb/audiollm/voice_model/models
+logging_dir: /mnt/fr20tb/audiollm/voice_model/results
+logging_steps: 20
+save_steps: 200
+plot_loss: false
+overwrite_output_dir: true
+save_total_limit: 3
+save_strategy: steps
+load_best_model_at_end: true
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-5
+num_train_epochs: 5
+lr_scheduler_type: warmup_stable_decay
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+weight_decay: 0.001
+dataloader_prefetch_factor: 2
+dataloader_num_workers: 8
+dataloader_persistent_workers: false
+
+# resume_from_checkpoint: true
+
+### eval
+val_size: 0.004
+per_device_eval_batch_size: 2
+eval_strategy: steps
+eval_steps: 200
+
+### token weights
+token_weights:
+  - token: "<|im_end|>"
+    weight: 3.0
+
+## additional configs
+flash_attn: fa2
+enable_liger_kernel: false
