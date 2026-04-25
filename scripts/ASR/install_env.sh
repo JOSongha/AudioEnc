@@ -12,11 +12,15 @@ pip install torch==2.5.1+cu124 torchaudio torchvision \
 
 pip install deepspeed==0.16.9 liger-kernel "wandb==0.19.11" requests -q
 pip install --upgrade pydantic pydantic-core -q
-pip install --force-reinstall nvidia-nccl-cu12==2.21.5 nvidia-cudnn-cu12==9.10.2.21 -q
 
-# conda install cudatoolkit-dev=12.4 -c conda-forge
+# ── CUDA 12.4 libraries (torch 2.5.1 requirements) ──────────────────────────
+pip install --force-reinstall \
+    nvidia-nccl-cu12==2.21.5 \
+    nvidia-cublas-cu12==12.4.5.8 \
+    nvidia-cuda-nvrtc-cu12==12.4.127 \
+    nvidia-cudnn-cu12==9.1.0.70 -q
 
-pip install causal-conv1d --no-build-isolation
+pip install causal-conv1d --no-build-isolation -q
 
 pip install flash-attn==2.8.3 --no-build-isolation -q
 
@@ -24,10 +28,10 @@ pip install -e /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer -q
 pip install -e /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae -q
 
 # ── flash-linear-attention (modeling_qwen3_5AE.py imports fla.modules.FusedRMSNormGated)
-# `--no-deps` prevents fla from upgrading torch (it pulls torch>=2.7.0).
-# fla-core==0.5.0 requires triton>=3.3.0; torch 2.5.1 bundles 3.1.0, so upgrade triton after.
-pip install --no-deps "flash-linear-attention==0.5.0" "fla-core==0.5.0" -q
-pip install "triton==3.3.0" -q  # fla-core 0.5.0 requires triton>=3.3.0 (torch 2.5.1 ships 3.1.0)
+# Use fla-core 0.4.x which is compatible with torch 2.5.1 (avoids torch>=2.7.0 requirement)
+# Downgrade triton back to 3.1.0 to match torch 2.5.1 requirement
+pip install --no-deps "flash-linear-attention==0.4.0" "fla-core==0.4.0" -q
+pip install "triton==3.1.0" -q  # torch 2.5.1 requires triton==3.1.0
 
 # ── glibc_stub.so (flash_attn GLIBC_2.32 workaround) ─────────────────────────
 if [ ! -f "$CONDA_PREFIX/lib/glibc_stub.so" ]; then
@@ -36,12 +40,9 @@ if [ ! -f "$CONDA_PREFIX/lib/glibc_stub.so" ]; then
 fi
 
 # ── flash_attn binary patch (remove GLIBC_2.32 version requirement) ───────────
-FLASH_SO=$(python -c "
-import flash_attn, os, glob
-d = os.path.dirname(flash_attn.__file__)
-hits = glob.glob(os.path.join(d, 'flash_attn_2_cuda*.so'))
-print(hits[0] if hits else '')
-")
+# Use `find` instead of `import flash_attn` to locate the .so — the import itself
+# fails on GLIBC_2.32-absent systems before the patch is applied.
+FLASH_SO=$(find "$CONDA_PREFIX" -name "flash_attn_2_cuda*.so" 2>/dev/null | head -1)
 if [ -n "$FLASH_SO" ] && python -c "
 import subprocess, sys
 out = subprocess.check_output(['objdump', '-p', sys.argv[1]], text=True)
