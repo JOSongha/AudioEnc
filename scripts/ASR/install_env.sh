@@ -24,8 +24,10 @@ pip install -e /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer -q
 pip install -e /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae -q
 
 # ── flash-linear-attention (modeling_qwen3_5AE.py imports fla.modules.FusedRMSNormGated)
-# `--no-deps` prevents fla from upgrading torch (it pulls torch>=2.10).
+# `--no-deps` prevents fla from upgrading torch (it pulls torch>=2.7.0).
+# fla-core==0.5.0 requires triton>=3.3.0; torch 2.5.1 bundles 3.1.0, so upgrade triton after.
 pip install --no-deps "flash-linear-attention==0.5.0" "fla-core==0.5.0" -q
+pip install "triton==3.3.0" -q  # fla-core 0.5.0 requires triton>=3.3.0 (torch 2.5.1 ships 3.1.0)
 
 # ── glibc_stub.so (flash_attn GLIBC_2.32 workaround) ─────────────────────────
 if [ ! -f "$CONDA_PREFIX/lib/glibc_stub.so" ]; then

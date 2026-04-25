@@ -1,0 +1,6 @@
+{
+  "_from_model_config": true,
+  "eos_token_id": 248044,
+  "transformers_version": "4.57.1",
+  "use_cache": false
+}
