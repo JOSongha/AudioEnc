@@ -1,5 +1,5 @@
 ### model
-model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B-whisper-small
+model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B-whisper-tiny
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: true
@@ -39,9 +39,9 @@ accelerator_config:
   non_blocking: true
 
 ### output
-run_name: Qwen3.5_whisper_small_Stage1
-output_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_whisper_small_Stage1
-logging_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_whisper_small_Stage1
+run_name: Qwen3.5_whisper_tiny_Stage1
+output_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_whisper_tiny_Stage1
+logging_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_whisper_tiny_Stage1
 logging_steps: 5
 save_steps: 1000
 save_total_limit: 8

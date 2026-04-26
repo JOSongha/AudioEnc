@@ -73,8 +73,5 @@ export CXX=/usr/bin/g++
 export CUDAHOSTCXX=/usr/bin/g++
 
 # ── Training ──────────────────────────────────────────────────────────────────
-# MODEL_PATH=/mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3AE-4B
-# OMNI_MANIFEST=/mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/datasets/libri_mls_vox
-
 FORCE_TORCHRUN=1 NNODES=$NSML_WORLD_SIZE NODE_RANK=$NSML_RANK MASTER_ADDR=$NSML_HOST_RANK0 MASTER_PORT=21267 \
     llamafactory-cli train /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/configs/test.yaml
