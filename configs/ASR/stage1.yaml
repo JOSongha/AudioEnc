@@ -18,7 +18,7 @@ dataset: speechx_v9 # 의미 없음
 omni_manifest: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/datasets/libri_mls_vox
 load_from_nubes: true
 omni_packing_bucket_size: 256
-omni_max_audio_samples: 2160000
+omni_max_audio_samples: 2160000 # 2,160,000 ÷ 48,000 sample rate = 데이터셋의 각 음성 샘플은 최대 45초로 제한
 
 template: omni # 의미 없음
 cutoff_len: 3584
