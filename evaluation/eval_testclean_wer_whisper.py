@@ -119,11 +119,30 @@ def load_testclean():
     return [{"id": uid, "text": text, "bytes": a["bytes"]} for uid, text, a in zip(ids, texts, audio)]
 
 
-def preprocess_audio(wav_bytes: bytes) -> torch.Tensor:
-    """Load bytes → mono float32 waveform at 16 kHz, shape (S,)."""
+DAC_SR = 48_000
+DAC_HOP = 1_920  # samples per encoder output frame at 48 kHz
+
+
+def _is_whisper_config(cfg) -> bool:
+    return hasattr(cfg, "audio_config") and hasattr(cfg.audio_config, "whisper_model_id")
+
+
+def _is_wavtok_config(cfg) -> bool:
+    return hasattr(cfg, "audio_config") and hasattr(cfg.audio_config, "wavtok_sample_rate")
+
+
+def _raw_waveform_sr_hop(cfg) -> tuple[int, int]:
+    """Return (sample_rate, hop_length) for raw-waveform encoders (DAC / WavTok)."""
+    if _is_wavtok_config(cfg):
+        return cfg.audio_config.wavtok_sample_rate, cfg.audio_config.wavtok_hop_length
+    return DAC_SR, DAC_HOP
+
+
+def preprocess_audio(wav_bytes: bytes, target_sr: int) -> torch.Tensor:
+    """Load bytes → mono float32 waveform at target_sr, shape (S,)."""
     wav, sr = torchaudio.load(io.BytesIO(wav_bytes))
-    if sr != WHISPER_SR:
-        wav = torchaudio.functional.resample(wav, sr, WHISPER_SR)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     return wav.squeeze(0)  # (S,)
@@ -158,19 +177,27 @@ def run_batch(model, tokenizer, cfg, batch):
     """
     batch: list of (id, text_ref, wav_1d_tensor)
 
-    audio_features: [N, 80, 3000] float32 — matches AudioEncoder.forward() contract
-    audio_lengths:  [N] int64           — ceil(wav_len / 320), capped at 1500
+    Whisper encoder: audio_features [N, 80, 3000] float32, audio_lengths ceil(S/320) ≤ 1500
+    DAC encoder:     audio_features [N, 1, S_max]  bfloat16, audio_lengths S // 1920
     """
+    use_whisper = _is_whisper_config(cfg)
+    raw_sr, raw_hop = _raw_waveform_sr_hop(cfg)
     audio_pad_id = cfg.audio_pad_token_id
     pad_id = cfg.pad_token_id
     eos_id = cfg.eos_token_id
 
-    prompts, mels, t_audios = [], [], []
+    prompts, audio_tensors, t_audios = [], [], []
     for _, _, wav in batch:
         n_samples = wav.shape[-1]
-        t_audio = audio_pad_token_count(n_samples)
+        if use_whisper:
+            t_audio = audio_pad_token_count(n_samples)
+            audio_tensors.append(extract_mel(wav))             # [80, 3000]
+        else:
+            t_audio = n_samples // raw_hop
+            if t_audio == 0:
+                t_audio = 1
+            audio_tensors.append(wav)                          # (S,)
         t_audios.append(t_audio)
-        mels.append(extract_mel(wav))                          # [80, 3000]
         prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio))
 
     # Left-pad token sequences for batch generation.
@@ -183,8 +210,16 @@ def run_batch(model, tokenizer, cfg, batch):
     input_ids = torch.tensor(input_ids, dtype=torch.long, device=model.device)
     attn_mask = torch.tensor(attn_mask, dtype=torch.long, device=model.device)
 
-    # Stack mels: [N, 80, 3000] float32.
-    audio_features = torch.stack(mels, dim=0).to(model.device)   # fp32; cast inside AudioEncoder
+    if use_whisper:
+        # [N, 80, 3000] float32 — cast to bf16 inside AudioEncoder
+        audio_features = torch.stack(audio_tensors, dim=0).to(model.device)
+    else:
+        # [N, 1, S_max] bfloat16 raw waveform (DAC 48kHz or WavTok 24kHz)
+        max_s = max(w.shape[-1] for w in audio_tensors)
+        audio_features = torch.stack(
+            [torch.nn.functional.pad(w, (0, max_s - w.shape[-1])) for w in audio_tensors]
+        ).unsqueeze(1).to(model.device, dtype=torch.bfloat16)
+
     audio_lengths = torch.tensor(t_audios, dtype=torch.long, device=model.device)
 
     with torch.inference_mode():
@@ -237,10 +272,12 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
         max_samples = len(rows)
     rows_sub = rows[:max_samples]
 
+    target_sr = WHISPER_SR if _is_whisper_config(cfg) else _raw_waveform_sr_hop(cfg)[0]
+
     # Pre-load and sort by waveform length to stabilise batch padding.
     prepared = []
     for r in rows_sub:
-        wav = preprocess_audio(r["bytes"])
+        wav = preprocess_audio(r["bytes"], target_sr)
         prepared.append({"id": r["id"], "text": r["text"], "wav": wav})
     prepared.sort(key=lambda x: x["wav"].shape[-1])
 
@@ -289,8 +326,8 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
         "wer_raw": wer_raw,
         "elapsed_sec": time.time() - t0,
         "batch_size": batch_size,
-        "audio_sr": WHISPER_SR,
-        "audio_format": "log-mel [80, 3000]",
+        "audio_sr": WHISPER_SR if _is_whisper_config(cfg) else _raw_waveform_sr_hop(cfg)[0],
+        "audio_format": "log-mel [80, 3000]" if _is_whisper_config(cfg) else "raw [N, 1, S] bf16",
         "normalizer": "whisper.EnglishTextNormalizer",
     }
     with open(summary_path, "w") as f:
@@ -306,7 +343,15 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+def _has_safetensors(p: Path) -> bool:
+    return (p / "model.safetensors.index.json").exists() or (p / "model.safetensors").exists()
+
+
 def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
+    # Case 1: root itself is a checkpoint (safetensors live directly in root).
+    if _has_safetensors(root):
+        return [root]
+
     ckpts = []
     for p in sorted(root.iterdir()):
         m = re.match(r"checkpoint-(\d+)$", p.name)
@@ -315,12 +360,12 @@ def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
         step = int(m.group(1))
         if steps_filter and step not in steps_filter:
             continue
+        if not _has_safetensors(p):
+            print(f"[eval] skip {p.name} (no safetensors yet)", flush=True)
+            continue
         st = p / "model.safetensors.index.json"
         if not st.exists():
             st = p / "model.safetensors"
-        if not st.exists():
-            print(f"[eval] skip {p.name} (no safetensors yet)", flush=True)
-            continue
         mtime = st.stat().st_mtime
         if not include_partial and (time.time() - mtime) < 60:
             print(f"[eval] skip {p.name} (save in progress)", flush=True)
