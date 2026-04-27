@@ -193,3 +193,4 @@ external/models/**/global_step*/
 external/models/**/latest
 external/models/**/rng_state_*.pth
 external/models/**/__pycache__/
+.claude/
