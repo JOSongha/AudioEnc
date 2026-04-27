@@ -292,6 +292,7 @@ def create_omni_processor(
         all_labels: list[list[int]] = []
         all_audio_features: list[Any] = []
         all_audio_lengths: list[int] = []
+        all_audio_modality_ids: list[int] = []
         all_modality_ids: list[list[int]] = []
 
         rows = _rows(examples)
@@ -382,19 +383,23 @@ def create_omni_processor(
             # Maintain 1:1 index alignment with input_ids. Text rows get a
             # length-0 placeholder — packer filters these out via the
             # `audio_lengths > 0` check, so no empty tensor ever reaches
-            # the collator's stack().
+            # the collator's stack(). audio_modality_ids parallels
+            # audio_features so the encoder can gate noise aug per modality.
             if waveform is not None:
                 all_audio_features.append(waveform.squeeze(0))
                 all_audio_lengths.append(t_audio)
+                all_audio_modality_ids.append(mod_id)
             else:
                 all_audio_features.append(torch.zeros(0, dtype=torch.float32))
                 all_audio_lengths.append(0)
+                all_audio_modality_ids.append(MODALITY_PAD_ID)
 
         return {
             "input_ids": all_input_ids,
             "labels": all_labels,
             "audio_features": all_audio_features,
             "audio_lengths": all_audio_lengths,
+            "audio_modality_ids": all_audio_modality_ids,
             "modality_ids": all_modality_ids,
         }
 
@@ -452,10 +457,12 @@ def create_omni_packer(
             "attention_mask": [],
             "audio_features": [],  # list of lists — each packed seq's audio waveforms
             "audio_lengths": [],  # list of lists — each packed seq's audio token counts
+            "audio_modality_ids": [],  # list of lists — per-audio modality id, aligned with audio_features
             "modality_ids": [],  # per-token modality id, aligned with input_ids
         }
 
         have_modality = "modality_ids" in examples
+        have_audio_modality = "audio_modality_ids" in examples
 
         for knapsack in knapsacks:
             packed_input_ids = []
@@ -463,6 +470,7 @@ def create_omni_packer(
             packed_attention_mask = []
             packed_audio_features = []
             packed_audio_lengths = []
+            packed_audio_modality_ids = []
             packed_modality_ids = []
 
             for seq_idx, orig_idx in enumerate(knapsack):
@@ -485,6 +493,12 @@ def create_omni_packer(
                 if examples["audio_lengths"][orig_idx] > 0:
                     packed_audio_features.append(examples["audio_features"][orig_idx])
                     packed_audio_lengths.append(examples["audio_lengths"][orig_idx])
+                    if have_audio_modality:
+                        packed_audio_modality_ids.append(
+                            examples["audio_modality_ids"][orig_idx]
+                        )
+                    else:
+                        packed_audio_modality_ids.append(MODALITY_PAD_ID)
 
             # Pad to cutoff_len
             pad_len = cutoff_len - len(packed_input_ids)
@@ -499,6 +513,7 @@ def create_omni_packer(
             model_inputs["attention_mask"].append(packed_attention_mask)
             model_inputs["audio_features"].append(packed_audio_features)
             model_inputs["audio_lengths"].append(packed_audio_lengths)
+            model_inputs["audio_modality_ids"].append(packed_audio_modality_ids)
             model_inputs["modality_ids"].append(packed_modality_ids)
 
         return model_inputs
@@ -533,10 +548,18 @@ class OmniCollator:
         # 2. Flatten audio_features across batch → (N_audio, 1, S_max)
         all_waveforms = []
         all_audio_lengths = []
+        all_audio_modality_ids = []
         for f in features:
             for wav in f["audio_features"]:
                 all_waveforms.append(wav if isinstance(wav, torch.Tensor) else torch.tensor(wav, dtype=torch.float32))
             all_audio_lengths.extend(f["audio_lengths"])
+            # audio_modality_ids parallels audio_features (one entry per audio).
+            # Old shards may not have it; default to MODALITY_PAD_ID and let
+            # the encoder fall back to legacy noise-aug-on-all behavior.
+            if "audio_modality_ids" in f:
+                all_audio_modality_ids.extend(f["audio_modality_ids"])
+            else:
+                all_audio_modality_ids.extend([MODALITY_PAD_ID] * len(f["audio_lengths"]))
 
         if all_waveforms:
             max_audio_len = max(w.size(0) for w in all_waveforms)
@@ -547,6 +570,7 @@ class OmniCollator:
             audio_features = torch.zeros((0, 1, 0), dtype=torch.float32)
 
         audio_lengths = torch.tensor(all_audio_lengths, dtype=torch.long)
+        audio_modality_ids = torch.tensor(all_audio_modality_ids, dtype=torch.long)
 
         # 3. Build attention mask / position_ids
         # Stack per-token modality ids (same shape as input_ids). If upstream
@@ -561,6 +585,7 @@ class OmniCollator:
             "labels": labels,  # (B, cutoff_len)
             "audio_features": audio_features,  # (N_audio, 1, S_max)
             "audio_lengths": audio_lengths,  # (N_audio,)
+            "audio_modality_ids": audio_modality_ids,  # (N_audio,) — gates ASR-only noise aug in encoder
             "modality_ids": modality_ids,  # (B, cutoff_len)  — consumed by OmniTrainer, popped before model call
         }
 

@@ -459,6 +459,114 @@ def generate_greedy(
 
 
 # ---------------------------------------------------------------------------
+# teacher-forced sequence scoring (for mAP-compatible readouts)
+# ---------------------------------------------------------------------------
+
+
+def score_labels_teacher_forced(
+    model,
+    cfg,
+    prompt_ids: list[int],
+    waveform: torch.Tensor,
+    label_token_seqs: list[list[int]],
+    *,
+    batch_size: int = 50,
+    length_normalize: bool = True,
+) -> torch.Tensor:
+    """For one sample + one prompt, score each candidate label sequence.
+
+    Returns a 1-D tensor of shape (len(label_token_seqs),) containing
+    sum(log P(label_tok[j] | prompt + label_tok[:j])) for j in each label's
+    tokens. If `length_normalize` (default True) the score is divided by
+    the number of tokens in that label so long labels aren't penalized.
+
+    Implementation: within a sample, all rows share the same prompt prefix;
+    we batch `batch_size` labels at a time and slice out only the logits at
+    the label-token positions (keeps peak activation memory manageable
+    vs. full-vocab softmax on every timestep).
+
+    Assumes the caller has already done `load_checkpoint()` (so cache shims
+    and generate-shim are in place — though we don't call `generate()` here
+    we rely on the same custom forward).
+    """
+    import torch.nn.functional as F  # deferred import
+
+    device = next(model.parameters()).device
+    audio_pad_id = cfg.audio_pad_token_id
+    pad_id = cfg.pad_token_id
+
+    prompt_len = len(prompt_ids)
+    prompt_tensor = torch.tensor(prompt_ids, dtype=torch.long, device=device)
+    n_labels = len(label_token_seqs)
+    scores = torch.zeros(n_labels, dtype=torch.float32)
+
+    # Audio lengths (frames)
+    t_audio = max(1, waveform.shape[-1] // HOP_LENGTH)
+    audio_feat_1 = waveform.to(dtype=torch.bfloat16, device=device).unsqueeze(0).unsqueeze(0)
+    # shape (1, 1, S) — will expand to (B, 1, S) per sub-batch
+
+    def _run_chunk(chunk: list[list[int]], start_idx: int) -> None:
+        B = len(chunk)
+        label_lens = [len(s) for s in chunk]
+        max_label_len = max(label_lens)
+        seq_len = prompt_len + max_label_len
+
+        input_ids = torch.full((B, seq_len), pad_id, dtype=torch.long, device=device)
+        attn_mask = torch.zeros((B, seq_len), dtype=torch.long, device=device)
+        for i, lab in enumerate(chunk):
+            input_ids[i, :prompt_len] = prompt_tensor
+            lab_t = torch.tensor(lab, dtype=torch.long, device=device)
+            input_ids[i, prompt_len : prompt_len + len(lab)] = lab_t
+            attn_mask[i, : prompt_len + len(lab)] = 1
+
+        audio_feats = audio_feat_1.expand(B, -1, -1).contiguous()
+        audio_lens = torch.full((B,), t_audio, dtype=torch.long, device=device)
+
+        with torch.inference_mode():
+            out = model(
+                input_ids=input_ids,
+                attention_mask=attn_mask,
+                audio_features=audio_feats,
+                audio_lengths=audio_lens,
+                use_cache=False,
+            )
+        logits = out.logits  # (B, seq_len, vocab)
+        label_logits = logits[:, prompt_len - 1 : prompt_len + max_label_len - 1, :]
+        log_probs_slice = F.log_softmax(label_logits, dim=-1)
+
+        for i, lab in enumerate(chunk):
+            ll = label_lens[i]
+            idx = torch.tensor(lab, dtype=torch.long, device=device)
+            gathered = log_probs_slice[i, :ll, :].gather(-1, idx.unsqueeze(-1)).squeeze(-1)
+            s = gathered.sum().item()
+            if length_normalize and ll > 0:
+                s = s / ll
+            scores[start_idx + i] = s
+
+        del logits, label_logits, log_probs_slice
+
+    # Dynamic OOM fallback: start at `batch_size`, halve on OOM down to 1.
+    start = 0
+    bs = batch_size
+    while start < n_labels:
+        chunk = label_token_seqs[start : start + bs]
+        try:
+            _run_chunk(chunk, start)
+            start += len(chunk)
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if bs == 1:
+                raise
+            bs = max(1, bs // 2)
+            # retry same start with smaller chunk
+            continue
+        finally:
+            torch.cuda.empty_cache()
+
+    return scores
+
+
+# ---------------------------------------------------------------------------
 # checkpoint discovery (copied from evaluation/eval_testclean_wer.py:find_checkpoints)
 # ---------------------------------------------------------------------------
 

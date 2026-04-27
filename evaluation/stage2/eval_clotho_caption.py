@@ -240,29 +240,38 @@ def eval_checkpoint(
     bleu4, precisions = corpus_bleu(all_refs, hyp_toks, max_n=4)
     bleu1 = precisions[0] if precisions else 0.0
 
-    # Optional COCO-style CIDEr/METEOR/SPICE via pycocoevalcap.
-    coco_scores: dict[str, float | None] = {"CIDEr": None, "METEOR": None, "ROUGE_L": None, "SPICE": None}
+    # Optional COCO-style CIDEr/METEOR/ROUGE/SPICE via pycocoevalcap.
+    # Each metric attempted separately so Java-only ones (METEOR, SPICE) can
+    # fail without dropping CIDEr/ROUGE.
+    coco_scores: dict[str, float | None] = {"CIDEr": None, "METEOR": None,
+                                             "ROUGE_L": None, "SPICE": None}
     if try_pycoco:
+        gts = {str(i): r["captions"] for i, r in enumerate(prepared)}
+        res = {str(i): [all_preds[i]] for i in range(len(all_preds))}
+
         try:
             from pycocoevalcap.cider.cider import Cider
-            from pycocoevalcap.meteor.meteor import Meteor
+            coco_scores["CIDEr"] = float(Cider().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] CIDEr unavailable: {e}", flush=True)
+
+        try:
             from pycocoevalcap.rouge.rouge import Rouge
-            gts = {str(i): r["captions"] for i, r in enumerate(prepared)}
-            res = {str(i): [all_preds[i]] for i in range(len(all_preds))}
-            c_score, _ = Cider().compute_score(gts, res)
-            m_score, _ = Meteor().compute_score(gts, res)
-            r_score, _ = Rouge().compute_score(gts, res)
-            coco_scores["CIDEr"] = float(c_score)
-            coco_scores["METEOR"] = float(m_score)
-            coco_scores["ROUGE_L"] = float(r_score)
-            try:
-                from pycocoevalcap.spice.spice import Spice
-                s_score, _ = Spice().compute_score(gts, res)
-                coco_scores["SPICE"] = float(s_score)
-            except Exception as e:
-                print(f"[clotho] SPICE unavailable: {e}", flush=True)
-        except ImportError:
-            print("[clotho] pycocoevalcap not installed; skipping CIDEr/METEOR/ROUGE/SPICE", flush=True)
+            coco_scores["ROUGE_L"] = float(Rouge().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] ROUGE_L unavailable: {e}", flush=True)
+
+        try:
+            from pycocoevalcap.meteor.meteor import Meteor
+            coco_scores["METEOR"] = float(Meteor().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] METEOR unavailable (needs Java): {e}", flush=True)
+
+        try:
+            from pycocoevalcap.spice.spice import Spice
+            coco_scores["SPICE"] = float(Spice().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] SPICE unavailable (needs Java + CoreNLP): {e}", flush=True)
 
     summary = {
         "checkpoint": str(ckpt_path),

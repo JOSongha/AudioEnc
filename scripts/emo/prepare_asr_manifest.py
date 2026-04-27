@@ -22,10 +22,10 @@ SRC = Path("/mnt/fr20tb/audiollm/sanghyuk/datasets/qwen3_5_dacvae_asr_shuffled_1
 OUT = Path("/mnt/tmp/listen_analysis/train_manifest/asr_manifest.jsonl")
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
-# User-set 2026-04-24 mix halved the ASR share (0.83 → 0.415 relative to Emo=1).
-# Ratio ASR:EMO:ENV:TXT = 0.415:1:1:0.5, so ASR target = emotion_pool × 0.415.
-TARGET = 17_150
-random.seed(20260424)
+# 2026-04-25: pool expanded to ≈ emotion size (user-requested).
+# Emotion pool = 39 919 → ASR target rounded to 40 000.
+TARGET = 40_000
+random.seed(20260425)
 
 
 def classify(nubes_path: str) -> str:
