@@ -260,6 +260,136 @@ v1과 동일:
 
 ---
 
+## Trial v3-whisper — encoder swap (small + tiny, 2026-04-27 시작 예정)
+
+### 동기
+
+v1/v2 모두 **DAC-VAE 48kHz 인코더**를 audio backbone으로 사용. v2 결과
+(11/n: 모든 task에서 v1 대비 우세 — `stage2_eval_harness.md` §14)는 *데이터
+mix*가 v1→v2의 단일 변경이었으므로 *audio backbone* 자체는 비교 대상에서
+빠져 있음. **인코더를 바꾸면 어디까지 오를 수 있는가**가 본 trial의 질문.
+
+후보:
+- **Whisper-small.en** (768 hidden, ~88 M params encoder + projector)
+- **Whisper-tiny.en** (384 hidden, ~39 M params encoder + projector)
+
+각각 audio_encoder 로 사용하는 Stage-2 SFT를 v2와 동일 mix·동일 hyperparam
+으로 돌림 → encoder-controlled 비교.
+
+### Stage-1 출발점 (sehyun 빌드)
+
+| variant | Stage-1 final ckpt | step | loss | LibriSpeech test-clean WER |
+|---|---|---:|---:|---:|
+| Whisper-small | `external/ckpts/Qwen3.5_whisper_small_Stage1/.../checkpoint-13000` | 13_000 | 0.146 | **2.58 %** |
+| Whisper-tiny  | `external/ckpts/Qwen3.5_whisper_tiny_Stage1/.../checkpoint-13000`  | 13_000 | 0.185 | **3.57 %** |
+| (DAC, 비교용) `s2_init_42k` baseline | step 42 000 | 42_000 | — | 7.28 % |
+
+→ Whisper 변형이 Stage-1 시점에서 이미 **DAC 대비 2-3× 더 낮은 WER**.
+audio understanding의 모든 high-level task가 Stage-2에서 어떻게 따라오는지가
+관심 포인트.
+
+### 설정
+
+- **Run names**:
+  - small: `Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03`
+  - tiny:  `Qwen3.5AE-Stage2-whisper-tiny-emoFull-asr033-env05-txt03`
+- **Configs**:
+  - [`configs/qwen3_5ae-asr/stage2_whisper_small.yaml`](../configs/qwen3_5ae-asr/stage2_whisper_small.yaml)
+  - [`configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml`](../configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml)
+- **Launch scripts**:
+  - [`run_whisper_small_8gpu.sh`](../configs/qwen3_5ae-asr/run_whisper_small_8gpu.sh)
+  - [`run_whisper_tiny_8gpu.sh`](../configs/qwen3_5ae-asr/run_whisper_tiny_8gpu.sh)
+- **Manifest**: v2 그대로 (`stage2_combined_shards_eprandom`, 1.84 M rows, 20 epochs, emo 43% / asr 14% / env 36% / text 7%).
+- **Mix 비율**: v2와 동일 (`emoFull / asr033 / env05 / txt03` per-epoch fractions).
+
+### v2 (DAC) 와의 차이 — yaml 레벨
+
+순수 학습 hyperparam은 100 % 동일. 차이는 인코더 결정의 직접 결과만:
+
+| 필드 | v2 (DAC) | whisper-small | whisper-tiny |
+|---|---|---|---|
+| `model_name_or_path` | `/mnt/tmp/s2_init_42k` | Whisper-small Stage-1 final | Whisper-tiny Stage-1 final |
+| `omni_max_audio_samples` | 1_600_000 (33s @ 48kHz) | 480_000 (30s @ 16kHz) | 480_000 |
+| `run_name` | `Stage2v2-emoFull-...` | `Stage2-whisper-small-...` | `Stage2-whisper-tiny-...` |
+
+나머지 동일: LoRA `rank=16, alpha=32, dropout=0.05, target=q/k/v/o_proj`,
+`additional_target=audio_encoder.projector` (projector full-trainable),
+deepspeed `ds_z2_no_fused.json`, fa2 + liger + bf16, lr 1e-5, batch 3,
+gradient_accumulation 1, max_steps 50_000, warmup 1000, save_steps 1000,
+manifest 동일.
+
+### 인프라 — 자동 라우팅
+
+추가 코드 변경 불필요. 기존 dispatcher가 model `audio_config` 의
+`whisper_model_id` 필드를 읽어 자동 분기:
+
+| 컴포넌트 | DAC 경로 | Whisper 경로 | 분기 위치 |
+|---|---|---|---|
+| Per-row processor | `create_omni_processor` | `create_omni_processor_whisper` | [`data/loader.py:638`](../src/llamafactory/data/loader.py#L638) |
+| Collator | `OmniCollator` (waveform pad+stack) | `WhisperOmniCollator` (mel `[N,80,3000]` stack) | [`train/omni/workflow.py:79`](../src/llamafactory/train/omni/workflow.py#L79) |
+| Audio I/O | DAC packed-token preload | `audio_io.load_audio_chunk` (auto-resample 16kHz) | [`data/audio_io.py`](../src/llamafactory/data/audio_io.py) |
+| Feature extraction | (DAC token sequence) | `whisper_features.extract_mel` ([80, 3000] log-mel via `WhisperFeatureExtractor`) | [`data/whisper_features.py`](../src/llamafactory/data/whisper_features.py) |
+
+⇒ Whisper용 manifest 별도 빌드 불필요. v2 manifest 의 `path` 필드(어떤 sr이든) 가 16kHz 로 자동 resample → mono → log-mel 변환되어 collator 에 [N, 80, 3000] 로 stack.
+
+### 운영 plan
+
+1. **Phase 0 (완료)**: 인프라 검증 — auto-routing, audio_io resample, mel
+   shape contract 모두 확인.
+2. **Phase 1 (완료)**: yaml 4개 (config × 2 + launch × 2) 작성.
+3. **Phase 3**: smoke test — small variant 200-step 짧은 학습으로 forward
+   / backward / save / load 검증.
+4. **Phase 4**: 8-GPU 풀런. **small 먼저 단독** → 끝나면 tiny 후속 launch.
+   동시 실행 안 함 (8-GPU 리소스 한 번에 한 trial 만).
+5. **Phase 5**: 학습 종료(또는 50k 도달) 후 v1/v2 와 동일한 25-task eval
+   harness 적용. 비교 표는 `stage2_eval_harness.md` §15 (예정) 에 기재.
+
+### 예상 timeline
+
+- v2 reference: 31_283 step 까지 7.5h × 8-GPU = ~31h 추정 (하지만 실측은
+  user-SIGTERM 으로 중단 — 50k 풀 추정 ~38h).
+- Whisper-small: encoder forward 약간 무거움(88M vs DAC 비교 미상) →
+  ~10-15 % overhead 가정 → **50k 약 42-45h**.
+- Whisper-tiny: encoder 작아서 v2 와 비슷 또는 살짝 빠름 → **50k 약
+  35-40h**.
+- 합계 small + tiny 시퀀셜: 약 **3.5-4 일** (smoke + 본런).
+
+### 비교 가설
+
+1. **ASR**: Whisper-small > Whisper-tiny > DAC. Stage-1 WER (2.58 / 3.57 /
+   ~4.98 v1 best @ ckpt-4k) 와 같은 순서로 Stage-2 후 ASR 도 정렬될 가능성.
+2. **Sound classification (ESC-50, FSD50K)**: Whisper 가 음성 특화이므로
+   non-speech 에서 DAC 보다 약할 수 있음. v2 ESC-50 99.1 % 를 따라잡을 수
+   있는지가 큰 관전 포인트.
+3. **Emotion**: Whisper 가 음성 prosody를 보존하므로 DAC 보다 우세 가능. 단
+   Whisper.en 은 영어 전용 음성 모델이라 prosody 표현 폭이 좁을 수 있음.
+4. **Captioning (Clotho)**: Whisper 의 음성 편향 때문에 환경음 captioning
+   에서 DAC 보다 떨어질 가능성.
+5. **Tiny vs small**: tiny 가 small 의 70-90 % 정도 성능에 capacity gap
+   확인.
+
+### 결과 (TBD — 학습 종료 후 채움)
+
+| metric | v2 (DAC) ckpt-21k | whisper-small | whisper-tiny |
+|---|---:|---:|---:|
+| WER clean      | 0.0520 | TBD | TBD |
+| WER other      | 0.1843 | TBD | TBD |
+| FSD50K mAP-μ   | 0.3033 | TBD | TBD |
+| ESC-50 acc     | 0.9600 | TBD | TBD |
+| Clotho BLEU-4  | 0.0920 | TBD | TBD |
+| Clotho CIDEr   | 0.1465 | TBD | TBD |
+| Text retention | 0.9061 | TBD | TBD |
+| LISTEN MCQA acc| 0.2641 | TBD | TBD |
+| MELD F1        | 0.2775 | TBD | TBD |
+| DailyTalk F1   | 0.3929 | TBD | TBD |
+| EmoV acc       | 0.7721 | TBD | TBD |
+| RAVDESS acc    | 0.5583 | TBD | TBD |
+
+(v2 column 은 cross-task Pareto-best ckpt-21k 의 값. Whisper run 의
+best-ckpt 도 동일 방식으로 산출 후 채움.)
+
+---
+
 ## Possible v3+ candidates (future trials, not yet committed)
 
 후속 trial 후보 — v2 결과 본 후 결정:

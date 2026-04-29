@@ -33,12 +33,13 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
+    t_audio_for,
 )
 
 CLOTHO_ROOT = Path("/mnt/tmp/datasets/env_sound/Clotho")
@@ -141,10 +142,10 @@ def load_clotho_split(split: str) -> list[dict]:
     return rows
 
 
-def preprocess_audio(path: str, max_samples: int) -> torch.Tensor:
+def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
     wav, sr = torchaudio.load(path)
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -165,7 +166,7 @@ def run_batch(model, tokenizer, cfg, batch: list[dict],
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
-        t_audio = max(1, wav.shape[-1] // HOP_LENGTH)
+        t_audio = t_audio_for(cfg, wav.shape[-1])
         prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_CAPTION_STEM))
         waveforms.append(wav)
     return generate_greedy(
@@ -190,13 +191,16 @@ def eval_checkpoint(
     summary_path = out_dir / "summary.json"
 
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    target_sr = audio_sample_rate(cfg)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     # Pre-decode audio and sort for batch stability.
-    print(f"[clotho] decoding {len(rows)} audios...", flush=True)
+    print(f"[clotho] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     for r in rows:
         try:
-            wav = preprocess_audio(r["path"], max_audio_samples)
+            wav = preprocess_audio(r["path"], target_sr, max_audio_samples)
         except Exception as e:
             print(f"[clotho] load fail {r['file']}: {e}", flush=True)
             continue
@@ -304,7 +308,8 @@ def parse_args():
     p.add_argument("--split", default="evaluation", choices=["evaluation", "validation"])
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-pycoco", action="store_true",
                    help="Skip the CIDEr/METEOR/ROUGE block even if pycocoevalcap is installed.")

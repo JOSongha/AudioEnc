@@ -34,12 +34,13 @@ from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
+    t_audio_for,
 )
 
 # Canonical ASR stem. Same string as TASK_PROMPTS["asr"][0] and
@@ -54,7 +55,13 @@ MAX_NEW_TOKENS = 256
 
 
 def load_split(split: str, max_samples: int | None) -> list[dict]:
-    """Load LibriSpeech test-clean or test-other via HF datasets."""
+    """Load LibriSpeech test-clean or test-other via HF datasets.
+
+    Returns rows with `_wav` at the *native* sample rate of the dataset and the
+    accompanying `_sr` field. Per-checkpoint resampling to the encoder's
+    target SR happens in `eval_checkpoint` so the same `rows` list serves both
+    DAC (48 kHz) and Whisper (16 kHz) encoders without duplicate decode passes.
+    """
     from datasets import load_dataset
     # split in {"test.clean", "test.other"}. HF config = "clean"/"other",
     # split_name = "test".
@@ -70,10 +77,10 @@ def load_split(split: str, max_samples: int | None) -> list[dict]:
         # `audio` is {array, sampling_rate, path}; use array directly.
         audio = r["audio"]
         wav = torch.tensor(audio["array"], dtype=torch.float32)
-        src_sr = audio["sampling_rate"]
-        if src_sr != SAMPLE_RATE:
-            wav = torchaudio.functional.resample(wav, src_sr, SAMPLE_RATE)
-        rows.append({"id": r["id"], "text": r["text"], "_wav": wav})
+        rows.append({
+            "id": r["id"], "text": r["text"],
+            "_wav": wav, "_sr": int(audio["sampling_rate"]),
+        })
     return rows
 
 
@@ -83,17 +90,21 @@ def load_split(split: str, max_samples: int | None) -> list[dict]:
 
 
 @torch.inference_mode()
-def run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache):
+def run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache,
+              no_repeat_ngram, no_think):
     audio_pad_id = cfg.audio_pad_token_id
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
-        t_audio = max(1, wav.shape[-1] // HOP_LENGTH)
-        prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, ASR_STEM))
+        t_audio = t_audio_for(cfg, wav.shape[-1])
+        prompts.append(build_prompt_ids(
+            tokenizer, audio_pad_id, t_audio, ASR_STEM, no_think=no_think,
+        ))
         waveforms.append(wav)
     return generate_greedy(
         model, tokenizer, cfg, prompts, waveforms,
         max_new_tokens=max_new_tokens, use_cache=use_cache,
+        no_repeat_ngram_size=no_repeat_ngram,
     )
 
 
@@ -106,16 +117,24 @@ def eval_checkpoint(
     max_audio_samples: int,
     max_new_tokens: int,
     use_cache: bool,
+    no_repeat_ngram: int,
+    no_think: bool,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_path = out_dir / "predictions.jsonl"
     summary_path = out_dir / "summary.json"
 
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    target_sr = audio_sample_rate(cfg)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
     normalizer = EnglishTextNormalizer({})
 
-    # Truncate overly long clips to max_audio_samples (omni_max_audio_samples parity)
+    # Per-encoder resample (rows from load_split keep native SR) + length cap.
     for r in rows:
+        if r.get("_sr") != target_sr:
+            r["_wav"] = torchaudio.functional.resample(r["_wav"], r["_sr"], target_sr)
+            r["_sr"] = target_sr
         if r["_wav"].shape[-1] > max_audio_samples:
             r["_wav"] = r["_wav"][:max_audio_samples]
     # Length-sort for padding efficiency
@@ -127,12 +146,14 @@ def eval_checkpoint(
         for i in range(0, len(rows_sorted), batch_size):
             batch = rows_sorted[i : i + batch_size]
             try:
-                outs = run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache)
+                outs = run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache,
+                                 no_repeat_ngram, no_think)
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 outs = []
                 for one in batch:
-                    outs.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens, use_cache))
+                    outs.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens, use_cache,
+                                          no_repeat_ngram, no_think))
 
             for r, hyp in zip(batch, outs):
                 fp.write(json.dumps({"id": r["id"], "ref": r["text"], "hyp": hyp},
@@ -168,6 +189,8 @@ def eval_checkpoint(
         "elapsed_sec": time.time() - t0,
         "stem": ASR_STEM,
         "use_cache": use_cache,
+        "no_repeat_ngram": no_repeat_ngram,
+        "no_think": no_think,
         "normalizer": "whisper.EnglishTextNormalizer",
     }
     with open(summary_path, "w", encoding="utf-8") as f:
@@ -189,10 +212,15 @@ def parse_args():
                    choices=["test.clean", "test.other"])
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--include-partial", action="store_true")
+    p.add_argument("--no-repeat-ngram", type=int, default=0,
+                   help="no_repeat_ngram_size for generate; 0 = off (default).")
+    p.add_argument("--no-think", action="store_true",
+                   help="Append '/no_think' to the system prompt (Qwen3 reasoning suppression).")
     return p.parse_args()
 
 
@@ -229,6 +257,8 @@ def main():
                 max_audio_samples=args.max_audio_samples,
                 max_new_tokens=args.max_new_tokens,
                 use_cache=not args.no_cache,
+                no_repeat_ngram=args.no_repeat_ngram,
+                no_think=args.no_think,
             )
             all_summaries.append(s)
         except Exception:

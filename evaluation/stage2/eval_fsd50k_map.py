@@ -49,12 +49,13 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
+    t_audio_for,
     score_labels_teacher_forced,
 )
 
@@ -107,10 +108,10 @@ def load_eval(max_samples: int | None) -> list[dict]:
     return rows
 
 
-def preprocess_audio(path: str, max_samples: int) -> torch.Tensor:
+def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
     wav, sr = torchaudio.load(path)
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -164,7 +165,7 @@ def run_batch(model, tokenizer, cfg, batch: list[dict],
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
-        t_audio = max(1, wav.shape[-1] // HOP_LENGTH)
+        t_audio = t_audio_for(cfg, wav.shape[-1])
         prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_STEM))
         waveforms.append(wav)
     return generate_greedy(
@@ -215,7 +216,7 @@ def _run_sequence_scoring(
             for j in true_idxs:
                 y_true[row_i, j] = 1
 
-            t_audio = max(1, r["_wav"].shape[-1] // HOP_LENGTH)
+            t_audio = t_audio_for(cfg, r["_wav"].shape[-1])
             prompt_ids = build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_STEM)
 
             try:
@@ -312,10 +313,14 @@ def eval_checkpoint(
     summary_path = out_dir / "summary.json"
 
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    target_sr = audio_sample_rate(cfg)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     # Optional: load pre-decoded waveforms from /dev/shm cache (set
     # FSD50K_DECODED_CACHE env). Speeds up dense parallel sweeps by
-    # eliminating per-process redundant resample work.
+    # eliminating per-process redundant resample work. Cache is
+    # encoder-specific (DAC 48 kHz vs Whisper 16 kHz) — caller's responsibility.
     cache_path = _os.environ.get("FSD50K_DECODED_CACHE")
     cache: dict[str, torch.Tensor] | None = None
     if cache_path and Path(cache_path).exists():
@@ -323,18 +328,18 @@ def eval_checkpoint(
         cache = torch.load(cache_path, map_location="cpu")
         print(f"[fsd50k] cache: {len(cache)} entries", flush=True)
 
-    print(f"[fsd50k] decoding {len(rows)} audios...", flush=True)
+    print(f"[fsd50k] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     for r in rows:
         try:
             if cache is not None:
                 wav_fp16 = cache.get(r["fname"])
                 if wav_fp16 is None:
-                    wav = preprocess_audio(r["path"], max_audio_samples)
+                    wav = preprocess_audio(r["path"], target_sr, max_audio_samples)
                 else:
                     wav = wav_fp16.to(torch.float32)
             else:
-                wav = preprocess_audio(r["path"], max_audio_samples)
+                wav = preprocess_audio(r["path"], target_sr, max_audio_samples)
         except Exception as e:
             print(f"[fsd50k] load fail {r['fname']}: {e}", flush=True)
             continue
@@ -459,7 +464,8 @@ def parse_args():
     p.add_argument("--ckpts", default=None)
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true",
                    help="Disable KV/conv cache during generation (shim-free ground truth).")

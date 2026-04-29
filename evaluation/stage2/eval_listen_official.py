@@ -57,9 +57,10 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
+    t_audio_for,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
@@ -129,10 +130,10 @@ def filter_by_exp(rows: list[dict], exp_type_filter: str) -> list[dict]:
     return [r for r in rows if r["experiment_type"] == exp_type_filter]
 
 
-def decode_audio(wav_bytes: bytes, max_samples: int) -> torch.Tensor:
+def decode_audio(wav_bytes: bytes, target_sr: int, max_samples: int) -> torch.Tensor:
     wav, sr = torchaudio.load(io.BytesIO(wav_bytes))
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -332,13 +333,14 @@ def run_experiment(
         subset = subset[:max_samples]
 
     # Pre-decode audio for modes that need it
+    target_sr = audio_sample_rate(cfg)
     need_audio = input_mode in ("audio", "audio_and_text")
     prepared: list[dict] = []
     for r in subset:
         if need_audio and r.get("audio_bytes") is None:
             continue
         try:
-            wav = decode_audio(r["audio_bytes"], max_audio_samples) if need_audio else None
+            wav = decode_audio(r["audio_bytes"], target_sr, max_audio_samples) if need_audio else None
         except Exception as e:
             print(f"[listen-off] {exp} decode fail {r['id']}: {e}", flush=True)
             continue
@@ -367,7 +369,7 @@ def run_experiment(
                     continue
                 shuf_choices, expected_letter = rnd
                 suffix = build_user_suffix(r, shuf_choices, input_mode)
-                t_audio = max(1, r["_wav"].shape[-1] // HOP_LENGTH) if need_audio else 0
+                t_audio = t_audio_for(cfg, r["_wav"].shape[-1]) if need_audio else 0
                 prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, suffix))
                 if need_audio:
                     waveforms.append(r["_wav"])
@@ -465,6 +467,8 @@ def eval_checkpoint(
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     summaries: dict[str, dict] = {}
     for exp in experiments:
@@ -507,7 +511,8 @@ def parse_args():
     p.add_argument("--max-samples", type=int, default=None,
                    help="Cap rows per experiment (debug)")
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--include-partial", action="store_true")
