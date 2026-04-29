@@ -19,6 +19,14 @@ import sys
 import time
 from pathlib import Path
 
+import ctypes
+
+_stub = os.path.join(os.environ.get("CONDA_PREFIX", ""), "lib", "glibc_stub.so")
+if os.path.exists(_stub):
+    ctypes.CDLL(_stub, mode=ctypes.RTLD_GLOBAL)
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import jiwer
 import pyarrow.ipc as ipc
 import torch
@@ -27,11 +35,46 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer
 from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextDynamicCache
 from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 
+
+import inspect as _inspect
+
+# has_previous_state became a @property in newer transformers but model code calls it as a
+# method. Patch only when the current version uses the property API.
+if isinstance(_inspect.getattr_static(Qwen3NextDynamicCache, "has_previous_state", None), property):
+    class _LayerState:
+        def __init__(self, cache, idx):
+            self._c, self._i = cache, idx
+
+        @property
+        def conv_states(self):
+            return self._c.conv_states[self._i]
+
+        @property
+        def recurrent_states(self):
+            return self._c.recurrent_states[self._i]
+
+    class _PatchedCache(Qwen3NextDynamicCache):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.layers = [_LayerState(self, i) for i in range(len(self.conv_states))]
+
+        def has_previous_state(self, _layer_idx=None):
+            return self.conv_states[self.last_linear_layer] is not None
+
+        def update_conv_state(self, conv_state, layer_idx):
+            self.conv_states[layer_idx] = conv_state
+            return conv_state
+
+        def update_recurrent_state(self, recurrent_state, layer_idx):
+            self.recurrent_states[layer_idx] = recurrent_state
+else:
+    _PatchedCache = Qwen3NextDynamicCache
+
 CHATML_PREFIX = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|audio_start|>"
 CHATML_MID = "<|audio_end|>Transcribe the audio to text.<|im_end|>\n<|im_start|>assistant\n"
 
 TEST_CLEAN_ARROW = (
-    "/mnt/fr20tb/wbl_residency/jos/AudioEnc/log/tmp/cache/openslr___librispeech_asr/"
+    "/mnt/tmp/cache/openslr___librispeech_asr/"
     "all/0.0.0/71cacbfb7e2354c4226d01e70d77d5fca3d04ba1/librispeech_asr-test.clean.arrow"
 )
 
@@ -136,12 +179,10 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int, ou
         attn_implementation="sdpa",
     ).cuda().eval()
 
-    # Patch the model's DynamicCache reference so the hybrid linear-attention path gets
-    # the Qwen3Next cache (with has_previous_state / conv_states / recurrent_states).
     import sys as _sys
     for mod_name, mod in list(_sys.modules.items()):
         if "modeling_qwen3_5AE" in mod_name and hasattr(mod, "DynamicCache"):
-            mod.DynamicCache = Qwen3NextDynamicCache
+            mod.DynamicCache = _PatchedCache
 
     out_dir.mkdir(parents=True, exist_ok=True)
     hyp_path = out_dir / "predictions.jsonl"
@@ -151,24 +192,28 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int, ou
         max_samples = len(rows)
     rows_sub = rows[:max_samples]
 
+    from tqdm import tqdm
+
     # Sort by waveform length to stabilize batch shapes
     prepared = []
-    for r in rows_sub:
+    for r in tqdm(rows_sub, desc="preprocess", unit="sample", dynamic_ncols=True):
         wav = preprocess_audio(r["bytes"])
         prepared.append({"id": r["id"], "text": r["text"], "wav": wav})
     prepared.sort(key=lambda x: x["wav"].shape[-1])
 
     hyps_by_id = {}
     t0 = time.time()
+    pbar = tqdm(total=len(prepared), desc=ckpt_path.name, unit="sample", dynamic_ncols=True)
     with open(hyp_path, "w") as f:
         for i in range(0, len(prepared), batch_size):
             chunk = prepared[i : i + batch_size]
             batch = [(r["id"], r["text"], r["wav"]) for r in chunk]
             try:
                 hyps = run_batch(model, tokenizer, cfg, batch)
-            except torch.cuda.OutOfMemoryError:
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+                if "out of memory" not in str(e).lower():
+                    raise
                 torch.cuda.empty_cache()
-                # Fall back to size 1
                 hyps = []
                 for one in batch:
                     hyps.extend(run_batch(model, tokenizer, cfg, [one]))
@@ -176,13 +221,8 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int, ou
                 rec = {"id": r["id"], "ref": r["text"], "hyp": hyp}
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 hyps_by_id[r["id"]] = (r["text"], hyp)
-            if (i // batch_size) % 20 == 0:
-                done = i + len(chunk)
-                dt = time.time() - t0
-                rate = done / max(dt, 1e-6)
-                eta = (len(prepared) - done) / max(rate, 1e-6)
-                print(f"[eval] {ckpt_path.name} {done}/{len(prepared)}  {rate:.2f} sps  eta {eta/60:.1f} min",
-                      flush=True)
+            pbar.update(len(chunk))
+    pbar.close()
 
     # Compute WER
     refs_raw = [v[0] for v in hyps_by_id.values()]
@@ -234,7 +274,20 @@ def parse_args():
     return p.parse_args()
 
 
+def _has_safetensors(p: Path) -> bool:
+    return (
+        (p / "model.safetensors.index.json").exists()
+        or (p / "model.safetensors").exists()
+        or (p / "pytorch_model.bin.index.json").exists()
+        or (p / "pytorch_model.bin").exists()
+    )
+
+
 def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
+    # Case 1: root itself is the checkpoint
+    if _has_safetensors(root):
+        return [root]
+
     ckpts = []
     for p in sorted(root.iterdir()):
         m = re.match(r"checkpoint-(\d+)$", p.name)
@@ -243,15 +296,14 @@ def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
         step = int(m.group(1))
         if steps_filter and step not in steps_filter:
             continue
-        st = p / "model.safetensors.index.json"
-        if not st.exists():
-            # Might be monolithic safetensors (rare here) — fall back
-            st = p / "model.safetensors"
-        if not st.exists():
+        if not _has_safetensors(p):
             print(f"[eval] skip {p.name} (no safetensors yet)", flush=True)
             continue
-        mtime = st.stat().st_mtime
-        if not include_partial and (time.time() - mtime) < 60:
+        st = next(
+            (p / n for n in ("model.safetensors.index.json", "model.safetensors") if (p / n).exists()),
+            None,
+        )
+        if st and not include_partial and (time.time() - st.stat().st_mtime) < 60:
             print(f"[eval] skip {p.name} (save in progress)", flush=True)
             continue
         ckpts.append((step, p))

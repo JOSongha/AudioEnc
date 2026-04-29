@@ -33,6 +33,9 @@ import sys
 _stub = os.path.join(os.environ.get("CONDA_PREFIX", ""), "lib", "glibc_stub.so")
 if os.path.exists(_stub):
     ctypes.CDLL(_stub, mode=ctypes.RTLD_GLOBAL)
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import time
 from pathlib import Path
 
@@ -44,39 +47,39 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer, WhisperFeatureExt
 from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextDynamicCache
 from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 
-# ── Compatibility patch ────────────────────────────────────────────────────────
-# modeling_qwen3_5AE was written against an older Qwen3NextDynamicCache API.
-# Bridge the gap with a subclass that re-exposes the old interface.
+import inspect as _inspect
 
-class _LayerState:
-    """Per-layer state proxy so cache_params.layers[i].conv_states works."""
-    def __init__(self, cache, idx):
-        self._c, self._i = cache, idx
+# has_previous_state became a @property in newer transformers but model code calls it as a
+# method. Patch only when the current version uses the property API.
+if isinstance(_inspect.getattr_static(Qwen3NextDynamicCache, "has_previous_state", None), property):
+    class _LayerState:
+        def __init__(self, cache, idx):
+            self._c, self._i = cache, idx
 
-    @property
-    def conv_states(self):
-        return self._c.conv_states[self._i]
+        @property
+        def conv_states(self):
+            return self._c.conv_states[self._i]
 
-    @property
-    def recurrent_states(self):
-        return self._c.recurrent_states[self._i]
+        @property
+        def recurrent_states(self):
+            return self._c.recurrent_states[self._i]
 
+    class _PatchedCache(Qwen3NextDynamicCache):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.layers = [_LayerState(self, i) for i in range(len(self.conv_states))]
 
-class _PatchedCache(Qwen3NextDynamicCache):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.layers = [_LayerState(self, i) for i in range(len(self.conv_states))]
+        def has_previous_state(self, _layer_idx=None):
+            return self.conv_states[self.last_linear_layer] is not None
 
-    # Old API: called as a method with optional layer_idx arg.
-    def has_previous_state(self, _layer_idx=None):
-        return self.conv_states[self.last_linear_layer] is not None
+        def update_conv_state(self, conv_state, layer_idx):
+            self.conv_states[layer_idx] = conv_state
+            return conv_state
 
-    def update_conv_state(self, conv_state, layer_idx):
-        self.conv_states[layer_idx] = conv_state
-        return conv_state
-
-    def update_recurrent_state(self, recurrent_state, layer_idx):
-        self.recurrent_states[layer_idx] = recurrent_state
+        def update_recurrent_state(self, recurrent_state, layer_idx):
+            self.recurrent_states[layer_idx] = recurrent_state
+else:
+    _PatchedCache = Qwen3NextDynamicCache
 
 # ── Whisper constants ──────────────────────────────────────────────────────────
 WHISPER_SR = 16_000
@@ -274,22 +277,27 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
 
     target_sr = WHISPER_SR if _is_whisper_config(cfg) else _raw_waveform_sr_hop(cfg)[0]
 
+    from tqdm import tqdm
+
     # Pre-load and sort by waveform length to stabilise batch padding.
     prepared = []
-    for r in rows_sub:
+    for r in tqdm(rows_sub, desc="preprocess", unit="sample", dynamic_ncols=True):
         wav = preprocess_audio(r["bytes"], target_sr)
         prepared.append({"id": r["id"], "text": r["text"], "wav": wav})
     prepared.sort(key=lambda x: x["wav"].shape[-1])
 
     hyps_by_id = {}
     t0 = time.time()
+    pbar = tqdm(total=len(prepared), desc=ckpt_path.name, unit="sample", dynamic_ncols=True)
     with open(hyp_path, "w") as f:
         for i in range(0, len(prepared), batch_size):
             chunk = prepared[i : i + batch_size]
             batch_in = [(r["id"], r["text"], r["wav"]) for r in chunk]
             try:
                 hyps = run_batch(model, tokenizer, cfg, batch_in)
-            except torch.cuda.OutOfMemoryError:
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+                if "out of memory" not in str(e).lower():
+                    raise
                 torch.cuda.empty_cache()
                 hyps = []
                 for one in batch_in:
@@ -298,13 +306,8 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
                 rec = {"id": r["id"], "ref": r["text"], "hyp": hyp}
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 hyps_by_id[r["id"]] = (r["text"], hyp)
-            if (i // batch_size) % 20 == 0:
-                done = i + len(chunk)
-                dt = time.time() - t0
-                rate = done / max(dt, 1e-6)
-                eta = (len(prepared) - done) / max(rate, 1e-6)
-                print(f"[eval] {ckpt_path.name}  {done}/{len(prepared)}  "
-                      f"{rate:.2f} sps  eta {eta/60:.1f} min", flush=True)
+            pbar.update(len(chunk))
+    pbar.close()
 
     refs_raw = [v[0] for v in hyps_by_id.values()]
     hyps_raw = [v[1] for v in hyps_by_id.values()]
@@ -344,7 +347,12 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 def _has_safetensors(p: Path) -> bool:
-    return (p / "model.safetensors.index.json").exists() or (p / "model.safetensors").exists()
+    return (
+        (p / "model.safetensors.index.json").exists()
+        or (p / "model.safetensors").exists()
+        or (p / "pytorch_model.bin.index.json").exists()
+        or (p / "pytorch_model.bin").exists()
+    )
 
 
 def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
