@@ -137,40 +137,87 @@ skill text-only supervision too.
 For this project a general-purpose instruction-tuning set (Open-Orca style) is the
 safest bet; math-only would narrow too much given the audio-LLM downstream use.
 
-### 3.4 Stage 2 mix — confirmed plan
+### 3.4 Stage 2 mix — actual v1 + v2 (replaces 2026-04-23 draft below)
 
-User-confirmed scope: **LoRA SFT on emotion (VibeCheck1 / LISTEN_full) + text
-reasoning 10%**. ASR superset is NOT in the S2 mix; Stage 1 already spent 50 k steps
-on ASR and the projector is converged.
+**v1 actually shipped (as run for ckpts 1k-25k, 2026-04-24):**
+`Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17` — config
+[`stage2.yaml`](../configs/qwen3_5ae-asr/stage2.yaml), manifest
+[`build_combined_manifest.py`](../scripts/emo/build_combined_manifest.py),
+118 588 rows / pseudo-epoch.
 
-| Category | Source | Share | Rationale |
+| Modality | Source | Pool | Rows / epoch | Row % | Token % |
+|---|---|---:|---:|---:|---:|
+| audio_asr | LibriSpeech / MLS / GigaSpeech (ASR superset subsample) | 17 150 | 17 150 | 14.5 % | 29.6 % |
+| audio_emotion | source corpora MCQA (MELD train+dev / DailyTalk 95 % / EmoV-DB Bea+Josh+Sam / RAVDESS Actor 1-20 / IEMOCAP S1-4 if avail) | 39 919 | 39 919 | 33.7 % | 20.6 % |
+| audio_env_sound | FSD50K dev / Clotho development / ESC-50 4-fold | 41 000 | 41 000 | 34.6 % | 38.9 % |
+| text | HellaSwag / WinoGrande / ARC-E/-C / BoolQ / COPA train splits | 20 519 | 20 519 | 17.3 % | 10.9 % |
+
+**Why this differs from the original 2026-04-23 plan** (kept below for
+history): we chose source corpora directly over LISTEN_full (audit showed
+LISTEN-train pulls IEMOCAP / MELD / MOSEI / PODCAST test items
+*verbatim*, contaminating those benchmarks for held-out eval —
+[`stage2_listen_leakage_audit.md`](stage2_listen_leakage_audit.md)). ASR
+was added back at 14 % as a regularization anchor, env-sound at 35 %
+made Tier-3 in-domain (not zero-shot any more).
+
+**v2 plan (queued, 2026-04-25):**
+`Qwen3.5AE-Stage2v2-emoFull-asr033-env05-txt03` — config
+[`stage2_v2.yaml`](../configs/qwen3_5ae-asr/stage2_v2.yaml), manifest
+[`build_epoch_random_manifest.py`](../scripts/emo/build_epoch_random_manifest.py),
+~92 k rows / pseudo-epoch with per-epoch random subsampling. Background:
+v1 trial showed (a) text SFT memorized in 500 steps (too narrow corpus),
+(b) ASR test-other regressed late-training (no noise-aug signal),
+(c) different tasks peaked at different ckpts (3-5k for ASR, 13-17k for
+text/captioning, 21-24k for emotion) — see
+[`stage2_eval_harness.md` §10.1.2](stage2_eval_harness.md). v2 changes:
+
+| Modality | Pool change | Per-epoch | Why |
 |---|---|---:|---|
-| Paralinguistic — emotion | **LISTEN / LISTEN_full** (MCQA) + rationale augmentation | ~70 % | MCQA + rationale; matches eval protocol |
-| Paralinguistic — emotion (aux) | **VibeCheck1** (format TBD — see §5.4) | ~20 % | second emotion source |
-| Text reasoning (SFT, audio-free) | text-only CoT / instruction data (§3.3) | **10 %** | keep reasoning skill alive under LoRA; user-set |
+| audio_asr | 17 k → 40 k (Bernoulli resample), use 0.33 fraction | 13 200 | Same token weight, more row diversity. Add ASR-only Gaussian noise aug (see `noise_aug_asr_only` flag) for noise robustness. |
+| audio_emotion | unchanged 39 919 | 39 919 (full) | Main task, want maximum exposure. |
+| audio_env_sound | 41 k → 65 k (+ AudioSet bal_train 18 683), use 0.5 fraction | 32 744 | Pool diversity ↑, but per-epoch rows ↓ to balance token share. |
+| text | unchanged 20 519, use 0.3 fraction | 6 156 | Cut hardest — v1 memorized in 500 steps. |
 
-Emotion vs aux split (70 / 20) is a placeholder — actual split after LISTEN +
-VibeCheck1 absolute sizes are known.
+**v1 implications confirmed by trajectory eval (no longer hypotheticals):**
 
-**Implications / risks to flag**:
-1. **No ASR in S2 training.** Projector is full-trainable in S2; with zero
-   audio-transcript signal, projector representation can drift away from ASR
-   optimum. Two mitigations to consider:
-   - Freeze projector in S2 (turn `audio_encoder.projector` out of the workflow
-     filter). Cleanest way to preserve Stage 1 work.
-   - Include a small (≤ 10 %) ASR sample as regularization anchor — a few k
-     LibriSpeech items mixed in.
-   - Accept drift, measure ASR post-S2 via Tier 1, decide then.
-2. **Sound capability will be zero-shot in eval.** Tier 3 numbers reflect transfer
-   from emotion + text reasoning to sound understanding — informative about
-   generalization, but not comparable to audio-LLM baselines that trained on sound.
-3. **Share**: text-reasoning = 10 % (user-set). Emotion sub-split (LISTEN vs
-   VibeCheck1) finalizes once both absolute sizes are known.
+1. **ASR drift IS visible** — test-clean WER 7.28 % (S1) → 4.98 % (ckpt-4k
+   global min) → 6.15 % (ckpt-22k). Mitigation chosen: keep projector
+   trainable (S1's specialization gets re-learned), add 14 % ASR mix.
+   Result: −2.30 pp at peak, drift back +1.17 pp by ckpt-22k.
+2. **Sound capability is in-domain, not zero-shot.** ESC-50 acc 4.5 % → 83.2 %
+   (ckpt-22k peak); FSD50K F1-micro 0.147 → 0.398. The "Tier 3 zero-shot"
+   framing in the original plan is obsolete.
+3. **Text overfit was a non-issue.** Held-out 6-bench mean 0.880 → 0.907,
+   monotone increasing. The early text-loss collapse (7.49 → 0.034) was
+   in-distribution fit, not memorization
+   ([`stage2_eval_harness.md` §9.5](stage2_eval_harness.md)).
 
-Manifest build: single `omni_manifest` JSONL mixing emotion (audio + MCQA prompt +
-letter + rationale) with text-reasoning (no audio, pure instruction). Collator handles
-both cases if `audio_features` is empty for text-only rows — need to verify omni
-collator supports this (currently assumes audio_lengths > 0; may need a small patch).
+Manifest build (both v1 and v2): single `omni_manifest` JSONL mixing
+audio + MCQA prompt + letter (+ optional rationale) per row. Per-row
+`modality` field drives ChatML template branching in
+`omni_dataset.create_omni_processor`. Collator handles modality=text rows
+via length-0 audio placeholder (verified in code, no patch needed).
+
+---
+
+#### Original draft (2026-04-23) — superseded above
+
+The plan as drafted before evaluating LISTEN_full leakage:
+
+> User-confirmed scope: **LoRA SFT on emotion (VibeCheck1 / LISTEN_full) + text
+> reasoning 10%**. ASR superset is NOT in the S2 mix; Stage 1 already spent 50 k steps
+> on ASR and the projector is converged.
+>
+> | Category | Source | Share | Rationale |
+> |---|---|---:|---|
+> | Paralinguistic — emotion | LISTEN / LISTEN_full (MCQA) + rationale augmentation | ~70 % | MCQA + rationale; matches eval protocol |
+> | Paralinguistic — emotion (aux) | VibeCheck1 (format TBD — see §5.4) | ~20 % | second emotion source |
+> | Text reasoning (SFT, audio-free) | text-only CoT / instruction data (§3.3) | 10 % | keep reasoning skill alive under LoRA; user-set |
+>
+> Emotion vs aux split (70 / 20) was a placeholder. Risks flagged at the time:
+> 1. No ASR in S2 → projector drift risk.
+> 2. Sound capability would be zero-shot.
+> 3. Text-reasoning share 10 %, sub-split TBD.
 
 ---
 

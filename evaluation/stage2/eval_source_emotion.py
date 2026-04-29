@@ -39,9 +39,10 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
+    t_audio_for,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
@@ -210,10 +211,10 @@ def parse_letter(text: str, n_choices: int) -> str | None:
     return None
 
 
-def decode_audio(path: str, max_samples: int) -> torch.Tensor:
+def decode_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
     wav, sr = torchaudio.load(path)
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -244,9 +245,10 @@ def run_corpus(
     summary_path = out_dir / f"summary_{corpus}.json"
 
     choice_lower = [c.lower() for c in choices]
+    target_sr = audio_sample_rate(cfg)
 
     # Pre-decode audio once; length-sort for padding efficiency.
-    print(f"[src-emo] {corpus}: decoding {len(rows)} audios...", flush=True)
+    print(f"[src-emo] {corpus}: decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     skip_label = Counter()
     for r in rows:
@@ -254,7 +256,7 @@ def run_corpus(
             skip_label[r["label"]] += 1
             continue
         try:
-            wav = decode_audio(r["path"], max_audio_samples)
+            wav = decode_audio(r["path"], target_sr, max_audio_samples)
         except Exception as e:
             print(f"[src-emo] {corpus}: decode fail {r['id']}: {e}", flush=True)
             continue
@@ -280,7 +282,7 @@ def run_corpus(
             batch = prepared[i : i + batch_size]
             prompts, waveforms = [], []
             for r in batch:
-                t_audio = max(1, r["_wav"].shape[-1] // HOP_LENGTH)
+                t_audio = t_audio_for(cfg, r["_wav"].shape[-1])
                 prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, user_suffix))
                 waveforms.append(r["_wav"])
             try:
@@ -404,6 +406,8 @@ def eval_checkpoint(
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     summaries: dict[str, dict] = {}
     for corpus in corpora:
@@ -445,7 +449,8 @@ def parse_args():
                    default=list(CORPUS_LOADERS.keys()))
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--include-partial", action="store_true")

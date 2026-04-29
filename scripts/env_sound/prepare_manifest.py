@@ -1,13 +1,21 @@
-"""Build env-sound training manifest (FSD50K dev + Clotho dev + ESC-50).
+"""Build env-sound training manifest (FSD50K dev + Clotho dev + ESC-50 + AudioSet bal_train).
 
-Budget per user-set 2026-04-24 mix: env_sound target = emotion_pool (~41 k).
+2026-04-25: pool expanded with AudioSet bal_train (~22 k clips, multi-label
+AudioSet ontology). Per user direction the env-sound pool is now used "full"
+(no TARGET subsample) — per-epoch sub-sampling is handled downstream by
+build_epoch_random_manifest.py.
 
 Output row format:
-    {"path": "...", "source": "fsd50k|clotho|esc50",
+    {"path": "...", "source": "fsd50k|clotho|esc50|audioset",
      "modality": "audio_env_sound",
-     "labels": [...],            # multi-label for fsd50k, single for esc50
+     "labels": [...],            # multi-label for fsd50k/audioset, single for esc50
      "captions": [...],          # 5 captions for clotho
      }
+
+AudioSet audio is shipped inside the parquet as embedded FLAC bytes; this
+builder extracts them once into <RAW>/AudioSet/audio/{video_id}.flac and
+yields path-only rows after extraction (omni_dataset.py's torchaudio.load
+needs files on disk).
 
 Eval-side held out:
   Clotho evaluation + validation → Tier-3 captioning eval
@@ -15,6 +23,8 @@ Eval-side held out:
   ESC-50                         → 5-fold CV (all folds contribute; just omit one fold
                                    per eval run). For the training manifest, all 5
                                    folds are included — fold selection happens at eval.
+  AudioSet eval                  → reserved for separate Tier-3 zero-shot AudioSet eval
+                                   if needed; not used in training.
 """
 from __future__ import annotations
 
@@ -29,8 +39,10 @@ RAW = Path("/mnt/tmp/datasets/env_sound")
 OUT = Path("/mnt/tmp/listen_analysis/train_manifest/env_sound_manifest.jsonl")
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
-TARGET = 41_000
-random.seed(20260424)
+# 2026-04-25: keep all rows (no subsample). v2 manifest builder applies its
+# own per-epoch fraction (env-frac=0.5 by user request).
+TARGET = 10**9
+random.seed(20260425)
 
 
 def iter_fsd50k_dev():
@@ -93,10 +105,58 @@ def iter_esc50():
         }
 
 
+def iter_audioset_bal_train():
+    """Yield AudioSet bal_train rows after extracting embedded FLAC bytes to disk.
+
+    HF dataset `agkphysics/AudioSet` ships audio as FLAC bytes inside parquet.
+    Our omni_dataset.py loads via torchaudio.load(path), so we materialize
+    each FLAC as <RAW>/AudioSet/audio/{video_id}.flac on first run; subsequent
+    runs skip extraction if the file already exists.
+
+    `human_labels` is the human-readable label list (e.g. ["Speech", "Music"]).
+    Use those as the `labels` field — matches FSD50K's plain-string label
+    convention. Some videos have empty human_labels; skip them.
+    """
+    import pyarrow.parquet as pq
+    parquet_dir = RAW / "AudioSet" / "data" / "bal_train"
+    audio_dir = RAW / "AudioSet" / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    if not parquet_dir.exists():
+        return
+    files = sorted(parquet_dir.glob("*.parquet"))
+    if not files:
+        return
+    for pf in files:
+        try:
+            table = pq.read_table(pf)
+        except Exception as e:
+            print(f"  AudioSet: failed to read {pf.name}: {e}")
+            continue
+        for i in range(table.num_rows):
+            vid = table.column("video_id")[i].as_py()
+            audio_struct = table.column("audio")[i].as_py()
+            human_labels = table.column("human_labels")[i].as_py()
+            if not human_labels:
+                continue
+            out_path = audio_dir / f"{vid}.flac"
+            if not out_path.exists():
+                try:
+                    out_path.write_bytes(audio_struct["bytes"])
+                except Exception as e:
+                    print(f"  AudioSet: write fail {vid}: {e}")
+                    continue
+            yield {
+                "path": str(out_path),
+                "source": "audioset",
+                "modality": "audio_env_sound",
+                "labels": [str(l) for l in human_labels],
+            }
+
+
 def main() -> None:
     rows_all: list[dict] = []
     src_counts = {}
-    for gen in (iter_fsd50k_dev, iter_clotho_dev, iter_esc50):
+    for gen in (iter_fsd50k_dev, iter_clotho_dev, iter_esc50, iter_audioset_bal_train):
         subset = list(gen())
         if subset:
             name = subset[0]["source"]

@@ -35,12 +35,13 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
+    t_audio_for,
 )
 
 DEFAULT_PARQUET = "/mnt/tmp/listen_analysis/data/test-00000-of-00001.parquet"
@@ -86,10 +87,10 @@ def load_listen_test(parquet_path: str) -> list[dict]:
     return rows
 
 
-def preprocess_audio(wav_bytes: bytes, max_samples: int | None = None) -> torch.Tensor:
+def preprocess_audio(wav_bytes: bytes, target_sr: int, max_samples: int | None = None) -> torch.Tensor:
     wav, sr = torchaudio.load(io.BytesIO(wav_bytes))
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -163,7 +164,7 @@ def run_batch(
     prompts, waveforms = [], []
     for r in rows:
         wav = r["_wav"]
-        t_audio = max(1, wav.shape[-1] // HOP_LENGTH)
+        t_audio = t_audio_for(cfg, wav.shape[-1])
         user_suffix = build_user_suffix(
             r["choices"], use_native_question, r["question"]
         )
@@ -192,17 +193,20 @@ def eval_checkpoint(
     summary_path = out_dir / "summary.json"
 
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    target_sr = audio_sample_rate(cfg)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     # Subsample + decode audio upfront (slow path; keep outside of the inner loop).
     if max_samples is not None and max_samples < len(rows):
         rows = rows[:max_samples]
-    print(f"[listen] decoding {len(rows)} audios...", flush=True)
+    print(f"[listen] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     for r in rows:
         if r.get("audio_bytes") is None:
             continue
         try:
-            wav = preprocess_audio(r["audio_bytes"], max_samples=max_audio_samples)
+            wav = preprocess_audio(r["audio_bytes"], target_sr, max_samples=max_audio_samples)
         except Exception as e:
             print(f"[listen] audio decode fail on {r['id']}: {e}", flush=True)
             continue
@@ -361,8 +365,9 @@ def parse_args():
     p.add_argument("--max-samples", type=int, default=None,
                    help="Cap rows (debug/smoke)")
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000,
-                   help="Truncate waveform above this (matches omni_max_audio_samples)")
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Truncate waveform above this. Default: 1_600_000 (DAC) / "
+                        "480_000 (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--use-native-question", action="store_true",
                    help="Use LISTEN's own question field instead of the canonical "

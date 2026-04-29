@@ -33,12 +33,13 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from evaluation.stage2._loader import (  # noqa: E402
-    HOP_LENGTH,
-    SAMPLE_RATE,
+    audio_sample_rate,
     build_prompt_ids,
+    default_max_audio_samples,
     find_checkpoints,
     generate_greedy,
     load_checkpoint,
+    t_audio_for,
 )
 
 CLOTHO_ROOT = Path("/mnt/tmp/datasets/env_sound/Clotho")
@@ -141,10 +142,10 @@ def load_clotho_split(split: str) -> list[dict]:
     return rows
 
 
-def preprocess_audio(path: str, max_samples: int) -> torch.Tensor:
+def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
     wav, sr = torchaudio.load(path)
-    if sr != SAMPLE_RATE:
-        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
+    if sr != target_sr:
+        wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)
@@ -165,7 +166,7 @@ def run_batch(model, tokenizer, cfg, batch: list[dict],
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
-        t_audio = max(1, wav.shape[-1] // HOP_LENGTH)
+        t_audio = t_audio_for(cfg, wav.shape[-1])
         prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_CAPTION_STEM))
         waveforms.append(wav)
     return generate_greedy(
@@ -190,13 +191,16 @@ def eval_checkpoint(
     summary_path = out_dir / "summary.json"
 
     model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    target_sr = audio_sample_rate(cfg)
+    if max_audio_samples is None:
+        max_audio_samples = default_max_audio_samples(cfg)
 
     # Pre-decode audio and sort for batch stability.
-    print(f"[clotho] decoding {len(rows)} audios...", flush=True)
+    print(f"[clotho] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     for r in rows:
         try:
-            wav = preprocess_audio(r["path"], max_audio_samples)
+            wav = preprocess_audio(r["path"], target_sr, max_audio_samples)
         except Exception as e:
             print(f"[clotho] load fail {r['file']}: {e}", flush=True)
             continue
@@ -240,29 +244,38 @@ def eval_checkpoint(
     bleu4, precisions = corpus_bleu(all_refs, hyp_toks, max_n=4)
     bleu1 = precisions[0] if precisions else 0.0
 
-    # Optional COCO-style CIDEr/METEOR/SPICE via pycocoevalcap.
-    coco_scores: dict[str, float | None] = {"CIDEr": None, "METEOR": None, "ROUGE_L": None, "SPICE": None}
+    # Optional COCO-style CIDEr/METEOR/ROUGE/SPICE via pycocoevalcap.
+    # Each metric attempted separately so Java-only ones (METEOR, SPICE) can
+    # fail without dropping CIDEr/ROUGE.
+    coco_scores: dict[str, float | None] = {"CIDEr": None, "METEOR": None,
+                                             "ROUGE_L": None, "SPICE": None}
     if try_pycoco:
+        gts = {str(i): r["captions"] for i, r in enumerate(prepared)}
+        res = {str(i): [all_preds[i]] for i in range(len(all_preds))}
+
         try:
             from pycocoevalcap.cider.cider import Cider
-            from pycocoevalcap.meteor.meteor import Meteor
+            coco_scores["CIDEr"] = float(Cider().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] CIDEr unavailable: {e}", flush=True)
+
+        try:
             from pycocoevalcap.rouge.rouge import Rouge
-            gts = {str(i): r["captions"] for i, r in enumerate(prepared)}
-            res = {str(i): [all_preds[i]] for i in range(len(all_preds))}
-            c_score, _ = Cider().compute_score(gts, res)
-            m_score, _ = Meteor().compute_score(gts, res)
-            r_score, _ = Rouge().compute_score(gts, res)
-            coco_scores["CIDEr"] = float(c_score)
-            coco_scores["METEOR"] = float(m_score)
-            coco_scores["ROUGE_L"] = float(r_score)
-            try:
-                from pycocoevalcap.spice.spice import Spice
-                s_score, _ = Spice().compute_score(gts, res)
-                coco_scores["SPICE"] = float(s_score)
-            except Exception as e:
-                print(f"[clotho] SPICE unavailable: {e}", flush=True)
-        except ImportError:
-            print("[clotho] pycocoevalcap not installed; skipping CIDEr/METEOR/ROUGE/SPICE", flush=True)
+            coco_scores["ROUGE_L"] = float(Rouge().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] ROUGE_L unavailable: {e}", flush=True)
+
+        try:
+            from pycocoevalcap.meteor.meteor import Meteor
+            coco_scores["METEOR"] = float(Meteor().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] METEOR unavailable (needs Java): {e}", flush=True)
+
+        try:
+            from pycocoevalcap.spice.spice import Spice
+            coco_scores["SPICE"] = float(Spice().compute_score(gts, res)[0])
+        except Exception as e:
+            print(f"[clotho] SPICE unavailable (needs Java + CoreNLP): {e}", flush=True)
 
     summary = {
         "checkpoint": str(ckpt_path),
@@ -295,7 +308,8 @@ def parse_args():
     p.add_argument("--split", default="evaluation", choices=["evaluation", "validation"])
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
-    p.add_argument("--max-audio-samples", type=int, default=1_600_000)
+    p.add_argument("--max-audio-samples", type=int, default=None,
+                   help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-pycoco", action="store_true",
                    help="Skip the CIDEr/METEOR/ROUGE block even if pycocoevalcap is installed.")
