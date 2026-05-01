@@ -1,5 +1,9 @@
 ### model
-model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B-encodec-24k
+# DAC-VAE v2: shape-frozen DAC encoder + AudioProjector trained from scratch.
+# Same architecture/hparams as the prior `Qwen3.5AE-ASR-Stage1-libri_mls_vox` run
+# that produced /mnt/tmp/s2_init_42k; rerunning to keep all checkpoints this time
+# (prior run had save_total_limit=8 which rotated out earlier ckpts).
+model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: true
@@ -19,11 +23,10 @@ dataset: speechx_v9  # unused when omni_manifest is set
 omni_manifest: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/datasets/libri_mls_vox
 load_from_nubes: true
 omni_packing_bucket_size: 128
-omni_sample_rate: 24000
-omni_hop_length: 320              # 24000 / 75 fps
-omni_max_audio_samples: 1080000   # 45s @ 24k
+# DAC-VAE native: 48 kHz, hop 1920 — defaults from data_args.py, kept implicit.
+omni_max_audio_samples: 2160000   # 45s @ 48k
 template: omni
-cutoff_len: 6144                  # EnCodec-only; accommodates 3375 frames + text headroom
+cutoff_len: 3584
 overwrite_cache: false
 preprocessing_num_workers: 16
 streaming: true
@@ -41,18 +44,19 @@ accelerator_config:
   non_blocking: true
 
 ### output (kept on /mnt/tmp xfs — Lustre quota is full at the cluster level)
-run_name: Qwen3.5AE-ASR-Stage1-encodec-24k
-output_dir: /mnt/tmp/Qwen3.5_encodec_24k_Stage1_jos
-logging_dir: /mnt/tmp/Qwen3.5_encodec_24k_Stage1_jos
+run_name: Qwen3.5AE-ASR-Stage1-dac-vae-v2
+output_dir: /mnt/tmp/Qwen3.5_dac_vae_v2_Stage1_jos
+logging_dir: /mnt/tmp/Qwen3.5_dac_vae_v2_Stage1_jos
 logging_steps: 5
 save_steps: 1000
-save_total_limit: 8
+# save_total_limit intentionally omitted — keep every checkpoint. Prior libri_mls_vox
+# run rotated ckpt-40000 out before eval, hence this rerun.
 plot_loss: false
 overwrite_output_dir: true
 
 ### train
-per_device_train_batch_size: 2
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 3
+gradient_accumulation_steps: 1
 learning_rate: 2.0e-4
 weight_decay: 0.01
 max_steps: 100000
