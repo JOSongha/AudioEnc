@@ -1,6 +1,8 @@
 # Qwen3.5-4B + DACVAE ASR 학습
 
 > 본 문서에서 `{{ }}` 안에 있는 내용은 수정 후 실행
+>
+> **Note**: 본 문서의 `/mnt/fr20tb/audiollm/sanghyuk/...` 경로는 sanghyuk 사용자의 사내 NSML 노드 위치 — 역사적 setup 기록. 현재 jos 노드에서는 동일 데이터/모델이 다른 mount 에 있을 수 있으니 그대로 복붙 금지.
 
 ---
 

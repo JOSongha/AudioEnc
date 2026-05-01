@@ -1,5 +1,7 @@
 # Qwen3.5AE ASR Stage1 — Setup & Trial Log
 
+> **Historical**: 2026-04-21 NSML 세션 셋업 로그. 본 노드(jos)와 다른 환경의 기록일 수 있음 — 그대로 따라하기보다 참고용으로.
+
 기록 시점: 2026-04-21
 환경: NSML container (node0, 8× A100 80GB, glibc 2.31, kernel 5.4.239)
 
@@ -9,7 +11,7 @@
 
 `oss.navercorp.com/HyperscaleAI/audiollm-trainer` (acoustic branch) 로 Qwen3.5-4B + DACVAE 의 ASR Stage1 (projector-only) 학습을 이 NSML 세션 안에서 tmux 로 돌린다.
 
-원본 가이드: [qwen3_5_dacvae_asr.md](qwen3_5_dacvae_asr.md)
+원본 가이드: [../stage1/dacvae_asr.md](../stage1/dacvae_asr.md)
 
 ---
 
@@ -97,7 +99,7 @@ acoustic 브랜치의 `pyproject.toml` 은 `requires-python>=3.11` 이지만 env
 - `LD_PRELOAD=<audio_lmf>/lib/glibc_compat.so` (flash_attn 용, §5.3 참조)
 
 ### Stage1 = projector-only 확인
-[src/llamafactory/train/omni/workflow.py:63-65](../src/llamafactory/train/omni/workflow.py#L63-L65):
+[src/llamafactory/train/omni/workflow.py:63-65](../../src/llamafactory/train/omni/workflow.py#L63-L65):
 ```python
 for name, param in model.named_parameters():
     require_grad = "audio_encoder.projector" in name

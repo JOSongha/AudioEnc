@@ -102,7 +102,9 @@ WavTokenizer 는 다단계 처리:
 
 3. **체크포인트 가용성**
    - 공식 배포됨: [jishengpeng/WavTokenizer](https://github.com/jishengpeng/WavTokenizer)
-   - 다운로드 위치: `/mnt/tmp/hf_cache/wavtokenizer/wavtokenizer_large_unify_600_24k.ckpt` (1.7 GB, PyTorch Lightning)
+   - 다운로드 위치: `/mnt/tmp/hf_cache/wavtokenizer/wavtokenizer_large_unify_600_24k.ckpt` (1.7 GB, PyTorch Lightning) — *예시 경로. 본 노드(jos)에는 미존재; 사용 시 직접 download.*
+
+> **상태 (2026-04-30)**: 본 WavTokenizer Stage1 path 는 **미실행 plan** — `convert_to_wavtok.py`, `external/models/Qwen3.5AE-4B-wavtok-*` 모두 본 노드에 없음. DAC-VAE / Whisper-small/tiny 3종 chain 으로 실험 진행했으며 WavTokenizer 는 후속 옵션으로 보류.
 
 ---
 
@@ -167,7 +169,7 @@ omni_max_audio_samples: 1080000  # 45s @ 24kHz (24000 × 45)
 ### 데이터 라우팅
 
 Convert script 에서 `config.whisper_model_id` 필드를 **생략** (DAC 도 생략).
-→ `src/llamafactory/data/workflow.py:79` 의 조건:
+→ `src/llamafactory/train/omni/workflow.py:80` 의 조건:
 ```python
 if hasattr(config.audio_config, 'whisper_model_id') and config.audio_config.whisper_model_id:
     # Whisper branch

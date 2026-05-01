@@ -81,7 +81,7 @@ You are a helpful assistant.<|im_end|>
 <transcript><eos>
 ```
 
-where `t_audio = floor(num_samples / hop_length)` with `hop_length = 1920` (DACVAE encoder stride product). 구현: [omni_dataset.py:167-187](../src/llamafactory/data/omni_dataset.py#L167-L187).
+where `t_audio = floor(num_samples / hop_length)` with `hop_length = 1920` (DACVAE encoder stride product). 구현: [omni_dataset.py:422-440](../../src/llamafactory/data/omni_dataset.py#L422-L440).
 
 ### Label masking (loss computation)
 
@@ -95,7 +95,7 @@ Training objective 는 transcript + EOS 위치에서의 causal language modeling
 | Transcript | text_ids | text_ids | ✅ |
 | EOS | `eos_token_id` | `eos_token_id` | ✅ |
 
-세부 처리 규약은 [`eos_pad_token_handling.md`](./eos_pad_token_handling.md) 에 정리.
+세부 처리 규약은 [`eos_pad_token_handling.md`](../reference/eos_pad_token_handling.md) 에 정리.
 
 ---
 
@@ -103,7 +103,7 @@ Training objective 는 transcript + EOS 위치에서의 causal language modeling
 
 학습 효율성을 위해 여러 샘플을 greedy knapsack [HF-packing] 으로 `cutoff_len = 3,584` 토큰까지 묶는 **neat packing** [Kundu24] 을 사용한다.
 
-### 6.1 Packing ([omni_dataset.py:217-288](../src/llamafactory/data/omni_dataset.py#L217-L288))
+### 6.1 Packing ([omni_dataset.py:485-586](../../src/llamafactory/data/omni_dataset.py#L485-L586))
 
 1. 샘플을 token 길이 기준 정렬.
 2. 빈 knapsack 을 하나 열고, 남은 capacity 에 들어갈 수 있는 가장 큰 샘플을 bisect 로 찾아 집어넣음 (first-fit decreasing 변형).
@@ -112,11 +112,11 @@ Training objective 는 transcript + EOS 위치에서의 causal language modeling
 
 ### 6.2 Intra-packed attention isolation
 
-`neat_packing = True` 조건에서 `attention_mask` 값을 `[1, 2, 3, ...]` (샘플 index 기반 labeling) 으로 설정하여, 같은 label 을 가진 토큰끼리만 attend 하게 한다 ([omni_dataset.py:265-268](../src/llamafactory/data/omni_dataset.py#L265-L268)). Pad 구간은 `0`. 이는 Packed-Attention [Kr23, Kundu24] 의 block-diagonal causal mask 구현이다.
+`neat_packing = True` 조건에서 `attention_mask` 값을 `[1, 2, 3, ...]` (샘플 index 기반 labeling) 으로 설정하여, 같은 label 을 가진 토큰끼리만 attend 하게 한다 ([omni_dataset.py:552-555](../../src/llamafactory/data/omni_dataset.py#L552-L555)). Pad 구간은 `0`. 이는 Packed-Attention [Kr23, Kundu24] 의 block-diagonal causal mask 구현이다.
 
 ### 6.3 FlashAttention-2 varlen unpadding
 
-FA2 backend 에서는 전체 padding 을 제거하고 모든 valid token 을 1D 로 평탄화한 뒤 `cu_seqlens` 로 샘플 경계를 전달한다 ([omni_dataset.py:346-363](../src/llamafactory/data/omni_dataset.py#L346-L363)) [Dao23]. 이때 각 샘플의 첫 토큰 (`position_ids == 0`) 위치의 label 을 `IGNORE_INDEX` 로 덮어 샘플 경계를 넘는 loss shift 를 방지한다.
+FA2 backend 에서는 전체 padding 을 제거하고 모든 valid token 을 1D 로 평탄화한 뒤 `cu_seqlens` 로 샘플 경계를 전달한다 ([omni_dataset.py:661-682](../../src/llamafactory/data/omni_dataset.py#L661-L682)) [Dao23]. 이때 각 샘플의 첫 토큰 (`position_ids == 0`) 위치의 label 을 `IGNORE_INDEX` 로 덮어 샘플 경계를 넘는 loss shift 를 방지한다.
 
 ---
 
@@ -124,11 +124,12 @@ FA2 backend 에서는 전체 padding 을 제거하고 모든 valid token 을 1D 
 
 ### 7.1 Frozen vs trainable parameters
 
-Stage 1 workflow ([workflow.py:63-65](../src/llamafactory/train/omni/workflow.py#L63-L65)) 는 `audio_encoder.projector` 를 포함하는 파라미터만 `requires_grad=True` 로 두고 나머지는 모두 freeze:
+Stage 1 workflow ([workflow.py:67-71](../../src/llamafactory/train/omni/workflow.py#L67-L71)) 는 `audio_encoder.projector` 또는 LoRA 어댑터에 해당하는 파라미터만 `requires_grad=True` 로 두고 나머지는 모두 freeze (Stage 1 은 projector 만, Stage 2 는 projector + LoRA):
 
 ```python
 for name, param in model.named_parameters():
-    param.requires_grad = "audio_encoder.projector" in name
+    require_grad = ("audio_encoder.projector" in name) or ("lora_" in name)
+    param.requires_grad = require_grad
 ```
 
 학습 대상: 18,158,080 parameters (AudioProjector 전체).
@@ -175,7 +176,7 @@ Stage 1 training set 은 공개 영어 ASR 코퍼스 3종의 혼합:
 | VoxPopuli (English) | 522.00 | [Wa21] |
 | **Total** | **46,074** | |
 
-Nubes [?] 오브젝트 스토리지 (`hyperscaleai-audiollm/datasets/public/16kHz/...`) 에서 lazy streaming 으로 로드하며, 16 kHz 로 저장된 경우 dataloader 에서 48 kHz 로 on-the-fly resample 한다 ([omni_dataset.py:143-144](../src/llamafactory/data/omni_dataset.py#L143-L144)).
+Nubes [?] 오브젝트 스토리지 (`hyperscaleai-audiollm/datasets/public/16kHz/...`) 에서 lazy streaming 으로 로드하며, 16 kHz 로 저장된 경우 dataloader 에서 48 kHz 로 on-the-fly resample 한다 ([omni_dataset.py:406-407](../../src/llamafactory/data/omni_dataset.py#L406-L407)).
 
 ### 8.2 Manifest
 
@@ -199,7 +200,7 @@ Nubes [?] 오브젝트 스토리지 (`hyperscaleai-audiollm/datasets/public/16kH
 
 > `(input_ids == audio_pad_token_id).sum()` == `sum(audio_lengths)` == `projector_output.shape[0]`
 
-즉 placeholder 토큰 개수 = 실제 audio frame 개수 = projector output frame 개수. Whisper 등 30 초 zero-pad 인코더 교체 시 이 조건이 깨질 수 있어 encoder output 을 `t_audio` 기준 slice 해야 한다 (Whisper migration 계획: [`whisper_small_stage1_plan.md`](./whisper_small_stage1_plan.md) §12.1).
+즉 placeholder 토큰 개수 = 실제 audio frame 개수 = projector output frame 개수. Whisper 등 30 초 zero-pad 인코더 교체 시 이 조건이 깨질 수 있어 encoder output 을 `t_audio` 기준 slice 해야 한다 (Whisper migration 계획: [`plan.md`](../stage1/whisper/plan.md) §12.1).
 
 ---
 

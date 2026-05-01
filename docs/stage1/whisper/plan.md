@@ -3,6 +3,8 @@
 > 목표: 현재 `Qwen3.5AE-4B` 아키텍처에서 audio encoder 만 **DACVAE → `openai/whisper-small.en`** 으로 교체, Stage1 (projector-only) 학습.
 > LLM, AudioProjector 구조는 그대로 유지. Encoder output dim 만 128 → 768 로 바뀜.
 > ※ Whisper-small 은 DACVAE 보다 encoder 자체가 **큼** (88M vs 27M) — "가볍게 가자" 는 방향이 아니라, acoustic-semantic 양쪽 표현력 있는 ASR-pretrained encoder 를 갖고 오는 목적.
+>
+> **Note on paths**: 본 문서의 `/mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/...` 경로는 Stage1 학습이 실제로 진행된 sehyun 노드 위치. `/mnt/ddn` 은 cross-node 공유 마운트라 jos 노드에서도 동일 경로로 read-only 접근 가능 (Stage2 의 [`stage2_whisper_small.yaml`](../../../configs/qwen3_5ae-asr/stage2_whisper_small.yaml) 도 해당 경로의 ckpt-13000 를 그대로 init 으로 사용).
 
 ---
 
@@ -574,6 +576,8 @@ OOM 시 조정 순서:
 ---
 
 ## 14. 작업 체크리스트
+
+> **모든 항목 완료 (2026-04-30 retrospective)** — 실행 기록은 [`status.md`](status.md). Stage1 ckpt-13000 가 실제 활용 중이고 Whisper-small Stage2 + 35-ckpt eval (2026-04-29) 까지 완료.
 
 ### 준비 — 코드/체크포인트
 

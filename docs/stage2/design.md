@@ -5,7 +5,7 @@ Stage 2 builds on the converged Stage 1 projector by (1) unfreezing the LLM via 
 (3) injecting low-amplitude Gaussian noise into the DAC latent so the projector becomes
 robust to small perturbations before the LLM starts adapting.
 
-Config file: [`configs/qwen3_5ae-asr/stage2.yaml`](../configs/qwen3_5ae-asr/stage2.yaml)
+Config file: [`configs/qwen3_5ae-asr/stage2.yaml`](../../configs/qwen3_5ae-asr/stage2.yaml)
 
 ---
 
@@ -53,7 +53,7 @@ match the 42 000 checkpoint.
 
 ## 2. Noise augmentation
 
-Edited [`audio_encoder.py`](../../models/Qwen3.5AE-4B-s2/audio_encoder.py)
+Edited [`audio_encoder.py`](../../../models/Qwen3.5AE-4B-s2/audio_encoder.py)
 (lives at `ddn/models/Qwen3.5AE-4B-s2/` — relative to the audiollm-trainer repo root;
 the overlay copies it into `/mnt/tmp/s2_init_42k/`):
 
@@ -97,7 +97,7 @@ has `self_attn.*_proj` and would otherwise be swallowed by PEFT's substring matc
 Three-part fix:
 
 1. **`COMPOSITE_MODELS` registration** — added `qwen3_5_ae` to
-   [`src/llamafactory/model/model_utils/visual.py`](../src/llamafactory/model/model_utils/visual.py)
+   [`src/llamafactory/model/model_utils/visual.py`](../../src/llamafactory/model/model_utils/visual.py)
    with `projector_key="audio_encoder.projector"` and
    `vision_model_keys=["audio_encoder"]`. This routes the `patch_target_modules()` filter
    to exclude anything containing those keys.
@@ -124,7 +124,7 @@ would be silently lost every save.
 
 ## 4. Freeze semantics
 
-[`src/llamafactory/train/omni/workflow.py`](../src/llamafactory/train/omni/workflow.py)
+[`src/llamafactory/train/omni/workflow.py`](../../src/llamafactory/train/omni/workflow.py)
 line 67–70:
 
 ```python
@@ -164,10 +164,11 @@ converged, we only need the LoRA / projector co-adaptation to settle.
 
 ## 6. Dataset
 
-Stage 2 is **LoRA SFT on emotion + text reasoning** (no ASR in training; Stage 1
-already spent 50 k steps on ASR and the projector is converged). Contamination
-audit and the raw-corpus sourcing plan: [`stage2_listen_leakage_audit.md`](stage2_listen_leakage_audit.md).
-Evaluation protocol per corpus: [`stage2_eval_plan.md §6–§9`](stage2_eval_plan.md).
+Stage 2 is **LoRA SFT on a 4-modality mix** (ASR + emotion + env-sound + text), with
+ASR kept at a small anchor share (~14 %) to prevent regression from the converged
+Stage 1 projector. 자세한 mix 는 §6.1 (이전 draft 의 "no ASR in training" 표현은 폐기 — ASR halving 결정 후에도 14.5 % 비중 유지). Contamination
+audit and the raw-corpus sourcing plan: [`leakage_audit.md`](leakage_audit.md).
+Evaluation protocol per corpus: [`eval_plan.md §6–§9`](eval_plan.md).
 
 ### 6.1 Training mix (confirmed plan, 2026-04-24)
 
@@ -192,10 +193,10 @@ Ratio: **ASR : EMO : ENV : TXT = 0.415 : 1 : 1 : 0.5**. Emotion pool size
 ASR share was halved per user 2026-04-24 evening to free more gradient budget
 for the non-ASR modalities (especially after loss-imbalance measurement
 showed ASR already dominated 68 % of target tokens at the 25 % row share;
-see [audit §9.3](stage2_listen_leakage_audit.md#93-target-token-budget--measured-loss-signal-share-per-modality-2026-04-24)).
+see [audit §9.3](leakage_audit.md#93-target-token-budget--measured-loss-signal-share-per-modality-2026-04-24)).
 
-**Per-category sources** (more detail: [audit §6.1.3](stage2_listen_leakage_audit.md),
-[eval-plan §6](stage2_eval_plan.md)):
+**Per-category sources** (more detail: [audit §6.1.3](leakage_audit.md),
+[eval-plan §6](eval_plan.md)):
 
 | Category  | Sources                                                                                              | On-disk rows           |
 |-----------|------------------------------------------------------------------------------------------------------|-----------------------:|
@@ -224,11 +225,11 @@ benchmark val/test splits.
 **Rows vs. hours mix**: ASR rows ~5-15 s audio each, emotion ~3-5 s, env sound ~5-30 s,
 text = 0 s audio but ~100 tokens. Row-share ≠ step-share. Final sample weights must
 be set per effective-step once per-corpus mean audio duration + token length is known
-(see [audit §9.3](stage2_listen_leakage_audit.md)).
+(see [audit §9.3](leakage_audit.md)).
 
 ### 6.2 Manifest + preprocessing pipeline
 
-**Built** ([scripts under `scripts/emo/`](../scripts/emo/)):
+**Built** ([scripts under `scripts/emo/`](../../scripts/emo/)):
 
 - `build_training_manifest.py` → `/mnt/tmp/listen_analysis/train_manifest/train_manifest.jsonl`
   (42 871 rows today). Enumerates raw corpora, removes LISTEN-test-mapped
@@ -277,7 +278,7 @@ For runs where the emotion pool is much smaller than the other modality pools
 and you want the large pools to be effectively re-sampled across epochs
 (instead of the combined-manifest behavior where every modality pulls from a
 fixed subsampled file), there is now an opt-in interleave path in
-[`data/loader.py`](../src/llamafactory/data/loader.py):
+[`data/loader.py`](../../src/llamafactory/data/loader.py):
 
 ```yaml
 # Mutually exclusive with omni_manifest: when set, overrides the single-manifest path.
@@ -318,7 +319,7 @@ data_files=...)` infers Features per-file, so interleaving raw per-modality
 streams trips Arrow casts (e.g. `list<string>` vs `null` for `choices`).
 Before passing manifests to this option, **pre-normalize every row to a
 union schema** (missing scalar → `null`, missing list → `[]`). The reference
-implementation is in [`scripts/emo/smoke_interleave.py`](../scripts/emo/smoke_interleave.py)
+implementation is in [`scripts/emo/smoke_interleave.py`](../../scripts/emo/smoke_interleave.py)
 (`UNION_FEATURES` + `_normalize`): a 4 000-row drain with the current
 per-modality manifests produced realized probabilities within ≤ 0.7 pp of
 the 14.5 / 33.7 / 34.6 / 17.2 target. The same normalization should be
@@ -333,7 +334,8 @@ under `scripts/emo/` and `scripts/env_sound/`.
 - **During training**: PEFT saves `adapter_model.safetensors` + `adapter_config.json` +
   (from `additional_target`) projector module weights. Compact (~200 MB / ckpt, mostly
   projector).
-- **Eval sweep**: [`AudioEnc/eval_ckpts/inference_ckpt_sweep.py`](../../../wbl_residency/jos/AudioEnc/eval_ckpts/inference_ckpt_sweep.py)
+- **Eval sweep**: `AudioEnc/eval_ckpts/inference_ckpt_sweep.py` (외부 도구,
+  audiollm-trainer 외부 AudioEnc 레포에 위치 — 본 노드 미존재)
   auto-detects adapter-only ckpts and loads via
   `PeftModel.from_pretrained(base, adapter_dir)`. Pass `--base_model /mnt/tmp/s2_init_42k`
   (or rely on `adapter_config.json`'s `base_model_name_or_path`).
@@ -354,7 +356,7 @@ under `scripts/emo/` and `scripts/env_sound/`.
 ## 9. Checklist before launch
 
 **Done** (audit + downloads, 2026-04-23 → 04-24):
-- [x] LISTEN contamination audit + per-source split provenance ([audit §2-§5](stage2_listen_leakage_audit.md)).
+- [x] LISTEN contamination audit + per-source split provenance ([audit §2-§5](leakage_audit.md)).
 - [x] Direction decision: raw corpora minus LISTEN-test, not LISTEN_full.
 - [x] Raw emotion corpora downloaded: MELD, RAVDESS, DailyTalk, EmoV-DB (re-extracted per-speaker), MUStARD metadata.
 - [x] Text-reasoning Tier-4 benchmarks downloaded: ARC-e/c · WinoGrande · HellaSwag · BoolQ · COPA.
@@ -368,16 +370,16 @@ under `scripts/emo/` and `scripts/env_sound/`.
 - [x] Env-sound manifest built — 41 000 rows (FSD50K dev 35 884 + Clotho dev 3 356 + ESC-50 1 760).
 - [x] Emotion MCQA manifest built — 41 088 rows with per-source lettered choices + answer.
 - [x] Text SFT manifest built — 20 519 rows, 6 MCQA bench train splits, unified MCQA form.
-- [x] Combined manifest emitted — [`stage2_combined_manifest.jsonl`](file:///mnt/tmp/listen_analysis/train_manifest/stage2_combined_manifest.jsonl) (136 907 rows, modality shares 25.05/30.01/29.95/14.99).
+- [x] Combined manifest emitted — [`stage2_combined_manifest.jsonl`](file:///mnt/tmp/listen_analysis/train_manifest/stage2_combined_manifest.jsonl) (**현재 디스크 상태: 118 588 rows, 14.5/33.7/34.6/17.3** = §6.1 의 ASR-halved 최종 mix). 이전 draft 의 136 907 rows / 25.05-30.01-29.95-14.99 split 은 ASR halving 전 기록이라 폐기됨.
 - [x] `create_omni_processor` per-modality ChatML (Option C) — `audio_asr` / `audio_emotion` / `audio_env_sound` / `text` branches; text rows skip audio download, keep 1:1 index via length-0 placeholder; packer filters `audio_lengths == 0`; collator's empty-list fallback unchanged.
-- [x] Dry-run validation ([`scripts/emo/dryrun_processor.py`](../scripts/emo/dryrun_processor.py)) — 8 rows (2 per modality) round-trip through the processor: audio_lengths `[488,414,104,93,278,50,0,0]`, text rows omit `<|audio_start|>` prefix, 1:1 alignment preserved.
+- [x] Dry-run validation ([`scripts/emo/dryrun_processor.py`](../../scripts/emo/dryrun_processor.py)) — 8 rows (2 per modality) round-trip through the processor: audio_lengths `[488,414,104,93,278,50,0,0]`, text rows omit `<|audio_start|>` prefix, 1:1 alignment preserved.
 - [x] Yaml `omni_manifest` switched to `/mnt/tmp/listen_analysis/train_manifest/stage2_combined_manifest.jsonl`.
-- [x] RAVDESS resample-normalized hash-match ([`hash_match_ravdess_v2.py`](../scripts/emo/hash_match_ravdess_v2.py)) — 65/200 matched (vs. v1 0/200). 64 of 65 fall in already-held-out actors 23-24; defence-in-depth catches 1 edge case in actor 14.
+- [x] RAVDESS resample-normalized hash-match ([`hash_match_ravdess_v2.py`](../../scripts/emo/hash_match_ravdess_v2.py)) — 65/200 matched (vs. v1 0/200). 64 of 65 fall in already-held-out actors 23-24; defence-in-depth catches 1 edge case in actor 14.
 - [x] MUStARD key lookup — `*_u.mp4` utterance-level files now resolve; 64 of 65 on disk are `*_c.mp4` context (no sarcasm label) so yield stays 1 until GDrive rate-limit clears and more `_u.mp4` download.
 - [x] FSD50K full extraction — dev 40 966 + eval 10 231 WAVs (matches paper); eval reserved for Tier-3 classification held-out.
 - [~] Rationale synthesis offline pass — **decided against (2026-04-24)**: accept
   letter-only emotion targets and their 4 % loss-share. Script
-  [`synthesize_rationales.py`](../scripts/emo/synthesize_rationales.py) stays in
+  [`synthesize_rationales.py`](../../scripts/emo/synthesize_rationales.py) stays in
   the tree for possible later reversal (e.g. after first full run shows emotion
   capability doesn't transfer from LISTEN-test eval). Processor already
   concatenates `rationale` when non-null, so enabling later is just a manifest
@@ -394,7 +396,7 @@ under `scripts/emo/` and `scripts/env_sound/`.
   long-audio batches.
 - `enable_liger_kernel: true` in real run — Liger's fused CE preserves memory; per-task
   loss logging uses a forward hook on `Qwen3_5AEModel` to capture `last_hidden_state`
-  and project through `lm_head` in `no_grad` (see [`OmniTrainer._ensure_hidden_hook`](../src/llamafactory/train/omni/trainer.py)).
+  and project through `lm_head` in `no_grad` (see [`OmniTrainer._ensure_hidden_hook`](../../src/llamafactory/train/omni/trainer.py)).
 
 **Runtime smoke** (done):
 - [x] Mini-smoke 30 steps @ 1 GPU, Liger ON, hook-based per-task loss verified:
@@ -411,8 +413,8 @@ under `scripts/emo/` and `scripts/env_sound/`.
   ckpt-42000's 7.28 %; overlay noise_aug is a no-op in eval path.
 - [x] ~~Confirm GigaSpeech / CommonVoice paths fetch from nubes~~ — N/A, ASR aux dropped from S2 mix.
 
-**Eval-side** (once S2 runs):
-- [ ] Tier-1 ASR regression check — LibriSpeech test-clean/other WER vs. step-0 7.26 %.
-- [ ] Tier-2 LISTEN-test accuracy per sub-corpus (with known-contamination caveats for MUStARD / PODCAST / MOSEI).
-- [ ] Tier-3 Clotho eval + FSD50K eval + ESC-50 CV — **now in-domain** given env-sound 30 % share in the 2026-04-24 mix (was previously zero-shot in the earlier draft).
-- [ ] Tier-4 6-benchmark sweep — now measures **in-domain** performance (train splits used as SFT signal, val/test still held-out). Retention framing of Tier-4 shifts: interpret as "did MCQA format transfer work" rather than "did base Qwen stay intact". For pure retention guardrail, add MMLU (not in training).
+**Eval-side** (모두 완료, 결과는 [`3model_comparison.md`](3model_comparison.md), [`eval_harness.md`](eval_harness.md)):
+- [x] Tier-1 ASR regression check — LibriSpeech test-clean/other WER. v1 25k 결과 + v2 31k + W-tiny 31k + W-small 35k 모두 측정 완료.
+- [x] Tier-2 LISTEN-test accuracy per sub-corpus (MELD/IEMOCAP는 contamination 으로 dropped, [`leakage_audit.md §1`](leakage_audit.md)).
+- [x] Tier-3 Clotho eval + FSD50K eval + ESC-50 CV — env-sound 35 % in-domain 학습 후 측정 완료.
+- [x] Tier-4 6-benchmark sweep (HellaSwag, WinoGrande, BoolQ, ARC-e, ARC-c, COPA) — text retention 컬럼 으로 측정 완료.

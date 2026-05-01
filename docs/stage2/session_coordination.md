@@ -147,7 +147,7 @@ Effect:
   it: move ✅ Completed rows (not the Notes) into a dated archive and
   reset the live section.
 - The **authoritative** numeric record stays in
-  [`docs/stage2_eval_harness.md`](stage2_eval_harness.md) and per-eval
+  [`eval_harness.md`](eval_harness.md) and per-eval
   `summary.json`. The coordination file is a progress board, not a
   report.
 - When a session wraps up for the day, it leaves any still-running
@@ -175,8 +175,8 @@ Effect:
 
 ## 8. Related docs
 
-- [`stage2_eval_harness.md`](stage2_eval_harness.md) — what we measure,
+- [`eval_harness.md`](eval_harness.md) — what we measure,
   scripts, numeric results.
-- [`stage2_eval_plan.md`](stage2_eval_plan.md) — benchmark matrix and
+- [`eval_plan.md`](eval_plan.md) — benchmark matrix and
   success criteria.
-- [`stage2_design.md`](stage2_design.md) — training setup.
+- [`design.md`](design.md) — training setup.

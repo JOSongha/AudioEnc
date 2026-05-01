@@ -1,7 +1,7 @@
 # Stage 2 — training trials log
 
 다양한 데이터 mix / sampling 전략으로 돌린 Stage-2 LoRA 학습 trial 기록.
-Eval 결과의 정식 기록은 [`stage2_eval_harness.md`](stage2_eval_harness.md)에,
+Eval 결과의 정식 기록은 [`eval_harness.md`](eval_harness.md)에,
 이 문서는 **trial 설계 의도와 결정 근거**, 비교 결과 요약을 담는다.
 
 각 trial은 별도 run dir + run_name 으로 구분된다.
@@ -15,8 +15,8 @@ Eval 결과의 정식 기록은 [`stage2_eval_harness.md`](stage2_eval_harness.m
 - **Run name**: `Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17`
 - **Output dir**: `/mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17/`
 - **Manifest**: `stage2_combined_shards/` (118 588 rows, 단일 셔플)
-- **Builder**: [`scripts/emo/build_combined_manifest.py`](../scripts/emo/build_combined_manifest.py)
-- **Config**: [`configs/qwen3_5ae-asr/stage2.yaml`](../configs/qwen3_5ae-asr/stage2.yaml)
+- **Builder**: [`scripts/emo/build_combined_manifest.py`](../../scripts/emo/build_combined_manifest.py)
+- **Config**: [`configs/qwen3_5ae-asr/stage2.yaml`](../../configs/qwen3_5ae-asr/stage2.yaml)
 - **Mix per epoch** (모든 modality 매 epoch 전체 = pool 그대로):
 
 | modality | pool size | rows / epoch | row % | tokens / row (avg) | tokens / epoch | token % |
@@ -82,9 +82,9 @@ held-out split을 evaluation에 쓰고, train split을 균등 mix. ASR은 Stage 
 - **Run name**: `Qwen3.5AE-Stage2v2-emoFull-asr033-env05-txt03`
 - **Output dir**: `/mnt/tmp/results/Qwen3.5AE-Stage2v2-emoFull-asr033-env05-txt03/` (예정)
 - **Manifest**: `stage2_combined_shards_eprandom/` (1 840 380 rows = 20 pseudo-epochs × 92 019 rows)
-- **Builder**: [`scripts/emo/build_epoch_random_manifest.py`](../scripts/emo/build_epoch_random_manifest.py)
-- **Config**: [`configs/qwen3_5ae-asr/stage2_v2.yaml`](../configs/qwen3_5ae-asr/stage2_v2.yaml)
-- **Launcher**: [`configs/qwen3_5ae-asr/run_v2_8gpu.sh`](../configs/qwen3_5ae-asr/run_v2_8gpu.sh) (single-node 8-GPU)
+- **Builder**: [`scripts/emo/build_epoch_random_manifest.py`](../../scripts/emo/build_epoch_random_manifest.py)
+- **Config**: [`configs/qwen3_5ae-asr/stage2_v2.yaml`](../../configs/qwen3_5ae-asr/stage2_v2.yaml)
+- **Launcher**: [`configs/qwen3_5ae-asr/run_v2_8gpu.sh`](../../configs/qwen3_5ae-asr/run_v2_8gpu.sh) (single-node 8-GPU)
 - **Per-epoch fractions** (final values):
   - emotion **1.0** (39 919 / 39 919) — 메인 task, variability 불필요
   - asr **0.33** (13 200 / 40 000) — 풀은 17 k → 40 k로 확장했으나 token 비중
@@ -227,7 +227,7 @@ v1과 동일:
 
 ### 평가 계획
 
-- 동일 evaluation harness ([`stage2_eval_harness.md`](stage2_eval_harness.md) §2)
+- 동일 evaluation harness ([`eval_harness.md`](eval_harness.md) §2)
 - 같은 sparse trajectory: 1k, 2k, 5k, 10k, 12k, 15k, 18k, 22k, 25k, 30k, 40k, 50k
   (per-task)
 - v1 vs v2 직접 비교용 핵심 지표:
@@ -255,7 +255,7 @@ v1과 동일:
 | FSD50K F1-micro | 0.398 | TBD | TBD | TBD | |
 | Text retention mean | 0.906 | TBD | TBD | TBD | |
 
-(v1 ckpt-25k까지의 evaluation은 별도 후속 sweep으로 진행 중 — `stage2_eval_harness.md`
+(v1 ckpt-25k까지의 evaluation은 별도 후속 sweep으로 진행 중 — `eval_harness.md`
 에 추가 trajectory 반영 예정.)
 
 ---
@@ -265,7 +265,7 @@ v1과 동일:
 ### 동기
 
 v1/v2 모두 **DAC-VAE 48kHz 인코더**를 audio backbone으로 사용. v2 결과
-(11/n: 모든 task에서 v1 대비 우세 — `stage2_eval_harness.md` §14)는 *데이터
+(11/n: 모든 task에서 v1 대비 우세 — `eval_harness.md` §14)는 *데이터
 mix*가 v1→v2의 단일 변경이었으므로 *audio backbone* 자체는 비교 대상에서
 빠져 있음. **인코더를 바꾸면 어디까지 오를 수 있는가**가 본 trial의 질문.
 
@@ -294,11 +294,11 @@ audio understanding의 모든 high-level task가 Stage-2에서 어떻게 따라�
   - small: `Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03`
   - tiny:  `Qwen3.5AE-Stage2-whisper-tiny-emoFull-asr033-env05-txt03`
 - **Configs**:
-  - [`configs/qwen3_5ae-asr/stage2_whisper_small.yaml`](../configs/qwen3_5ae-asr/stage2_whisper_small.yaml)
-  - [`configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml`](../configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml)
+  - [`configs/qwen3_5ae-asr/stage2_whisper_small.yaml`](../../configs/qwen3_5ae-asr/stage2_whisper_small.yaml)
+  - [`configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml`](../../configs/qwen3_5ae-asr/stage2_whisper_tiny.yaml)
 - **Launch scripts**:
-  - [`run_whisper_small_8gpu.sh`](../configs/qwen3_5ae-asr/run_whisper_small_8gpu.sh)
-  - [`run_whisper_tiny_8gpu.sh`](../configs/qwen3_5ae-asr/run_whisper_tiny_8gpu.sh)
+  - [`run_whisper_small_8gpu.sh`](../../configs/qwen3_5ae-asr/run_whisper_small_8gpu.sh)
+  - [`run_whisper_tiny_8gpu.sh`](../../configs/qwen3_5ae-asr/run_whisper_tiny_8gpu.sh)
 - **Manifest**: v2 그대로 (`stage2_combined_shards_eprandom`, 1.84 M rows, 20 epochs, emo 43% / asr 14% / env 36% / text 7%).
 - **Mix 비율**: v2와 동일 (`emoFull / asr033 / env05 / txt03` per-epoch fractions).
 
@@ -325,10 +325,10 @@ manifest 동일.
 
 | 컴포넌트 | DAC 경로 | Whisper 경로 | 분기 위치 |
 |---|---|---|---|
-| Per-row processor | `create_omni_processor` | `create_omni_processor_whisper` | [`data/loader.py:638`](../src/llamafactory/data/loader.py#L638) |
-| Collator | `OmniCollator` (waveform pad+stack) | `WhisperOmniCollator` (mel `[N,80,3000]` stack) | [`train/omni/workflow.py:79`](../src/llamafactory/train/omni/workflow.py#L79) |
-| Audio I/O | DAC packed-token preload | `audio_io.load_audio_chunk` (auto-resample 16kHz) | [`data/audio_io.py`](../src/llamafactory/data/audio_io.py) |
-| Feature extraction | (DAC token sequence) | `whisper_features.extract_mel` ([80, 3000] log-mel via `WhisperFeatureExtractor`) | [`data/whisper_features.py`](../src/llamafactory/data/whisper_features.py) |
+| Per-row processor | `create_omni_processor` | `create_omni_processor_whisper` | [`data/loader.py:642`](../../src/llamafactory/data/loader.py#L642) |
+| Collator | `OmniCollator` (waveform pad+stack) | `WhisperOmniCollator` (mel `[N,80,3000]` stack) | [`train/omni/workflow.py:80`](../../src/llamafactory/train/omni/workflow.py#L80) |
+| Audio I/O | DAC packed-token preload | `audio_io.load_audio_chunk` (auto-resample 16kHz) | [`data/audio_io.py`](../../src/llamafactory/data/audio_io.py) |
+| Feature extraction | (DAC token sequence) | `whisper_features.extract_mel` ([80, 3000] log-mel via `WhisperFeatureExtractor`) | [`data/whisper_features.py`](../../src/llamafactory/data/whisper_features.py) |
 
 ⇒ Whisper용 manifest 별도 빌드 불필요. v2 manifest 의 `path` 필드(어떤 sr이든) 가 16kHz 로 자동 resample → mono → log-mel 변환되어 collator 에 [N, 80, 3000] 로 stack.
 
@@ -342,7 +342,7 @@ manifest 동일.
 4. **Phase 4**: 8-GPU 풀런. **small 먼저 단독** → 끝나면 tiny 후속 launch.
    동시 실행 안 함 (8-GPU 리소스 한 번에 한 trial 만).
 5. **Phase 5**: 학습 종료(또는 50k 도달) 후 v1/v2 와 동일한 25-task eval
-   harness 적용. 비교 표는 `stage2_eval_harness.md` §15 (예정) 에 기재.
+   harness 적용. 비교 표는 `eval_harness.md` §15 (예정) 에 기재.
 
 ### 예상 timeline
 
@@ -418,7 +418,7 @@ best-ckpt 도 동일 방식으로 산출 후 채움.)
 5. **v3e: rationale synthesis**
    - emotion 데이터에 GPT-4 / Llama-3-70B로 rationale 생성
    - 현재 letter-only target → letter+rationale (20-50 token)
-   - [`stage2_design.md`](stage2_design.md) §3.1, §6.2 참조
+   - [`design.md`](design.md) §3.1, §6.2 참조
    - 가장 큰 architectural change지만 macro-F1 가장 크게 끌어올릴 가능성
 
 6. **v3f: emotion mix를 더 키움**

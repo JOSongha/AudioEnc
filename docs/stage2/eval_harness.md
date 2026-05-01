@@ -2,18 +2,18 @@
 
 Records the build of the Tier-2 (emotion) and Tier-3 (env-sound) eval drivers
 for the running Stage-2 LoRA SFT. Companion to
-[`stage2_eval_plan.md`](stage2_eval_plan.md) (what to measure) and
-[`stage2_design.md`](stage2_design.md) (training setup). This document
+[`eval_plan.md`](eval_plan.md) (what to measure) and
+[`design.md`](design.md) (training setup). This document
 captures *how* the eval harness works, the three implementation issues that
 blocked off-the-shelf reuse of `eval_testclean_wer.py`, and the verification
 done against checkpoint-2000.
 
 > **Companion artifacts** (auto-generated from `summary.json` files; in-repo copies for clickability, source-of-truth at `/mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17/analysis/`):
-> - [`stage2_analysis/results.csv`](stage2_analysis/results.csv) — long-format ckpt × metric × value (587 rows)
-> - [`stage2_analysis/results_wide.csv`](stage2_analysis/results_wide.csv) — wide-format ckpt × 26 metrics
-> - [`stage2_analysis/results.md`](stage2_analysis/results.md) — markdown table
-> - [`stage2_analysis/best_per_task.md`](stage2_analysis/best_per_task.md) — per-task best ckpt
-> - [`stage2_analysis/trajectories.pdf`](stage2_analysis/trajectories.pdf) — 5 × 2 multi-panel figure (10 task panels)
+> - [`analysis/results.csv`](analysis/results.csv) — long-format ckpt × metric × value (587 rows)
+> - [`analysis/results_wide.csv`](analysis/results_wide.csv) — wide-format ckpt × 26 metrics
+> - [`analysis/results.md`](analysis/results.md) — markdown table
+> - [`analysis/best_per_task.md`](analysis/best_per_task.md) — per-task best ckpt
+> - [`analysis/trajectories.pdf`](analysis/trajectories.pdf) — 5 × 2 multi-panel figure (10 task panels)
 >
 > Regenerate: `python -m evaluation.stage2.aggregate_results --root <runDir> --out <outDir>` then `python -m evaluation.stage2.plot_trajectories --csv <outDir>/results.csv --out <outDir>/trajectories.pdf`. Copy results back into `docs/stage2_analysis/` for in-repo viewing.
 
@@ -110,7 +110,7 @@ ckpt-2-3k spike (early-training instability) and ckpt-25k drift (final regressio
    to 79.6 % in 11 k steps; FSD50K F1-micro 0.147 → 0.398 (×2.7), F1-macro
    0.026 → 0.270 (×10). Both still climbing at ckpt-12000.
 
-Every number reproducible from [`evaluation/stage2/`](../evaluation/stage2/)
+Every number reproducible from [`evaluation/stage2/`](../../evaluation/stage2/)
 with `--ckpts 1000,2000,…,12000`; recipes in §9.
 
 ---
@@ -119,9 +119,9 @@ with `--ckpts 1000,2000,…,12000`; recipes in §9.
 
 ## 1. Motivation
 
-[`stage2_eval_plan.md`](stage2_eval_plan.md) promises a full Tier-2/3 number
+[`eval_plan.md`](eval_plan.md) promises a full Tier-2/3 number
 board (LISTEN-test, Clotho, FSD50K, ESC-50, MMLU, …) but
-[`evaluation/`](../evaluation/) previously held only `eval_testclean_wer.py`
+[`evaluation/`](../../evaluation/) previously held only `eval_testclean_wer.py`
 for ASR. Launching the Tier-2/3 sweep therefore required:
 
 1. An MCQA driver with letter-first parse for **LISTEN-test** (2 635 rows).
@@ -145,7 +145,7 @@ for ASR. Launching the Tier-2/3 sweep therefore required:
 - **Prompt-format divergence.** The WER script hardcodes
   `"Transcribe the audio to text."`; MCQA / captioning / classification need
   per-task ChatML stems that mirror
-  [`omni_dataset.py:create_omni_processor`](../src/llamafactory/data/omni_dataset.py).
+  [`omni_dataset.py:create_omni_processor`](../../src/llamafactory/data/omni_dataset.py).
 
 ---
 
@@ -193,7 +193,7 @@ place.
 
 ### 3.1 Adapter-only detection
 
-[`_loader._is_adapter_only`](../evaluation/stage2/_loader.py) returns True
+[`_loader._is_adapter_only`](../../evaluation/stage2/_loader.py) returns True
 iff the dir has `adapter_config.json` + `adapter_model.safetensors` but
 neither `model.safetensors` nor `model.safetensors.index.json`. Under this
 branch the loader:
@@ -298,7 +298,7 @@ repeated `load_checkpoint()` calls are idempotent.
   file. No other `cache_params.*` or `past_key_values.*cache*` usages exist.
 - **Liger kernel**: Training has `enable_liger_kernel: true` for speed;
   eval uses stock `attn_implementation="sdpa"`. `apply_liger_kernel` in
-  [`model/model_utils/liger_kernel.py:36`](../src/llamafactory/model/model_utils/liger_kernel.py#L36)
+  [`model/model_utils/liger_kernel.py:36`](../../src/llamafactory/model/model_utils/liger_kernel.py#L36)
   early-returns when `is_trainable=False`, so at inference time Liger is
   never applied regardless of the YAML flag — there is nothing to match.
   The trained weights themselves are portable (Liger's fused ops are
@@ -388,7 +388,7 @@ cross-paper reproducibility, not as the primary S2 number.
   IEMOCAP 400, MELD 400, OMG 400, PODCAST 320, Emotion-Speech 200, RAVDESS 200,
   CREMA-D 200, TESS 200, MUStARD 193, MOSEI 64, SAVEE 58.
 - Sub-corpus caveat from
-  [`stage2_listen_leakage_audit.md`](stage2_listen_leakage_audit.md): MUStARD
+  [`leakage_audit.md`](leakage_audit.md): MUStARD
   / PODCAST / MOSEI carry audio-level overlap with LISTEN-train in the
   original distribution. Since the running S2 doesn't train on LISTEN-train
   directly (it uses per-source corpora filtered against LISTEN-test), this
@@ -561,11 +561,11 @@ training this prior will slowly decay as the rationale + MCQA gradient
 carves finer boundaries, but step-2000 accuracy is dominated by this bias.
 
 **3. Rationale supervision is absent.**
-[`stage2_eval_plan.md §1`](stage2_eval_plan.md) explicitly warned that
+[`eval_plan.md §1`](eval_plan.md) explicitly warned that
 "letter-only training has two problems: weak gradient signal (1 token) and
 letter-prior shortcut." The rationale-augmentation offline pass
-([`stage2_design.md` open item #2](stage2_design.md) and
-[`stage2_eval_plan.md §9.1`](stage2_eval_plan.md)) has **not run yet** — the
+([`design.md` open item #2](design.md) and
+[`eval_plan.md §9.1`](eval_plan.md)) has **not run yet** — the
 combined manifest we inspected earlier (`shard_*.jsonl`) carries
 `"rationale": null` on every emotion row. The model is therefore training
 on letter-only targets, which is exactly the failure mode the plan flagged.
@@ -609,7 +609,7 @@ LISTEN-official sweep on ckpt-1000 + partial ckpt-2000 is archived under
 ### 8.1 Source-corpus emotion (`eval_source_emotion.py`)
 
 Per-corpus held-out splits exactly as defined in
-[`build_training_manifest.py`](../scripts/emo/build_training_manifest.py) —
+[`build_training_manifest.py`](../../scripts/emo/build_training_manifest.py) —
 so eval never overlaps training. Prompt format identical to training's
 emotion MCQA rows (canonical stem `"What emotion does the speaker convey?"`
 + `"Choices: A) x B) y ...\nAnswer with the letter."`). Random baseline =
@@ -1554,7 +1554,7 @@ MCQA aggregation may be a poor metric or the dataset's audio cues may be
 too weak under our training distribution.
 
 This pattern motivated the v2 redesign
-([`stage2_training_trials.md`](stage2_training_trials.md)): late-training
+([`training_trials.md`](training_trials.md)): late-training
 regression on ASR + double-peak collapse on FSD50K mAP suggest the model
 is over-fitting on the in-distribution emotion mix at the cost of
 cross-domain generalization. v2 attempts to mitigate via per-epoch random
@@ -1584,7 +1584,7 @@ If extracting a single best ckpt from v1 for deployment:
 
 v2 (`Qwen3.5AE-Stage2v2-emoFull-asr033-env05-txt03`) was launched
 2026-04-25 12:00 with three changes vs v1
-([`stage2_training_trials.md`](stage2_training_trials.md) for full spec):
+([`training_trials.md`](training_trials.md) for full spec):
 1. **Per-epoch random sub-sampling** on ASR / env / text pools (was fixed-mix concat in v1)
 2. **Emotion full pool** (no sub-sampling on emotion)
 3. **AudioSet added** to env pool (FSD50K + Clotho + ESC-50 + AudioSet = 65k rows)
@@ -1721,7 +1721,7 @@ If extracting a single best ckpt from v2:
       2026-04-25 via Session A 8-way listen_mcqa + Session B 8-way FSD50K
       (with `/dev/shm` tmpfs cache to avoid disk I/O thrash; see
       `eval_coordination.md` incidents).
-- [ ] **Update [`stage2_eval_plan.md` §3.4](stage2_eval_plan.md)** which
+- [ ] **Update [`eval_plan.md` §3.4](eval_plan.md)** which
       still describes the mix as "emotion 70 / aux 20 / text 10, sound
       zero-shot". The running config is
       `asr14-emo34-env35-txt17`. env-sound is in-domain, not zero-shot,

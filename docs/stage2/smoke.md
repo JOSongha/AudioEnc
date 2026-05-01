@@ -1,9 +1,9 @@
 # Stage 2 — smoke test findings (2026-04-23)
 
 200-step smoke run to validate the Stage 2 setup documented in
-[`stage2_design.md`](stage2_design.md) before kicking off the real run.
+[`design.md`](design.md) before kicking off the real run.
 
-Config: [`configs/qwen3_5ae-asr/stage2_smoke.yaml`](../configs/qwen3_5ae-asr/stage2_smoke.yaml).
+Config: [`configs/qwen3_5ae-asr/stage2_smoke.yaml`](../../configs/qwen3_5ae-asr/stage2_smoke.yaml).
 7 GPUs (indices 1–7), `per_device_train_batch_size=3`, `learning_rate=1e-5`,
 `warmup_steps=20`, `max_steps=200`, `save_steps=100`, DeepSpeed ZeRO-2 without fused
 Adam (`ds_z2_no_fused.json` — HF AdamW handles the optimizer, sidesteps a JIT-build
@@ -44,7 +44,7 @@ Also in the ckpt dir: `adapter_config.json` (peft metadata), `global_step100/`
 (DeepSpeed ZeRO-2 optimizer states), tokenizer files, `trainer_state.json`. Base
 model weights are NOT saved — that's deliberate and matches the "adapter-only save,
 resolve via `--base_model /mnt/tmp/s2_init_42k` at eval time" plan (see
-`stage2_design.md §7`).
+`design.md §7`).
 
 ## 3. Hybrid attention — surfaced, needs decision
 
@@ -105,7 +105,7 @@ The overlay is safe to use as the Stage 2 `model_name_or_path`.
 - ~~s2_init_42k overlay integrity~~ — verified (§4).
 
 All blockers cleared; remaining items are design decisions, tracked in
-[`stage2_eval_plan.md`](stage2_eval_plan.md).
+[`eval_plan.md`](eval_plan.md).
 
 ---
 
@@ -113,13 +113,13 @@ All blockers cleared; remaining items are design decisions, tracked in
 
 After the ASR-only smoke above, Stage 2 scope expanded to a 4-modality mix
 (ASR 14.5 % / Emo 33.7 % / Env 34.6 % / Text 17.2 %, see
-[`stage2_design.md §6.1`](stage2_design.md#61-training-mix-confirmed-plan-2026-04-24)).
+[`design.md §6.1`](design.md#61-training-mix-confirmed-plan-2026-04-24)).
 A second smoke validated the multimodal data pipeline + processor option C.
 
 ## A. Full 200-step smoke (`Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17-smoke`)
 
 Combined manifest: 136 907 rows across 128 shards. Config:
-[`stage2_smoke.yaml`](../configs/qwen3_5ae-asr/stage2_smoke.yaml) — Liger ON, sdpa
+[`stage2_smoke.yaml`](../../configs/qwen3_5ae-asr/stage2_smoke.yaml) — Liger ON, sdpa
 (before we rebuilt with fa2 + LD_PRELOAD shim), 8 GPUs × batch 3.
 
 | metric | value |
@@ -128,7 +128,7 @@ Combined manifest: 136 907 rows across 128 shards. Config:
 | `train_loss` | 1.50 (global avg over 200 steps; high because burn-in + new modalities) |
 | Samples / sec | 3.09 |
 | `checkpoint-100`, `checkpoint-200` | saved; `adapter_model.safetensors` carries 64 LoRA + 39 projector keys |
-| 4-modality routing | verified via [`dryrun_processor.py`](../scripts/emo/dryrun_processor.py) — audio_asr / audio_emotion / audio_env_sound / text all round-trip |
+| 4-modality routing | verified via [`dryrun_processor.py`](../../scripts/emo/dryrun_processor.py) — audio_asr / audio_emotion / audio_env_sound / text all round-trip |
 
 Loss trajectory: step 10 → 3.10, step 100 → save, step 195 → 1.07, step 200 → 1.09.
 
@@ -169,8 +169,9 @@ wrapping (DeepSpeed / PEFT / LoRA) because it matches by class name
     (used by `run_nsml.sh` for Stage 1; real run adopts the same shim to keep fa2).
 - **manifest shard requirement**: single-file JSONL manifest fails HF datasets'
   `.shard(N=world_size)` with `IndexError`. Pre-splitting into 128 shards
-  (built automatically by [`build_combined_manifest.py`](../scripts/emo/build_combined_manifest.py))
+  (built automatically by [`build_combined_manifest.py`](../../scripts/emo/build_combined_manifest.py))
   fixes it.
-- **eval sweep ckpt filter**: [`inference_ckpt_sweep.py`](../../../wbl_residency/jos/AudioEnc/eval_ckpts/inference_ckpt_sweep.py)
+- **eval sweep ckpt filter**: `inference_ckpt_sweep.py` (외부 도구 — 별도
+  AudioEnc 레포에 위치, 본 노드 미존재)
   originally required `model.safetensors`; patched to also accept adapter-only
   ckpts (`adapter_model.safetensors` + `adapter_config.json`).

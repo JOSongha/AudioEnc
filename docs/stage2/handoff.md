@@ -12,7 +12,7 @@ audiollm-trainer 기반으로 Qwen3.5AE Stage 2 (LoRA SFT) 학습을 처음부�
 - **베이스 모델**: Stage 1 init (Whisper-small 또는 Encodec-24k 등)
 - **하드웨어**: 8 × A100-80GB (16-way dataloader 기준)
 - **한 번 학습 시간**: ~2-3 일 (31k step, batch 32, whisper-small 인코더)
-- **체크포인트 사이즈**: ckpt당 ~50 MB (PEFT adapter only) → 31 ckpt = ~1.6 GB
+- **체크포인트 사이즈**: ckpt당 ~41 MB (`adapter_model.safetensors`, PEFT adapter + projector via `additional_target`) → 31 ckpt ≈ 1.3 GB. Trainer state / DeepSpeed optimizer state 포함 시 ckpt 폴더 전체 ~1.8 GB / ckpt — disk 계획 시 주의.
 
 ---
 

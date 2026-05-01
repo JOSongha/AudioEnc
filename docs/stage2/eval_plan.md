@@ -2,8 +2,8 @@
 
 Scope: how we'll measure Stage 2, and therefore which training-data additions
 (beyond the ASR superset) make sense. Written during smoke, to be iterated through
-discussion. Pairs with [`stage2_design.md`](stage2_design.md) (setup) and
-[`stage2_smoke.md`](stage2_smoke.md) (pre-launch validation results).
+discussion. Pairs with [`design.md`](design.md) (setup) and
+[`smoke.md`](smoke.md) (pre-launch validation results).
 
 ---
 
@@ -36,8 +36,8 @@ discussion. Pairs with [`stage2_design.md`](stage2_design.md) (setup) and
 | 2 | Paralinguistic — emotion (primary) | **LISTEN test split** | accuracy / macro F1 | ✅ LISTEN ships with train/test split |
 | 2 | Paralinguistic — multi | MMAU-speech | accuracy | ✅ (assumed independent, verify) |
 | 2 | Paralinguistic — aux | VibeCheck1 held-out split | accuracy / F1 | ⚠ format TBD |
-| 2 | Paralinguistic — cross-corpus (optional) | IEMOCAP / MELD test | macro F1 | ⚠ usable only if LISTEN excludes their test items from LISTEN-train |
-| 3 | Sound captioning | AudioCaps test (975) | CIDEr, BLEU-4, SPIDEr | ✅ if AudioCaps not in train |
+| 2 | Paralinguistic — cross-corpus (optional) | ~~IEMOCAP / MELD test~~ — **DROPPED** (LISTEN-train 오염, [`leakage_audit.md §1`](leakage_audit.md)) → MMAU-speech 가 primary external check | macro F1 | ❌ contaminated |
+| 3 | Sound captioning | ~~AudioCaps test (975)~~ — **NOT IMPLEMENTED**, eval module 없음 (`evaluation/stage2/eval_clotho_caption.py` 만 존재) | CIDEr, BLEU-4, SPIDEr | ⏸ deferred |
 | 3 | Sound captioning | Clotho eval | CIDEr, BLEU | ✅ **always** (Clotho is eval-only) |
 | 3 | Sound understanding | MMAU-sound + MMAU-music | accuracy | ✅ |
 | 4 | Text retention | MMLU (or lighter: HellaSwag / ARC-e) | accuracy | ✅ text-only |
@@ -92,7 +92,9 @@ Result: each training sample becomes `Answer: {letter}. Justification: {rational
 MMAU): prompt model with CoT prefix ("Answer with the letter, then briefly explain."),
 parse first letter from output. Standard CoT MCQA evaluation.
 
-### 3.2 Sound (non-speech audio) — reference only, NOT in current S2 mix
+### 3.2 Sound (non-speech audio) — *historical alternative plan; superseded*
+
+> **Note (2026-04-30)**: 본 §3.2 는 ASR halving 이전의 초안 검토 메모로, "sound 는 후속 stage 로 미룬다" 라는 판단을 기록한 것. 실제로는 §3.4 / [`design.md §6.1`](design.md) 에 따라 **env-sound 가 v1/v2 모두 ~35 % 비중으로 학습 mix 에 포함됨** (FSD50K dev + Clotho dev + ESC-50). 따라서 아래 reference 내용은 *추가로 더 늘릴 sound source* 옵션 검토용으로만 의미 있음.
 
 Not in the confirmed Stage 2 plan (see §3.4), kept here as reference for a later
 stage if/when sound capability is needed.
@@ -141,8 +143,8 @@ safest bet; math-only would narrow too much given the audio-LLM downstream use.
 
 **v1 actually shipped (as run for ckpts 1k-25k, 2026-04-24):**
 `Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17` — config
-[`stage2.yaml`](../configs/qwen3_5ae-asr/stage2.yaml), manifest
-[`build_combined_manifest.py`](../scripts/emo/build_combined_manifest.py),
+[`stage2.yaml`](../../configs/qwen3_5ae-asr/stage2.yaml), manifest
+[`build_combined_manifest.py`](../../scripts/emo/build_combined_manifest.py),
 118 588 rows / pseudo-epoch.
 
 | Modality | Source | Pool | Rows / epoch | Row % | Token % |
@@ -156,20 +158,20 @@ safest bet; math-only would narrow too much given the audio-LLM downstream use.
 history): we chose source corpora directly over LISTEN_full (audit showed
 LISTEN-train pulls IEMOCAP / MELD / MOSEI / PODCAST test items
 *verbatim*, contaminating those benchmarks for held-out eval —
-[`stage2_listen_leakage_audit.md`](stage2_listen_leakage_audit.md)). ASR
+[`leakage_audit.md`](leakage_audit.md)). ASR
 was added back at 14 % as a regularization anchor, env-sound at 35 %
 made Tier-3 in-domain (not zero-shot any more).
 
 **v2 plan (queued, 2026-04-25):**
 `Qwen3.5AE-Stage2v2-emoFull-asr033-env05-txt03` — config
-[`stage2_v2.yaml`](../configs/qwen3_5ae-asr/stage2_v2.yaml), manifest
-[`build_epoch_random_manifest.py`](../scripts/emo/build_epoch_random_manifest.py),
+[`stage2_v2.yaml`](../../configs/qwen3_5ae-asr/stage2_v2.yaml), manifest
+[`build_epoch_random_manifest.py`](../../scripts/emo/build_epoch_random_manifest.py),
 ~92 k rows / pseudo-epoch with per-epoch random subsampling. Background:
 v1 trial showed (a) text SFT memorized in 500 steps (too narrow corpus),
 (b) ASR test-other regressed late-training (no noise-aug signal),
 (c) different tasks peaked at different ckpts (3-5k for ASR, 13-17k for
 text/captioning, 21-24k for emotion) — see
-[`stage2_eval_harness.md` §10.1.2](stage2_eval_harness.md). v2 changes:
+[`eval_harness.md` §10.1.2](eval_harness.md). v2 changes:
 
 | Modality | Pool change | Per-epoch | Why |
 |---|---|---:|---|
@@ -190,7 +192,7 @@ text/captioning, 21-24k for emotion) — see
 3. **Text overfit was a non-issue.** Held-out 6-bench mean 0.880 → 0.907,
    monotone increasing. The early text-loss collapse (7.49 → 0.034) was
    in-distribution fit, not memorization
-   ([`stage2_eval_harness.md` §9.5](stage2_eval_harness.md)).
+   ([`eval_harness.md` §9.5](eval_harness.md)).
 
 Manifest build (both v1 and v2): single `omni_manifest` JSONL mixing
 audio + MCQA prompt + letter (+ optional rationale) per row. Per-row
@@ -251,7 +253,7 @@ Ranked by urgency (post-scope-narrow to LISTEN + VibeCheck1 + text-reasoning 10 
 1. **Projector handling in S2 without ASR supervision** — freeze, keep trainable, or
    add small ASR anchor? (§3.4 flag #1) — biggest open architectural question.
 2. **Hybrid-attention LoRA coverage** — A (current: 8 full-attn layers) / B
-   (+linear-attn `in_proj_*` for all 32) / C (+MLP). See [`stage2_smoke.md §3`](stage2_smoke.md#3-hybrid-attention--surfaced-needs-decision).
+   (+linear-attn `in_proj_*` for all 32) / C (+MLP). See [`smoke.md §3`](smoke.md#3-hybrid-attention--surfaced-needs-decision).
 3. **Text-reasoning SFT corpus choice** — Open-Orca / OpenHermes / Magpie /
    OpenThoughts? Quality vs. diversity tradeoff. (§3.3)
 4. **VibeCheck1 format + source** — spec needed for rationale-augment vs. as-is
@@ -274,7 +276,7 @@ Once 1–4 are decided, remaining work:
 
 Corpora actually downloaded to `/mnt/tmp/datasets/` so far, with their intended
 train/eval usage. Contamination audit + filter pipeline documented in
-[`stage2_listen_leakage_audit.md`](stage2_listen_leakage_audit.md).
+[`leakage_audit.md`](leakage_audit.md).
 
 ### 6.1 Emotion (speech with affect labels)
 
@@ -307,7 +309,7 @@ MCQA label resolution — 64 MUStARD context-only clips dropped since they have 
 sarcasm label).
 
 LISTEN_full itself is **not** used as a training source in this revised plan
-(§3.1 superseded by [`stage2_listen_leakage_audit.md` §6](stage2_listen_leakage_audit.md#6-current-plan--full-source-corpora-minus-listen-test));
+(§3.1 superseded by [`leakage_audit.md` §6](leakage_audit.md#6-current-plan--full-source-corpora-minus-listen-test));
 its test split remains the **primary Tier-2 eval**.
 
 ### 6.2 Environmental sound
@@ -388,7 +390,7 @@ Parse: first letter in response. Rationale string is logged but not scored.
 - **ESC-50 5-fold CV** — held-one-fold-out accuracy, averaged across 5 folds.
   Standard ESC-50 protocol (fold column in meta CSV).
 
-**Zero-shot note**: if Stage 2 does NOT train on env-sound (per `stage2_design.md`
+**Zero-shot note**: if Stage 2 does NOT train on env-sound (per `design.md`
 §6.1 plan-literal), Tier 3 numbers are all zero-shot transfer from emotion +
 text training. Report as baseline for future sound stage.
 
@@ -437,7 +439,7 @@ Rationales for split choices added 2026-04-24:
 | ESC-50        | 5-fold CV (folds rotate each eval run)               | Corpus is too small for fixed test set; the community uses 5-fold CV         |
 
 Splits are enforced by the training-manifest builder
-([`scripts/emo/build_training_manifest.py`](../scripts/emo/build_training_manifest.py)):
+([`scripts/emo/build_training_manifest.py`](../../scripts/emo/build_training_manifest.py)):
 eval-side files never enter the training manifest.
 
 ---

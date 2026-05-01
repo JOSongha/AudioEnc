@@ -1,0 +1,263 @@
+{
+  "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+  "per_benchmark": {
+    "hellaswag": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "hellaswag",
+      "n_total": 10042,
+      "n_parsed": 10042,
+      "n_correct": 9127,
+      "accuracy": 0.9088826926906991,
+      "random_baseline_mixed": 0.25,
+      "pred_letter_distribution": {
+        "C": 2556,
+        "D": 2486,
+        "B": 2484,
+        "A": 2516
+      },
+      "gold_letter_distribution": {
+        "D": 2458,
+        "C": 2584,
+        "B": 2485,
+        "A": 2515
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 2515,
+          "correct": 2292,
+          "acc": 0.9113320079522863
+        },
+        "B": {
+          "support": 2485,
+          "correct": 2252,
+          "acc": 0.9062374245472837
+        },
+        "C": {
+          "support": 2584,
+          "correct": 2345,
+          "acc": 0.9075077399380805
+        },
+        "D": {
+          "support": 2458,
+          "correct": 2238,
+          "acc": 0.9104963384865744
+        }
+      },
+      "n_choices_distribution": {
+        "4": 10042
+      },
+      "elapsed_sec": 224.2787516117096,
+      "use_cache": true
+    },
+    "winogrande": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "winogrande",
+      "n_total": 1267,
+      "n_parsed": 1267,
+      "n_correct": 917,
+      "accuracy": 0.7237569060773481,
+      "random_baseline_mixed": 0.5,
+      "pred_letter_distribution": {
+        "A": 646,
+        "B": 621
+      },
+      "gold_letter_distribution": {
+        "B": 639,
+        "A": 628
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 628,
+          "correct": 462,
+          "acc": 0.7356687898089171
+        },
+        "B": {
+          "support": 639,
+          "correct": 455,
+          "acc": 0.7120500782472613
+        }
+      },
+      "n_choices_distribution": {
+        "2": 1267
+      },
+      "elapsed_sec": 21.721188068389893,
+      "use_cache": true
+    },
+    "boolq": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "boolq",
+      "n_total": 3270,
+      "n_parsed": 3270,
+      "n_correct": 2906,
+      "accuracy": 0.8886850152905199,
+      "random_baseline_mixed": 0.5,
+      "pred_letter_distribution": {
+        "A": 2097,
+        "B": 1173
+      },
+      "gold_letter_distribution": {
+        "B": 1237,
+        "A": 2033
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 2033,
+          "correct": 1883,
+          "acc": 0.926217412690605
+        },
+        "B": {
+          "support": 1237,
+          "correct": 1023,
+          "acc": 0.8270008084074374
+        }
+      },
+      "n_choices_distribution": {
+        "2": 3270
+      },
+      "elapsed_sec": 79.56616139411926,
+      "use_cache": true
+    },
+    "arc_easy": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "arc_easy",
+      "n_total": 2376,
+      "n_parsed": 2376,
+      "n_correct": 2310,
+      "accuracy": 0.9722222222222222,
+      "random_baseline_mixed": 0.25016133557800224,
+      "pred_letter_distribution": {
+        "A": 593,
+        "B": 601,
+        "D": 561,
+        "C": 620,
+        "E": 1
+      },
+      "gold_letter_distribution": {
+        "A": 596,
+        "B": 585,
+        "D": 561,
+        "C": 633,
+        "E": 1
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 596,
+          "correct": 578,
+          "acc": 0.9697986577181208
+        },
+        "B": {
+          "support": 585,
+          "correct": 574,
+          "acc": 0.9811965811965812
+        },
+        "C": {
+          "support": 633,
+          "correct": 609,
+          "acc": 0.9620853080568721
+        },
+        "D": {
+          "support": 561,
+          "correct": 548,
+          "acc": 0.9768270944741533
+        },
+        "E": {
+          "support": 1,
+          "correct": 1,
+          "acc": 1.0
+        }
+      },
+      "n_choices_distribution": {
+        "4": 2365,
+        "3": 7,
+        "5": 4
+      },
+      "elapsed_sec": 40.91771745681763,
+      "use_cache": true
+    },
+    "arc_challenge": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "arc_challenge",
+      "n_total": 1172,
+      "n_parsed": 1172,
+      "n_correct": 1071,
+      "accuracy": 0.9138225255972696,
+      "random_baseline_mixed": 0.25015642775881686,
+      "pred_letter_distribution": {
+        "C": 311,
+        "B": 321,
+        "D": 275,
+        "A": 265
+      },
+      "gold_letter_distribution": {
+        "C": 310,
+        "B": 311,
+        "D": 285,
+        "A": 266
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 266,
+          "correct": 244,
+          "acc": 0.9172932330827067
+        },
+        "B": {
+          "support": 311,
+          "correct": 285,
+          "acc": 0.9163987138263665
+        },
+        "C": {
+          "support": 310,
+          "correct": 285,
+          "acc": 0.9193548387096774
+        },
+        "D": {
+          "support": 285,
+          "correct": 257,
+          "acc": 0.9017543859649123
+        }
+      },
+      "n_choices_distribution": {
+        "4": 1165,
+        "3": 4,
+        "5": 3
+      },
+      "elapsed_sec": 20.53002619743347,
+      "use_cache": true
+    },
+    "copa": {
+      "checkpoint": "/mnt/ddn/users/jos/Qwen3.5AE-Stage2-whisper-small-emoFull-asr033-env05-txt03/checkpoint-12000",
+      "benchmark": "copa",
+      "n_total": 100,
+      "n_parsed": 100,
+      "n_correct": 98,
+      "accuracy": 0.98,
+      "random_baseline_mixed": 0.5,
+      "pred_letter_distribution": {
+        "B": 45,
+        "A": 55
+      },
+      "gold_letter_distribution": {
+        "B": 45,
+        "A": 55
+      },
+      "per_gold_letter": {
+        "A": {
+          "support": 55,
+          "correct": 54,
+          "acc": 0.9818181818181818
+        },
+        "B": {
+          "support": 45,
+          "correct": 44,
+          "acc": 0.9777777777777777
+        }
+      },
+      "n_choices_distribution": {
+        "2": 100
+      },
+      "elapsed_sec": 1.8313326835632324,
+      "use_cache": true
+    }
+  },
+  "unweighted_mean_accuracy": 0.8978948936463432
+}

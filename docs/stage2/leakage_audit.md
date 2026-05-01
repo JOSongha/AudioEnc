@@ -4,7 +4,7 @@ Scope: does `VibeCheck1/LISTEN_full` pull from the **training splits** of its so
 corpora (IEMOCAP, MELD, MOSEI, MSP-Podcast, OMG, MUStARD, CREMA-D, RAVDESS, TESS,
 SAVEE, Emotion-Speech)? And — the flip side, which matters more for our eval plan —
 does LISTEN-train pull from the **test splits** of those corpora? Pairs with
-[`stage2_eval_plan.md §3.1`](stage2_eval_plan.md) (the open question flagged in §5.5).
+[`eval_plan.md §3.1`](eval_plan.md) (the open question flagged in §5.5).
 
 Data analyzed: `/mnt/tmp/listen_analysis/data/{train,test}-*.parquet` (LISTEN_full
 parquet shards) and `/mnt/tmp/listen_analysis/listen_test_ids_by_source.json`.
@@ -37,7 +37,7 @@ Two independent contamination problems, ranked by impact on Stage 2 eval:
      — the evaluator will have seen those audios during LISTEN-train, only with a
      different question prompt.
 
-Practical consequence for [`stage2_eval_plan.md`](stage2_eval_plan.md):
+Practical consequence for [`eval_plan.md`](eval_plan.md):
 - **Drop the "optional cross-corpus IEMOCAP/MELD eval" (Tier 2 last row, §5.5).**
   Both corpora are contaminated — reported numbers would not be honest held-out.
 - **LISTEN-test remains the primary emotion metric, but report its accuracy with a
@@ -172,7 +172,7 @@ test split for them.
 
 ## 4. What this means for Stage 2 eval plan
 
-Concrete edits to apply to [`stage2_eval_plan.md`](stage2_eval_plan.md):
+Concrete edits to apply to [`eval_plan.md`](eval_plan.md):
 
 1. **§2 Tier 2 "IEMOCAP / MELD test macro F1"** — remove. Both corpora are in the
    contaminated list (MELD severely, IEMOCAP by Session-5 overlap). Reporting these
@@ -201,7 +201,7 @@ Concrete edits to apply to [`stage2_eval_plan.md`](stage2_eval_plan.md):
 > **full real source corpora** and removes only LISTEN-test IDs from them, giving
 > a much larger training pool. This §5 is kept as reference / fallback.
 
-Filter script: [`scripts/emo/filter_listen_leakage.py`](../scripts/emo/filter_listen_leakage.py).
+Filter script: [`scripts/emo/filter_listen_leakage.py`](../../scripts/emo/filter_listen_leakage.py).
 Drop rules applied to LISTEN-train (union; LISTEN-test left untouched):
 
 | Rule                                                        | Rows dropped |
@@ -237,7 +237,7 @@ Outputs (`/mnt/tmp/listen_analysis/filtered/`):
 ### 5.1 Audio duration (unique audios; question-variant dedup)
 
 Measured via soundfile WAV-header read (script:
-[`scripts/emo/measure_listen_duration.py`](../scripts/emo/measure_listen_duration.py)):
+[`scripts/emo/measure_listen_duration.py`](../../scripts/emo/measure_listen_duration.py)):
 
 | Split                   | Unique audios | Total duration |
 |-------------------------|--------------:|---------------:|
@@ -273,7 +273,7 @@ in LISTEN-test was dropped entirely from train.)
 
 ### 5.2 Implication for S2 mix sizing
 
-Stage 2 plan (`stage2_design.md §6.1`) had emotion at ~70 % of the mix. With
+Stage 2 plan (`design.md §6.1`) had emotion at ~70 % of the mix. With
 filtered LISTEN_full = **7.26 h** (down from 9.60 h), the absolute emotion-hour
 budget shrinks proportionally; VibeCheck1's share and the 10 % text-reasoning
 weighting should be recomputed once VibeCheck1's own post-filter hours are known.
@@ -291,7 +291,7 @@ once the EULA three arrive).
 
 ### 6.1 Source-corpus access table
 
-All scripts live under [`scripts/emo/`](../scripts/emo/).
+All scripts live under [`scripts/emo/`](../../scripts/emo/).
 
 | # | Dataset       | License               | Approx size     | Source                                                        | Status (2026-04-24)                                         |
 |---|---------------|-----------------------|-----------------|---------------------------------------------------------------|-------------------------------------------------------------|
@@ -313,19 +313,19 @@ Rows 12–13 were added 2026-04-24 after §6.1 expansion to English audio-text e
 corpora outside the original LISTEN source list (user request).
 
 Base download path: `/mnt/tmp/datasets/emotion_raw/`. Script pipeline
-(all under [`scripts/emo/`](../scripts/emo/)):
+(all under [`scripts/emo/`](../../scripts/emo/)):
 
-1. [`download_source_corpora.sh`](../scripts/emo/download_source_corpora.sh) — phase 1 (plain wget/git; LISTEN source set).
-2. [`download_source_corpora_phase2.sh`](../scripts/emo/download_source_corpora_phase2.sh) — phase 2 (after `mamba install -n base -c conda-forge git-lfs gdown ffmpeg`).
-3. [`download_source_corpora_phase3.sh`](../scripts/emo/download_source_corpora_phase3.sh) — phase 3 (git-lfs pull + gdown resume).
-4. [`download_crema_d_hf.py`](../scripts/emo/download_crema_d_hf.py) — CREMA-D HF mirror probe (all candidates 404).
-5. [`extract_meld_audio.sh`](../scripts/emo/extract_meld_audio.sh) — ffmpeg mp4 → 16 kHz mono WAV (parallel, JOBS=16).
-6. [`download_english_emo_open.sh`](../scripts/emo/download_english_emo_open.sh) — phase 1 English audio-text emo (DailyTalk + EmoV-DB repo inspect).
-7. [`download_english_emo_phase2.sh`](../scripts/emo/download_english_emo_phase2.sh) — phase 2 English emo (OpenSLR 115 + gdown for DailyTalk).
-8. [`match_listen_test_to_sources.py`](../scripts/emo/match_listen_test_to_sources.py) — LISTEN-test ID → raw-corpus file mapping; emits
+1. [`download_source_corpora.sh`](../../scripts/emo/download_source_corpora.sh) — phase 1 (plain wget/git; LISTEN source set).
+2. [`download_source_corpora_phase2.sh`](../../scripts/emo/download_source_corpora_phase2.sh) — phase 2 (after `mamba install -n base -c conda-forge git-lfs gdown ffmpeg`).
+3. [`download_source_corpora_phase3.sh`](../../scripts/emo/download_source_corpora_phase3.sh) — phase 3 (git-lfs pull + gdown resume).
+4. [`download_crema_d_hf.py`](../../scripts/emo/download_crema_d_hf.py) — CREMA-D HF mirror probe (all candidates 404).
+5. [`extract_meld_audio.sh`](../../scripts/emo/extract_meld_audio.sh) — ffmpeg mp4 → 16 kHz mono WAV (parallel, JOBS=16).
+6. [`download_english_emo_open.sh`](../../scripts/emo/download_english_emo_open.sh) — phase 1 English audio-text emo (DailyTalk + EmoV-DB repo inspect).
+7. [`download_english_emo_phase2.sh`](../../scripts/emo/download_english_emo_phase2.sh) — phase 2 English emo (OpenSLR 115 + gdown for DailyTalk).
+8. [`match_listen_test_to_sources.py`](../../scripts/emo/match_listen_test_to_sources.py) — LISTEN-test ID → raw-corpus file mapping; emits
     `/mnt/tmp/listen_analysis/exclude_manifests/listen_test_source_mapping.json`.
-9. [`hash_match_ravdess.py`](../scripts/emo/hash_match_ravdess.py) — content-hash match for RAVDESS sequential-index IDs.
-10. [`build_training_manifest.py`](../scripts/emo/build_training_manifest.py) — enumerate raw files, drop LISTEN-test matches, emit `train_manifest.jsonl`.
+9. [`hash_match_ravdess.py`](../../scripts/emo/hash_match_ravdess.py) — content-hash match for RAVDESS sequential-index IDs.
+10. [`build_training_manifest.py`](../../scripts/emo/build_training_manifest.py) — enumerate raw files, drop LISTEN-test matches, emit `train_manifest.jsonl`.
 
 **Quirks encountered** (documented so future runs don't re-hit them):
 - `MELD.Raw.tar.gz` unpacks to non-uniform split dir names:
@@ -366,18 +366,18 @@ Output at `/mnt/tmp/listen_analysis/exclude_manifests/listen_test_source_mapping
 
 The mapping pipeline is complete and idempotent; reruns as corpora arrive will
 progressively fill in the `mapped` column. Mapping rules per source are in
-[`match_listen_test_to_sources.py`](../scripts/emo/match_listen_test_to_sources.py) docstring.
+[`match_listen_test_to_sources.py`](../../scripts/emo/match_listen_test_to_sources.py) docstring.
 
 ### 6.1.2 Exclusion pipeline
 
-After mapping, [`build_training_manifest.py`](../scripts/emo/build_training_manifest.py)
+After mapping, [`build_training_manifest.py`](../../scripts/emo/build_training_manifest.py)
 enumerates raw files per corpus, removes paths that appear in the exclusion
 mapping, and emits `/mnt/tmp/listen_analysis/train_manifest/train_manifest.jsonl`
 plus a `filter_report.json`. Path-format translation is handled inside (MELD
 `.mp4` → extracted `.wav` under `MELD/audio/{split}/`).
 
 For corpora whose LISTEN id is a sequential index
-([`hash_match_ravdess.py`](../scripts/emo/hash_match_ravdess.py) for RAVDESS),
+([`hash_match_ravdess.py`](../../scripts/emo/hash_match_ravdess.py) for RAVDESS),
 the exclusion pass hashes audio content and matches against the LISTEN-test
 audio bytes. Current RAVDESS result: **0 / 200 matched** — LISTEN appears to
 have resampled or re-encoded the audio so a naive byte hash doesn't collide.
@@ -420,7 +420,7 @@ LISTEN-test exclusion applies — so all 27.6 k WAVs carry over 1 : 1.
   Zenodo WAVs matches 0 / 200. A resample-normalized fingerprint (decode to
   16 kHz mono, hash first 4 k samples) is the intended follow-up.
 - DailyTalk GDrive folder ships one monolithic `dailytalk.zip` (~5 GB)
-  which gdown drops at top level — [`download_english_emo_phase2.sh`](../scripts/emo/download_english_emo_phase2.sh)
+  which gdown drops at top level — [`download_english_emo_phase2.sh`](../../scripts/emo/download_english_emo_phase2.sh)
   now unzips it post-download. Produced 23 773 WAVs in nested `data/{dialog}/…`.
 - EmoV-DB repo README points at a dead Mega.nz link; actual source is
   OpenSLR 115 (per-speaker-emotion tarballs, 4 speakers × 4–5 emotions each).
@@ -430,14 +430,14 @@ LISTEN-test exclusion applies — so all 27.6 k WAVs carry over 1 : 1.
 
 ## 7. Text-only MCQA benchmarks (Tier 4 guardrail + text-reasoning SFT)
 
-Tier 4 in [`stage2_eval_plan.md`](stage2_eval_plan.md) calls for a text-retention
+Tier 4 in [`eval_plan.md`](eval_plan.md) calls for a text-retention
 guardrail to catch LoRA damaging the LLM's language ability. Because the §3.3
 text-reasoning SFT mix ("Open-Orca" etc.) overlaps some of these benchmarks at
 the item level, both the **train** and **test/validation** splits of each were
 pulled so we can (a) use the train splits as SFT signal if needed, and (b) hold
 out the canonical val/test splits for Tier-4 eval with known leakage bounds.
 
-Downloader: [`scripts/emo/download_text_benchmarks.py`](../scripts/emo/download_text_benchmarks.py).
+Downloader: [`scripts/emo/download_text_benchmarks.py`](../../scripts/emo/download_text_benchmarks.py).
 Output path: `/mnt/tmp/datasets/text_benchmarks/<name>/<split>.parquet`.
 
 | Benchmark       | HF source                         | Splits pulled (rows)                              | Disk   |
@@ -466,12 +466,12 @@ committing to a Tier 4 panel.
 
 ## 8. Environmental sound datasets (Stage 2 Tier 3 sound eval)
 
-Tier 3 in [`stage2_eval_plan.md`](stage2_eval_plan.md) §3.2 calls for sound
+Tier 3 in [`eval_plan.md`](eval_plan.md) §3.2 calls for sound
 captioning + classification corpora. Fully open-access, non-YouTube-dependent
 subset fetched (EULA / YouTube-gated sources — AudioSet, VGGSound,
 UrbanSound8K, TAU Urban — deferred).
 
-Downloader: [`scripts/env_sound/download.sh`](../scripts/env_sound/download.sh).
+Downloader: [`scripts/env_sound/download.sh`](../../scripts/env_sound/download.sh).
 Base path: `/mnt/tmp/datasets/env_sound/`.
 
 | Dataset | License | Size | Downloaded | Status (2026-04-24) |
@@ -481,7 +481,7 @@ Base path: `/mnt/tmp/datasets/env_sound/`.
 | **FSD50K** | ✅ CC BY 4.0 | 51 197 clips / 200 labels | ✅ archives 23 GB; ⏳ split-zip join + extract | Zenodo 4060432 (dev `.z01-.z05 + .zip`, eval `.z01 + .zip`, ground_truth/metadata/doc) |
 | **MACS** | ✅ CC BY 4.0 (captions) | 3 931 clips | ⚠ captions-only yaml (2.7 MB); **audio not distributed** on MACS Zenodo — comes from TAU Urban Acoustic Scenes 2019 separately | Zenodo 5114771 |
 
-Script: [`scripts/env_sound/extract.sh`](../scripts/env_sound/extract.sh) runs
+Script: [`scripts/env_sound/extract.sh`](../../scripts/env_sound/extract.sh) runs
 `7z x` on Clotho archives and `zip -s 0 --out …` + `unzip` on FSD50K split zips.
 
 **Skipped**: AudioSet (YouTube), VGGSound (YouTube), UrbanSound8K (registration),
@@ -511,12 +511,12 @@ TAU Urban Acoustic Scenes (registration).
 | **Total** | **118 588** | 100 % |
 
 Ratio **ASR : EMO : ENV : TXT = 0.415 : 1 : 1 : 0.5** (Emo = 1 baseline).
-Implementation in [`stage2_design.md §6.1`](stage2_design.md#61-training-mix-confirmed-plan-2026-04-24).
+Implementation in [`design.md §6.1`](design.md#61-training-mix-confirmed-plan-2026-04-24).
 §9.1 strategies below predate this mix — kept for reference.
 
 ### 9.1 What sampling knobs hit the plan
 
-`stage2_design.md §6.1` plan doesn't allocate a share to env-sound in S2 — it
+`design.md §6.1` plan doesn't allocate a share to env-sound in S2 — it
 is a Tier-3 eval-only capability today. Three sampling postures with env-sound
 added:
 
@@ -605,7 +605,7 @@ remains rationale synthesis — with rationale at ~40 tokens/row, emotion totals
 With rationale synthesised (~40 tokens/row), emotion total would jump to ~1.6 M
 tokens (~45 % share), putting it on par with ASR.
 
-Reproduce via the snippet in [`scripts/emo/dryrun_processor.py`](../scripts/emo/dryrun_processor.py)
+Reproduce via the snippet in [`scripts/emo/dryrun_processor.py`](../../scripts/emo/dryrun_processor.py)
 (or the inline measurement that produced the table above — it's a standalone
 tokenizer-and-count pass over the combined manifest; not committed as a named
 script yet).
@@ -616,7 +616,7 @@ script yet).
   emotion + text combined still sit at 4 % of gradient signal despite 45 % of row share.
 - Env-sound captioning (~10 tokens) is a meaningful contributor even without rationale.
 - **The rationale synthesis pass is effectively the loss-balance lever**: running
-  [`synthesize_rationales.py`](../scripts/emo/synthesize_rationales.py) shifts emotion
+  [`synthesize_rationales.py`](../../scripts/emo/synthesize_rationales.py) shifts emotion
   from 2.7 % → ~45 % of target tokens, a ~16× rebalancing with no training-loop changes.
 
 Three mitigation options (pick one before real-scale launch):
@@ -649,9 +649,9 @@ to compute per-modality CE on the shifted labels. Output keys:
 `tokens/<name>` (target-token count per modality for sanity check). Memory
 overhead of the transient logits (~5 GB per GPU at batch 3 × seq 3584 × V 248 k
 × bf16) is freed before backward. See
-[`OmniTrainer._ensure_hidden_hook`](../src/llamafactory/train/omni/trainer.py)
+[`OmniTrainer._ensure_hidden_hook`](../../src/llamafactory/train/omni/trainer.py)
 and smoke verification in
-[`stage2_smoke.md §B`](stage2_smoke.md#b-mini-smoke-30-step-per-task-loss-logging-via-option-c).
+[`smoke.md §B`](smoke.md#b-mini-smoke-30-step-per-task-loss-logging-via-option-c).
 
 For **smoke runs** (200 steps) this imbalance doesn't matter — smoke validates
 mechanical plumbing only.
@@ -673,7 +673,7 @@ Full three-way budget (audio hours + text rows):
 - **Text** 0 h audio / 93 500 rows (tokens only)
 
 If `omni_max_audio_samples: 1 600 000` (33.3 s cap from
-`stage2_design.md §6.2`) is applied, both audio pools will see some clips
+`design.md §6.2`) is applied, both audio pools will see some clips
 truncated — FSD50K has clips up to 30 s (just under cap), Clotho up to 30 s,
 DailyTalk / MELD / etc. all well under. Cap effect on hours is negligible.
 

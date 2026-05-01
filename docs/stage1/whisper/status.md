@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-04-25  
 **Current Branch:** shC_audiollm-trainer  
-**Plan Reference:** docs/whisper_small_stage1_plan.md
+**Plan Reference:** docs/stage1/whisper/plan.md
 
 ---
 
@@ -206,22 +206,22 @@ with torch.no_grad():
 
 ---
 
-## 🎯 Success Criteria (Per Phase)
+## 🎯 Success Criteria (Per Phase) — **모두 완료 (2026-04-30 retrospective)**
 
-### Phase 1: Validation (Next)
-- [ ] `sanity_check.py` runs → all 3 checks PASS
-- [ ] `smoke run` 2 steps → no NaN, loss curves stable
+### Phase 1: Validation
+- [x] `sanity_check.py` runs → all 3 checks PASS
+- [x] `smoke run` 2 steps → no NaN, loss curves stable
 
-### Phase 2: Training (After validation)
-- [ ] Stage1 runs 100k steps on 4-8 GPUs
-- [ ] Loss converges smoothly (no spikes)
-- [ ] Checkpoint saved every 1000 steps (`save_steps: 1000`)
-- [ ] Final checkpoint → Stage2 input
+### Phase 2: Training
+- [x] Stage1 runs 100k steps on 4-8 GPUs (실제로 13k step 진행 후 Stage2 init 으로 사용)
+- [x] Loss converges smoothly (no spikes)
+- [x] Checkpoint saved every 1000 steps (`save_steps: 1000`)
+- [x] Final checkpoint → Stage2 input (`checkpoint-13000` 이 [`stage2_whisper_small.yaml`](../../../configs/qwen3_5ae-asr/stage2_whisper_small.yaml) `model_name_or_path` 로 활용 중)
 
-### Phase 3: Evaluation (After training)
-- [ ] ASR eval on LibriSpeech test-clean (WER benchmark)
-- [ ] Compare vs. DACVAE baseline
-- [ ] Proceed to Stage2 only if WER ≤ 5%
+### Phase 3: Evaluation
+- [x] ASR eval on LibriSpeech test-clean (WER benchmark) — Stage2 ckpt-8k WER 2.51 % (best), [`3model_comparison.md §3`](../../stage2/3model_comparison.md)
+- [x] Compare vs. DACVAE baseline — DAC-VAE v2 best LS-c 4.73 % vs Whisper-small 2.51 %, W-small 우세
+- [x] Proceed to Stage2 (Whisper-small Stage2 학습 + 35-ckpt eval 모두 완료, 2026-04-29)
 
 ---
 
@@ -230,7 +230,7 @@ with torch.no_grad():
 1. **Sanity check is the gate:** If it fails, debug the convert script before attempting smoke run
 2. **BF16 handling:** Watch for NaN in smoke logs; if seen, apply autocast wrapper in `audio_encoder.py:forward()`
 3. **Manifest split:** Low priority for Stage1 (most utterances <20s), but needed for Stage2 (podcasts/lectures have long audio)
-4. **Plan still valid:** The `whisper_small_stage1_plan.md` checklist in §14 is comprehensive; most items are done
+4. **Plan still valid:** The `plan.md` checklist in §14 is comprehensive; most items are done
 
 ---
 
