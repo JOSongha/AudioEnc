@@ -114,6 +114,18 @@ TASK_PROMPTS: dict[str, list[str]] = {
         "Give a single-class label for this audio.",
         "What does this sound belong to?",
     ],
+    # Sentence-form variants (sentence_form_sound_p > 0 in processor)
+    "sound_describe_multi": [
+        "Describe what you hear in this audio. Mention every distinct sound event.",
+        "In a sentence, describe all the sounds you can identify in this clip.",
+        "Tell me what sounds are present in this audio.",
+        "Listen to the audio and describe each sound event in a single sentence.",
+    ],
+    "sound_describe_single": [
+        "Describe the sound you hear in this audio in one sentence.",
+        "In one sentence, what sound is this?",
+        "Describe this sound briefly.",
+    ],
     "emotion_classify": [
         "What emotion is being expressed in the audio?",
         "What emotion does the speaker convey?",
@@ -134,6 +146,52 @@ TASK_PROMPTS: dict[str, list[str]] = {
         "Speaker emotion:",
     ],
 }
+
+
+# ---------------------------------------------------------------------------
+# Sentence-form helpers (sentence_form_sound_p > 0 enables in processor)
+# ---------------------------------------------------------------------------
+
+
+def _english_join(items: list[str]) -> str:
+    """Oxford-comma join. ['a','b'] -> 'a and b'; ['a','b','c'] -> 'a, b, and c'."""
+    items = [str(x) for x in items if x]
+    if not items: return ""
+    if len(items) == 1: return items[0]
+    if len(items) == 2: return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+_SENTENCE_TEMPLATES_MULTI = [
+    "I hear {x} in this audio.",
+    "The audio contains {x}.",
+    "This recording features {x}.",
+    "{x_cap} can be heard in the audio.",
+    "Sounds in the clip: {x}.",
+]
+_SENTENCE_TEMPLATES_SINGLE = [
+    "I hear {x}.",
+    "This sounds like {x}.",
+    "The sound is {x}.",
+    "It is {x}.",
+]
+
+
+def format_labels_as_sentence(labels: list[str], rng, multi: bool = True) -> str:
+    """Render a label set as a natural sentence.
+
+    multi=True   ['Horse','Dog']   -> 'I hear horse and dog in this audio.'
+    multi=False  ['Bell']          -> 'The sound is bell.'
+    Underscores in label names are converted to spaces and labels are
+    lowercased to read naturally.
+    """
+    norm = [l.replace("_", " ").lower() for l in labels if l]
+    if not norm: return ""
+    if multi:
+        joined = _english_join(norm)
+        tpl = rng.choice(_SENTENCE_TEMPLATES_MULTI)
+        return tpl.format(x=joined, x_cap=joined[:1].upper() + joined[1:])
+    return rng.choice(_SENTENCE_TEMPLATES_SINGLE).format(x=norm[0])
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +220,7 @@ def create_omni_processor(
     load_from_nubes: bool = False,
     nubes_gateway: str = "http://c.nubes.sto.navercorp.com:8000/v1",
     nubes_max_workers: int = 12,
+    sentence_form_sound_p: float = 0.0,
 ):
     """Per-row multimodal ChatML builder.
 
@@ -221,22 +280,28 @@ def create_omni_processor(
             return (f"{stem}\nChoices: {choices_str}\nAnswer with the letter.", target)
 
         if modality == "audio_env_sound":
-            src = row.get("source", "")
-            if src == "clotho":
-                caps = row.get("captions") or []
-                if not caps:
-                    return None
+            # v3 sources (clotho, audiocaps, macs, laion_freesound, laion_bbc,
+            # laion_epidemic, laion_audiostock, audioset, fsd50k) all carry a
+            # `captions` list — pick one and route to sound_caption pool.
+            caps = row.get("captions") or []
+            if caps:
                 return (rng.choice(TASK_PROMPTS["sound_caption"]), rng.choice(caps))
+            # Legacy `labels`-based shards (esc50 and pre-v3 fsd50k) still
+            # supported. Keep until those shards are deprecated.
+            src = row.get("source", "")
+            labels = row.get("labels") or []
+            if not labels:
+                return None
             if src == "fsd50k":
-                labels = row.get("labels") or []
-                if not labels:
-                    return None
+                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
+                    return (rng.choice(TASK_PROMPTS["sound_describe_multi"]),
+                            format_labels_as_sentence(labels, rng, multi=True))
                 return (rng.choice(TASK_PROMPTS["sound_classify_multi"]),
                         ", ".join(labels))
             if src == "esc50":
-                labels = row.get("labels") or []
-                if not labels:
-                    return None
+                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
+                    return (rng.choice(TASK_PROMPTS["sound_describe_single"]),
+                            format_labels_as_sentence([labels[0]], rng, multi=False))
                 return (rng.choice(TASK_PROMPTS["sound_classify_single"]),
                         str(labels[0]))
             return None

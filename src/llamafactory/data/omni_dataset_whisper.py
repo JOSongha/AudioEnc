@@ -28,6 +28,7 @@ from .omni_dataset import (
     MODALITY_ID_MAP,
     MODALITY_PAD_ID,
     TASK_PROMPTS,
+    format_labels_as_sentence,
 )
 from .whisper_features import (
     WHISPER_HOP_LENGTH,
@@ -49,6 +50,7 @@ def create_omni_processor_whisper(
     load_from_nubes: bool = False,
     nubes_gateway: str = "http://c.nubes.sto.navercorp.com:8000/v1",
     nubes_max_workers: int = 12,
+    sentence_form_sound_p: float = 0.0,
 ):
     """Per-row processor producing chatml input_ids + log-mel audio_features.
 
@@ -95,21 +97,25 @@ def create_omni_processor_whisper(
             return (f"{stem}\nChoices: {choices_str}\nAnswer with the letter.", target)
 
         if modality == "audio_env_sound":
-            src = row.get("source", "")
-            if src == "clotho":
-                caps = row.get("captions") or []
-                if not caps:
-                    return None
+            # v3 sources (clotho, audiocaps, macs, laion_*, audioset, fsd50k)
+            # all carry a `captions` list. Legacy `labels` path kept for
+            # esc50 / pre-v3 fsd50k shards.
+            caps = row.get("captions") or []
+            if caps:
                 return (rng.choice(TASK_PROMPTS["sound_caption"]), rng.choice(caps))
+            src = row.get("source", "")
+            labels = row.get("labels") or []
+            if not labels:
+                return None
             if src == "fsd50k":
-                labels = row.get("labels") or []
-                if not labels:
-                    return None
+                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
+                    return (rng.choice(TASK_PROMPTS["sound_describe_multi"]),
+                            format_labels_as_sentence(labels, rng, multi=True))
                 return (rng.choice(TASK_PROMPTS["sound_classify_multi"]), ", ".join(labels))
             if src == "esc50":
-                labels = row.get("labels") or []
-                if not labels:
-                    return None
+                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
+                    return (rng.choice(TASK_PROMPTS["sound_describe_single"]),
+                            format_labels_as_sentence([labels[0]], rng, multi=False))
                 return (rng.choice(TASK_PROMPTS["sound_classify_single"]), str(labels[0]))
             return None
 

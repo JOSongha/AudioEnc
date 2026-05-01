@@ -1,7 +1,7 @@
 """Source-corpus emotion eval for Qwen3.5AE Stage-2 checkpoints.
 
 Evaluates on the PER-CORPUS held-out splits that Stage-2 training explicitly
-reserved (see [`stage2_eval_plan.md §7.1`](../docs/stage2_eval_plan.md) and
+reserved (see [`eval_plan.md §7.1`](../docs/stage2/eval_plan.md) and
 [`build_training_manifest.py`](../scripts/emo/build_training_manifest.py)):
 
     MELD        : official test split          (2 747 wavs, 7-class)

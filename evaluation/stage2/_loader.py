@@ -64,11 +64,24 @@ def is_wavtok_config(cfg) -> bool:
     return hasattr(cfg, "audio_config") and hasattr(cfg.audio_config, "wavtok_sample_rate")
 
 
+def is_encodec_config(cfg) -> bool:
+    """EnCodec encoder: raw waveform @ encodec_sampling_rate (typically 24 kHz),
+    hop = product of encodec_upsampling_ratios (e.g. 8·5·4·2 = 320 → 75 fps)."""
+    return hasattr(cfg, "audio_config") and hasattr(cfg.audio_config, "encodec_sampling_rate")
+
+
+def _encodec_hop(cfg) -> int:
+    import math as _m
+    return _m.prod(int(r) for r in cfg.audio_config.encodec_upsampling_ratios)
+
+
 def audio_sample_rate(cfg) -> int:
     if is_whisper_config(cfg):
         return WHISPER_SR
     if is_wavtok_config(cfg):
         return int(cfg.audio_config.wavtok_sample_rate)
+    if is_encodec_config(cfg):
+        return int(cfg.audio_config.encodec_sampling_rate)
     return DAC_SR
 
 
@@ -77,6 +90,8 @@ def audio_hop_length(cfg) -> int:
         return WHISPER_HOP
     if is_wavtok_config(cfg):
         return int(cfg.audio_config.wavtok_hop_length)
+    if is_encodec_config(cfg):
+        return _encodec_hop(cfg)
     return DAC_HOP
 
 
@@ -84,9 +99,14 @@ def default_max_audio_samples(cfg) -> int:
     """Default audio-length cap matching omni_max_audio_samples per encoder.
 
     Whisper: 30 s @ 16 kHz = 480 000.
+    EnCodec: 45 s @ encodec_sampling_rate (matches stage1_encodec_24k.yaml).
     DAC / WavTok: 1.6M (legacy default; encoder-agnostic raw-waveform cap).
     """
-    return WHISPER_SR * 30 if is_whisper_config(cfg) else 1_600_000
+    if is_whisper_config(cfg):
+        return WHISPER_SR * 30
+    if is_encodec_config(cfg):
+        return int(cfg.audio_config.encodec_sampling_rate) * 45
+    return 1_600_000
 
 
 def t_audio_for(cfg, n_samples: int) -> int:

@@ -84,8 +84,11 @@ EMO_MAP = {
 }
 
 # Experiment -> (input_mode, parquet filter experiment_type)
-# 1_* map to type "1"; 2C/3C reuse 2B/3B audio (add transcription in prompt);
-# 4 is not in local parquet.
+# 1_* map to type "1"; 2C/3C reuse 2B/3B audio (add transcription in prompt).
+# Type 4 (paralinguistic) was originally absent from the local LISTEN-test parquet;
+# 2026-04-30: a combined parquet at /mnt/tmp/listen_analysis/data/test_with_type4.parquet
+# adds the 975 type-4 rows from train shard 2. Caveat: type-4 was in the LISTEN-train
+# pool used for Stage-2 supervision, so eval on type 4 is upper-bound (training contamination).
 EXPERIMENTS: dict[str, tuple[str, str]] = {
     "1_text":            ("text",           "1"),
     "1_audio":           ("audio",          "1"),
@@ -96,6 +99,7 @@ EXPERIMENTS: dict[str, tuple[str, str]] = {
     "3A":                ("text",           "3A"),
     "3B":                ("audio",          "3B"),
     "3C":                ("audio_and_text", "3B"),
+    "4":                 ("audio",          "4"),
 }
 
 

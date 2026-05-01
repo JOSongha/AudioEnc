@@ -59,7 +59,9 @@ EVAL_PARQUET_DIR = Path(_os.environ.get(
 ONTOLOGY_JSON = AUDIOSET_ROOT / "ontology.json"
 
 EVAL_STEM = "List the sound events in this audio, separated by commas."
+SENTENCE_STEM = "Describe what you hear in this audio. Mention every distinct sound event."
 MAX_NEW_TOKENS = 96
+SENTENCE_MAX_NEW_TOKENS = 256
 
 
 # ---------------------------------------------------------------------------
@@ -144,13 +146,28 @@ def parse_labels(text: str, name_to_idx: dict[str, int]) -> list[int]:
     return list(set(out))
 
 
-def run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache=True):
+def parse_labels_sentence(text: str, vocab: list[str]) -> list[int]:
+    """Sentence mode: substring-match each label name (and optional plural) in
+    the free-form description. Word-boundary aware."""
+    text_lower = text.lower()
+    out = set()
+    for idx, name in enumerate(vocab):
+        # Multi-word labels: tolerate single space variations, optional plural at end.
+        words = name.lower().split()
+        # Build a regex like "\bword1\s+word2\s+word3s?\b"
+        pat = r"\b" + r"\s+".join(re.escape(w) for w in words[:-1] + [words[-1]]) + r"s?\b"
+        if re.search(pat, text_lower):
+            out.add(idx)
+    return sorted(out)
+
+
+def run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache=True, stem=EVAL_STEM):
     audio_pad_id = cfg.audio_pad_token_id
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
         t_audio = t_audio_for(cfg, wav.shape[-1])
-        ids = build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_STEM)
+        ids = build_prompt_ids(tokenizer, audio_pad_id, t_audio, stem)
         prompts.append(ids)
         waveforms.append(wav)
     return generate_greedy(
@@ -219,7 +236,16 @@ def evaluate_one(
         torch.cuda.empty_cache()
         return s
 
-    # greedy path
+    # greedy / sentence path
+    if score_mode == "sentence":
+        active_stem = SENTENCE_STEM
+        active_max_new = max_new_tokens or SENTENCE_MAX_NEW_TOKENS
+        parse_fn = lambda txt: parse_labels_sentence(txt, vocab)
+    else:
+        active_stem = EVAL_STEM
+        active_max_new = max_new_tokens
+        parse_fn = lambda txt: parse_labels(txt, vocab_norm)
+
     n_labels = len(vocab)
     y_true = np.zeros((len(prepared), n_labels), dtype=np.uint8)
     y_pred = np.zeros((len(prepared), n_labels), dtype=np.uint8)
@@ -229,12 +255,12 @@ def evaluate_one(
         for bs_start in range(0, len(prepared), batch_size):
             batch = prepared[bs_start:bs_start + batch_size]
             try:
-                hyps = run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache=use_cache)
+                hyps = run_batch(model, tokenizer, cfg, batch, active_max_new, use_cache=use_cache, stem=active_stem)
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 hyps = []
                 for one in batch:
-                    hyps.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens, use_cache=use_cache))
+                    hyps.extend(run_batch(model, tokenizer, cfg, [one], active_max_new, use_cache=use_cache, stem=active_stem))
             for i, (r, hyp) in enumerate(zip(batch, hyps)):
                 idx = bs_start + i
                 # gold (human labels)
@@ -243,7 +269,7 @@ def evaluate_one(
                     n = _norm(lab)
                     if n in vocab_norm:
                         gold_idxs.append(vocab_norm[n])
-                pred_idxs = parse_labels(hyp, vocab_norm)
+                pred_idxs = parse_fn(hyp)
                 y_true[idx, gold_idxs] = 1
                 y_pred[idx, pred_idxs] = 1
                 fp.write(json.dumps({
@@ -288,7 +314,7 @@ def evaluate_one(
         "f1_macro": f1_macro,
         "jaccard": jacc,
         "elapsed_sec": time.time() - t0,
-        "stem": EVAL_STEM,
+        "stem": active_stem,
         "score_mode": score_mode,
     }
     with open(summary_path, "w") as f:
@@ -386,7 +412,9 @@ def main():
                    help="Default: 1.6M (DAC) / 480k (Whisper) — chosen from cfg.")
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true")
-    p.add_argument("--score-mode", choices=["greedy", "sequence"], default="greedy")
+    p.add_argument("--score-mode", choices=["greedy", "sequence", "sentence"], default="greedy",
+                   help="greedy = canonical comma-list prompt; sentence = free-form description "
+                        "with substring label matching; sequence = per-label teacher-forced scoring (mAP).")
     p.add_argument("--label-batch-size", type=int, default=50,
                    help="sequence-mode: labels per teacher-force forward")
     args = p.parse_args()
