@@ -702,6 +702,7 @@ def get_omni_dataset(
 
         if shuffle:
             if streaming:
+                sds = sds.repeat(num_times=64)
                 sds = sds.shuffle(seed=seed, buffer_size=data_args.omni_shuffle_buffer_size)
                 logger.info_rank0(f"{prefix} After shuffle (seed={seed}): num_shards={sds.num_shards}")
             else:

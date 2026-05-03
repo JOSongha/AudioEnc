@@ -66,10 +66,13 @@ class OmniTrainer(Seq2SeqTrainer):
             self.processing_class: PreTrainedTokenizer = kwargs.get("tokenizer")
 
         super().__init__(**kwargs)
-        if processor is not None:
-            # avoid wrong loss under gradient accumulation
-            # https://github.com/huggingface/transformers/pull/36044#issuecomment-2746657112
-            self.model_accepts_loss_kwargs = False
+        # Force-disable model_accepts_loss_kwargs regardless of processor.
+        # Our model forward declares **kwargs: Unpack[TransformersKwargs] which the
+        # Trainer auto-detects as loss-kwargs-accepting; combined with HF passing
+        # num_items_in_batch, that path SKIPS the `loss / grad_accum_steps`
+        # division, making logged loss scale linearly with grad_accum.
+        # ref: https://github.com/huggingface/transformers/pull/36044#issuecomment-2746657112
+        self.model_accepts_loss_kwargs = False
 
         self.finetuning_args = finetuning_args
         if gen_kwargs is not None:
@@ -200,7 +203,7 @@ class OmniTrainer(Seq2SeqTrainer):
         if getattr(outputs, "ce_loss", None) is not None:
             _keys = ["ce_loss", "calm_loss", "router_loss", "student_recon_mse"]
             if not hasattr(self, "_custom_losses"):
-                self._custom_losses = {k: 0.0 for k in _keys}
+                self._custom_losses = dict.fromkeys(_keys, 0.0)
                 self._custom_loss_count = 0
             for k in _keys:
                 val = getattr(outputs, k, None)
@@ -363,6 +366,4 @@ class OmniTrainer(Seq2SeqTrainer):
 
         with open(output_prediction_file, "w", encoding="utf-8") as f:
             for text, pred, label in zip(decoded_inputs, decoded_preds, decoded_labels):
-                f.write(
-                    json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n"
-                )
+                f.write(json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n")
