@@ -14,7 +14,8 @@ Reused from `omni_dataset.py` (no behavior change):
 
 import io
 import random
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -40,6 +41,17 @@ from .whisper_features import (
     audio_pad_token_count,
     extract_mel,
 )
+
+# Why: `requests` `timeout=N` is per-recv inactivity, not wall-clock; a stuck
+# socket can drip bytes (or stall in connect/DNS) past it. And `with
+# ThreadPoolExecutor:` blocks `__exit__` until all workers join, so a single
+# hung worker freezes the whole batch — observed as 600s NCCL ALLREDUCE
+# timeouts in DDP (Whisper-small v4 Stage1, 2026-05-05). We bound per-call
+# with a (connect, read) tuple AND the whole batch with `as_completed(
+# timeout=...)` + `shutdown(wait=False)` so leaked threads die in background.
+NUBES_CONNECT_TIMEOUT = 3.0
+NUBES_READ_TIMEOUT = 5.0
+NUBES_BATCH_DEADLINE = 30.0
 
 
 def create_omni_processor_whisper(
@@ -142,7 +154,10 @@ def create_omni_processor_whisper(
     def _download_from_nubes(nubes_path: str) -> bytes | None:
         try:
             session = _get_session()
-            resp = session.get(f"{nubes_gateway}/{nubes_path}", timeout=5.0)
+            resp = session.get(
+                f"{nubes_gateway}/{nubes_path}",
+                timeout=(NUBES_CONNECT_TIMEOUT, NUBES_READ_TIMEOUT),
+            )
             if resp.status_code != 200:
                 print(f"[omni-whisper] nubes HTTP {resp.status_code} for {nubes_path}", flush=True)
                 return None
@@ -193,9 +208,31 @@ def create_omni_processor_whisper(
         nubes_bytes: dict[int, bytes | None] = {}
         if needs_nubes_idx:
             paths = [rows[i]["nubes_path"] for i in needs_nubes_idx]
-            with ThreadPoolExecutor(max_workers=nubes_max_workers) as pool:
-                for i, b in zip(needs_nubes_idx, pool.map(_download_from_nubes, paths)):
-                    nubes_bytes[i] = b
+            pool = ThreadPoolExecutor(max_workers=nubes_max_workers)
+            futures = {
+                pool.submit(_download_from_nubes, p): (i, p)
+                for i, p in zip(needs_nubes_idx, paths)
+            }
+            try:
+                for fut in as_completed(futures, timeout=NUBES_BATCH_DEADLINE):
+                    i, _ = futures[fut]
+                    try:
+                        nubes_bytes[i] = fut.result()
+                    except Exception as e:
+                        print(f"[omni-whisper] future error: {e}", flush=True)
+                        nubes_bytes[i] = None
+            except FuturesTimeoutError:
+                for fut, (i, p) in futures.items():
+                    if not fut.done():
+                        nubes_bytes[i] = None
+                        fut.cancel()
+                        print(
+                            f"[omni-whisper] nubes batch deadline {NUBES_BATCH_DEADLINE}s exceeded; "
+                            f"skipping {p}",
+                            flush=True,
+                        )
+            finally:
+                pool.shutdown(wait=False)
 
         for i, row in enumerate(rows):
             modality = row.get("modality") or "audio_asr"
