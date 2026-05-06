@@ -1,4 +1,4 @@
-"""Build FSD50K dev manifest (ontology -> synthesized caption).
+"""Build FSD50K dev manifest (ontology description -> caption list).
 
 Sources:
     Audio: /mnt/tmp/datasets/env_sound/FSD50K/FSD50K.dev_audio/<fname>.wav
@@ -8,19 +8,18 @@ Sources:
     Ontology: /mnt/tmp/datasets/env_sound/AudioSet/ontology.json
         FSD50K labels are an AudioSet ontology subset -> reuse same ontology.
 
-Output (matches v3 sound-captioning spec exactly):
+Output (matches v3 sound-captioning spec, Clotho/AudioCaps multi-caption style):
     /mnt/tmp/datasets/manifests/v3/fsd50k_dev_<NNNN>.jsonl
     {"modality": "audio_env_sound", "source": "fsd50k",
-     "audio_path": ".../<fname>.wav", "captions": ["sound of A, B, and C"]}
+     "audio_path": ".../<fname>.wav",
+     "captions": ["The electric guitar is a guitar that requires external ...",
+                  "A guitar is a stringed musical instrument ...",
+                  "Music is sound that has been organized ..."]}
 
-FSD50K label names use underscores ("Electric_guitar") -> map to ontology display
-name ("Electric guitar") via mid lookup (preferred, deterministic), with
-underscore->space fallback.
-
-Caption synthesis (lowercased, comma-separated, "and" before last when >=3):
-    1 label : "sound of music"
-    2 labels: "sound of guitar, music"
-    3+      : "sound of electric guitar, guitar, and music"
+FSD50K label names use underscores ("Electric_guitar") -> map to ontology entry
+via mid lookup (preferred) or underscore->space fallback. Each label's
+ontology `description` (rich human-curated text, avg ~128 chars) becomes one
+caption in the list; the loader picks one per epoch.
 
 Includes BOTH train + val sub-splits of dev.csv (the official FSD50K dev set).
 Skip rows with empty labels OR missing audio file.
@@ -54,29 +53,41 @@ def load_ontology() -> tuple[dict[str, dict], dict[str, dict]]:
     )
 
 
-def normalize_fsd_label(raw: str, mid: str, by_name: dict, by_id: dict) -> str:
-    """Resolve FSD50K underscore-name to ontology display name.
+def resolve_ontology_entry(raw: str, mid: str, by_name: dict, by_id: dict) -> dict | None:
+    """Resolve FSD50K underscore-name to its ontology entry (preserves description).
 
     Prefer mid lookup (deterministic). Fall back to underscore->space substitution.
+    Returns None when neither mid nor name match (rare; caller falls back to raw).
     """
     if mid and mid in by_id:
-        return by_id[mid]["name"]
+        return by_id[mid]
     candidate = raw.replace("_", " ").strip()
     if candidate in by_name:
-        return by_name[candidate]["name"]
-    return candidate
+        return by_name[candidate]
+    return None
 
 
-def synthesize_caption(label_names: list[str]) -> str | None:
-    labels = [x for x in label_names if x and x.strip()]
-    if not labels:
-        return None
-    lower = [x.lower() for x in labels]
-    if len(lower) == 1:
-        return f"sound of {lower[0]}"
-    if len(lower) == 2:
-        return f"sound of {lower[0]}, {lower[1]}"
-    return f"sound of {', '.join(lower[:-1])}, and {lower[-1]}"
+def descriptions_for(raw_labels: list[str], mids: list[str],
+                     by_name: dict, by_id: dict) -> list[str]:
+    """Return one ontology description per label (rich human-curated text).
+
+    Falls back to the underscore-stripped lowercase name if a label is missing
+    from the ontology. Empty descriptions are skipped, then deduped while
+    preserving order.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw, mid in zip(raw_labels, mids):
+        if not raw or not raw.strip():
+            continue
+        entry = resolve_ontology_entry(raw, mid, by_name, by_id)
+        desc = (entry or {}).get("description", "").strip()
+        cap = desc if desc else raw.replace("_", " ").lower().strip()
+        if cap in seen:
+            continue
+        seen.add(cap)
+        out.append(cap)
+    return out
 
 
 def main() -> None:
@@ -100,24 +111,20 @@ def main() -> None:
                 continue
             if len(mids) < len(raw_labels):
                 mids = mids + [""] * (len(raw_labels) - len(mids))
-            label_names = [
-                normalize_fsd_label(rl, mid, by_name, by_id)
-                for rl, mid in zip(raw_labels, mids)
-            ]
 
             wav_path = AUDIO_ROOT / f"{fname}.wav"
             if not wav_path.exists() or wav_path.stat().st_size == 0:
                 n_skip_no_audio += 1
                 continue
-            cap = synthesize_caption(label_names)
-            if cap is None:
+            caps = descriptions_for(raw_labels, mids, by_name, by_id)
+            if not caps:
                 n_skip_no_label += 1
                 continue
             rows.append({
                 "modality": "audio_env_sound",
                 "source": "fsd50k",
                 "audio_path": str(wav_path),
-                "captions": [cap],
+                "captions": caps,
             })
 
     print(

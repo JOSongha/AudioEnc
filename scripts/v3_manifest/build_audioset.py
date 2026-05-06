@@ -1,4 +1,4 @@
-"""Build AudioSet bal_train manifest (ontology -> synthesized caption).
+"""Build AudioSet bal_train manifest (ontology description -> caption list).
 
 Sources:
     Audio: /mnt/tmp/datasets/env_sound/AudioSet/audio/<video_id>.flac
@@ -9,16 +9,17 @@ Sources:
     Ontology: /mnt/tmp/datasets/env_sound/AudioSet/ontology.json
         (also available under /mnt/ddn/users/jos/AudioEnc/log/tmp/...; both 632 entries.)
 
-Output (matches v3 sound-captioning spec exactly):
+Output (matches v3 sound-captioning spec, Clotho/AudioCaps multi-caption style):
     /mnt/tmp/datasets/manifests/v3/audioset_bal_train_<NNNN>.jsonl
     {"modality": "audio_env_sound", "source": "audioset",
-     "audio_path": ".../<vid>.flac", "captions": ["sound of dog, bark"]}
+     "audio_path": ".../<vid>.flac",
+     "captions": ["The human voice consists of sound made ...",
+                  "A dog is a furry mammal ..."]}
 
-Caption synthesis from `human_labels` (lowercased, comma-separated, "and" before
-last when there are >=3 labels):
-    1 label : "sound of dog"
-    2 labels: "sound of dog, bark"
-    3+      : "sound of dog, bark, and music"
+Each clip's `human_labels` is mapped to its ontology entry's `description`
+(rich human-curated text, avg ~128 chars). Loader picks one caption per epoch
+(omni_dataset.py's caption pool sampling). Labels with no ontology hit fall
+back to their lowercase name as a one-word caption.
 
 Skip rows with empty human_labels OR missing audio file.
 """
@@ -52,17 +53,27 @@ def load_ontology() -> dict[str, dict]:
     )
 
 
-def synthesize_caption(human_labels: list[str]) -> str | None:
-    """Return single 'sound of ...' caption per v3 spec, or None if no labels."""
-    labels = [str(x).strip() for x in human_labels if str(x).strip()]
-    if not labels:
-        return None
-    lower = [x.lower() for x in labels]
-    if len(lower) == 1:
-        return f"sound of {lower[0]}"
-    if len(lower) == 2:
-        return f"sound of {lower[0]}, {lower[1]}"
-    return f"sound of {', '.join(lower[:-1])}, and {lower[-1]}"
+def descriptions_for(human_labels: list[str], onto: dict) -> list[str]:
+    """Return one ontology description per label (rich human-curated text).
+
+    Falls back to the lowercase label name if the label is missing from the
+    ontology (rare: AudioSet's eval-set human_labels match ontology by `name`).
+    Empty descriptions are skipped, then deduped while preserving order.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in human_labels:
+        name = str(x).strip()
+        if not name:
+            continue
+        entry = onto.get(name)
+        desc = (entry or {}).get("description", "").strip()
+        cap = desc if desc else name.lower()
+        if cap in seen:
+            continue
+        seen.add(cap)
+        out.append(cap)
+    return out
 
 
 def iter_parquet_rows():
@@ -93,15 +104,15 @@ def main() -> None:
         if not flac_path.exists() or flac_path.stat().st_size == 0:
             n_skip_no_audio += 1
             continue
-        cap = synthesize_caption([str(x) for x in human_labels])
-        if cap is None:
+        caps = descriptions_for([str(x) for x in human_labels], onto)
+        if not caps:
             n_skip_no_label += 1
             continue
         rows.append({
             "modality": "audio_env_sound",
             "source": "audioset",
             "audio_path": str(flac_path),
-            "captions": [cap],
+            "captions": caps,
         })
 
     print(
