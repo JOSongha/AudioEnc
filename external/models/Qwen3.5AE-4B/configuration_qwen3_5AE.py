@@ -24,8 +24,10 @@ class AudioConfig(PretrainedConfig):
     r"""
     Configuration class for the audio adapter module.
 
-    This config defines a causal transformer adapter based on Llama decoder layers that connects
-    the DAC-VAE audio encoder to the LLM.
+    This config defines a causal transformer adapter (pre-norm RMSNorm + RoPE + SwiGLU,
+    bias-free linears) that connects the audio encoder to the LLM. The decoder block
+    family is selectable via `decoder_block_type` ∈ {"llama", "qwen3"}; default "llama"
+    preserves backward compatibility with existing checkpoints.
     """
 
     model_type = "audio_adapter"
@@ -50,6 +52,7 @@ class AudioConfig(PretrainedConfig):
         attention_dropout=0.0,
         initializer_range=0.02,
         use_cache=True,
+        decoder_block_type="llama",
         # DAC-VAE hyperparameters
         dac_encoder_dim=64,
         dac_encoder_rates=(2, 8, 10, 12),
@@ -79,6 +82,12 @@ class AudioConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.initializer_range = initializer_range
         self.use_cache = use_cache
+
+        if decoder_block_type not in ("llama", "qwen3"):
+            raise ValueError(
+                f"decoder_block_type must be 'llama' or 'qwen3', got {decoder_block_type!r}"
+            )
+        self.decoder_block_type = decoder_block_type
 
         self.dac_encoder_dim = dac_encoder_dim
         self.dac_encoder_rates = list(dac_encoder_rates)

@@ -7,8 +7,23 @@ from transformers.models.llama.modeling_llama import (
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
 )
+from transformers.models.qwen3.modeling_qwen3 import (
+    Qwen3Config,
+    Qwen3DecoderLayer,
+    Qwen3RMSNorm,
+    Qwen3RotaryEmbedding,
+)
 
 from dacvae import DACVAE
+
+
+# Selectable decoder-block recipe. Both share the LLaMA recipe (pre-norm RMSNorm,
+# RoPE, SwiGLU, bias-free); Qwen3 additionally applies QK-norm inside attention.
+# Default "llama" preserves checkpoint compatibility.
+_DECODER_BLOCK_REGISTRY = {
+    "llama": (LlamaConfig, LlamaDecoderLayer, LlamaRMSNorm, LlamaRotaryEmbedding),
+    "qwen3": (Qwen3Config, Qwen3DecoderLayer, Qwen3RMSNorm, Qwen3RotaryEmbedding),
+}
 
 
 class AudioProjector(nn.Module):
@@ -23,13 +38,22 @@ class AudioProjector(nn.Module):
                 - llm_embed_size: LLM hidden 차원
                 - num_adapter_layers: adapter 레이어 수
                 - num_attention_heads: attention head 수
-                - 기타 Llama decoder 관련 설정들
+                - decoder_block_type: "llama"(default) | "qwen3"
+                - 기타 decoder 관련 설정들
         """
         super().__init__()
         self.config = config
 
-        # 1. Llama 스타일 설정을 위한 Config 정의 (AudioConfig 파라미터 사용)
-        self.llama_config = LlamaConfig(
+        block_type = getattr(config, "decoder_block_type", "llama")
+        if block_type not in _DECODER_BLOCK_REGISTRY:
+            raise ValueError(
+                f"decoder_block_type must be one of {list(_DECODER_BLOCK_REGISTRY)}, got {block_type!r}"
+            )
+        BlockConfig, DecoderLayer, RMSNorm, RotaryEmbedding = _DECODER_BLOCK_REGISTRY[block_type]
+        self.block_type = block_type
+
+        # 1. Block-family config (AudioConfig 파라미터 사용; LlamaConfig/Qwen3Config 공통 필드)
+        self.block_config = BlockConfig(
             hidden_size=config.adapter_hidden_size,
             intermediate_size=config.intermediate_size,
             num_attention_heads=config.num_attention_heads,
@@ -42,26 +66,26 @@ class AudioProjector(nn.Module):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
         )
-        self.llama_config._attn_implementation = getattr(config, "_attn_implementation", "eager")
+        self.block_config._attn_implementation = getattr(config, "_attn_implementation", "eager")
 
         # RoPE 파라미터 설정
-        self.llama_config.rope_theta = config.rope_theta
+        self.block_config.rope_theta = config.rope_theta
         if config.rope_scaling is not None:
-            self.llama_config.rope_scaling = config.rope_scaling
+            self.block_config.rope_scaling = config.rope_scaling
 
-        # 2. DAC 출력 차원을 adapter 차원으로 맞추는 초기 Linear
+        # 2. audio 출력 차원을 adapter 차원으로 맞추는 초기 Linear
         self.input_proj = nn.Linear(config.audio_hidden_size, config.adapter_hidden_size, bias=False)
 
-        # 3. N개의 Llama Decoder Layer (RoPE, RMSNorm, SwiGLU 내장)
+        # 3. N개의 Decoder Layer (RoPE, RMSNorm, SwiGLU 내장; qwen3는 추가로 QK-norm)
         self.layers = nn.ModuleList(
-            [LlamaDecoderLayer(self.llama_config, layer_idx=i) for i in range(config.num_adapter_layers)]
+            [DecoderLayer(self.block_config, layer_idx=i) for i in range(config.num_adapter_layers)]
         )
 
         # 4. 최종 출력을 위한 RMSNorm
-        self.final_norm = LlamaRMSNorm(config.adapter_hidden_size, eps=config.rms_norm_eps)
+        self.final_norm = RMSNorm(config.adapter_hidden_size, eps=config.rms_norm_eps)
 
         # 5. RoPE (Rotary Position Embedding) 초기화
-        self.rotary_emb = LlamaRotaryEmbedding(config=self.llama_config)
+        self.rotary_emb = RotaryEmbedding(config=self.block_config)
 
         # 6. adapter_hidden_size와 llm_embed_size가 다르면 output projection 추가
         if config.adapter_hidden_size != config.llm_embed_size:
@@ -103,14 +127,14 @@ class AudioProjector(nn.Module):
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # D. Causal Mask 생성
-        if self.llama_config._attn_implementation in ("flash_attention_2", "sdpa"):
+        if self.block_config._attn_implementation in ("flash_attention_2", "sdpa"):
             causal_mask = None
         else:
             total_len = past_seen_tokens + seq_len
             causal_mask = self._prepare_causal_mask(total_len, x.device)
             causal_mask = causal_mask[:, :, past_seen_tokens:, :]
 
-        # E. Llama Layers 통과
+        # E. Decoder layers 통과
         for layer in self.layers:
             hidden_states = layer(
                 hidden_states,
