@@ -58,7 +58,6 @@ save_steps: 1000
 save_total_limit: 8
 plot_loss: false
 overwrite_output_dir: true
-resume_from_checkpoint: /mnt/tmp/Qwen3.5_whisper_tiny_v5_Stage1_jos/Qwen3.5AE-ASR-Stage1-whisper-tiny-v5/checkpoint-12000
 ignore_data_skip: true  # streaming dataset에서 24k batch skip은 매우 느려서 우회
 
 ### train
