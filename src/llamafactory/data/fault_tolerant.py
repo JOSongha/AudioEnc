@@ -44,34 +44,51 @@ import gc
 from typing import Any, Callable, Iterator, Optional
 
 
-_WORKER_DEATH_HINTS = (
+_WORKER_HINTS = (
     "dataloader worker",  # the canonical phrase
-    "exited unexpectedly",
     "worker process",
-    "broken pipe",
 )
-_SIGNAL_HINTS = (
+_DEATH_HINTS = (
     "killed by signal",
     "signal: killed",
     "received signal",
     "exitcode",
+    "exited unexpectedly",  # PyTorch outer message after a worker died
+    "broken pipe",
 )
+
+
+def _msg_chain(exc: BaseException) -> str:
+    """Concatenate the message of `exc` with all chained `__cause__` /
+    `__context__` messages, so that nested RuntimeErrors with the
+    informative phrase deeper in the chain still get matched."""
+    parts = []
+    seen = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        parts.append(str(cur))
+        cur = cur.__cause__ or cur.__context__
+    return " || ".join(parts).lower()
 
 
 def _looks_like_worker_death(exc: BaseException) -> bool:
     """Decide whether an exception came from a dead DataLoader worker.
 
-    Any exception whose message hints at both a worker process *and* a
-    signal/abnormal exit is treated as recoverable. Other RuntimeError /
-    OSError instances are re-raised so genuine bugs don't get silently
-    retried.
+    PyTorch raises a wrapper RuntimeError with the message ``DataLoader
+    worker (pid(s) X) exited unexpectedly`` while the underlying signal
+    (``killed by signal: ...``) is buried in ``exc.__cause__``. Walk the
+    cause chain so either layer can match.
+
+    Other RuntimeError / OSError instances are re-raised so genuine bugs
+    don't get silently retried.
     """
-    msg = str(exc).lower()
+    msg = _msg_chain(exc)
     if "stopiteration" in msg:
         return False
-    has_worker = any(h in msg for h in _WORKER_DEATH_HINTS)
-    has_signal = any(h in msg for h in _SIGNAL_HINTS)
-    return has_worker and has_signal
+    has_worker = any(h in msg for h in _WORKER_HINTS)
+    has_death = any(h in msg for h in _DEATH_HINTS)
+    return has_worker and has_death
 
 
 class _FTIterator(Iterator[Any]):
