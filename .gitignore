@@ -197,3 +197,6 @@ external/models/**/__pycache__/
 
 # large analysis artifacts (>100 MB GitHub limit)
 docs/**/*.npz
+
+# Crash dumps from training failures
+core.*
