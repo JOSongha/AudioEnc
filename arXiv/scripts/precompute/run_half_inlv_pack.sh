@@ -16,6 +16,7 @@ NUM_WORKERS=1                                # rank 내부 phase 1 병렬도 (�
 SHARDS_PER_RANK=8                            # rank 당 출력 shard 개수 (equal bin)
 MIXED=1                                      # 기본 mixed (cross-dataset shuffle)
 SENTENCE_ONLY=0                              # §42: interleave 끄고 sentence-only
+LLM=""                                       # §43 --llm 오버라이드 (비우면 config 기본값)
 PYTHON="/mnt/ddn/users/jos/miniforge3/envs/audio/bin/python"
 
 while [[ $# -gt 0 ]]; do
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --shards-per-rank) SHARDS_PER_RANK="$2"; shift 2 ;;
         --no-mixed)        MIXED=0;              shift ;;
         --sentence-only)   SENTENCE_ONLY=1;      shift ;;
+        --llm)             LLM="$2";             shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -48,6 +50,7 @@ EXTRA_ARGS=""
 [[ "$NUM_WORKERS" -gt 1 ]] && EXTRA_ARGS="$EXTRA_ARGS --num-workers $NUM_WORKERS"
 EXTRA_ARGS="$EXTRA_ARGS --shards-per-rank $SHARDS_PER_RANK"
 [[ "$SENTENCE_ONLY" -eq 1 ]] && EXTRA_ARGS="$EXTRA_ARGS --sentence-only"
+[[ -n "$LLM" ]] && EXTRA_ARGS="$EXTRA_ARGS --llm $LLM"
 
 echo "========================================"
 echo "  Half-interleave offline packing"
@@ -58,6 +61,7 @@ echo "  Shards/r : $SHARDS_PER_RANK (equal bin count)"
 echo "  Datasets : $DATASETS"
 echo "  Precomp  : $PRECOMPUTED_DIR"
 echo "  Cutoff   : ${CUTOFF_LEN:-from config}"
+echo "  LLM      : ${LLM:-from config default}"
 echo "  Mixed    : $([ "$MIXED" -eq 1 ] && echo '✓' || echo '✗')"
 echo "  Log dir  : $LOG_DIR"
 echo "========================================"
@@ -105,6 +109,7 @@ if [[ $FAILED -eq 0 ]]; then
             --precomputed-dir "$PRECOMPUTED_DIR" \
             ${CUTOFF_LEN:+--cutoff-len $CUTOFF_LEN} \
             $([[ "$SENTENCE_ONLY" -eq 1 ]] && echo "--sentence-only") \
+            ${LLM:+--llm $LLM} \
             --rebalance
     fi
 else

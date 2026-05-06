@@ -47,7 +47,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = Path(__file__).resolve().parents[3]   # arXiv/scripts/precompute → AudioEnc 루트
 sys.path.insert(0, str(_ROOT))
 
 from config import get_config
@@ -305,10 +305,13 @@ _WORKER_MMAPS:   dict[str, object] = {}   # fpath → pa.MemoryMappedFile (keep 
 _WORKER_COLS = ("utterance_id", "features", "feat_len", "text")
 
 
-def _phase1_worker_init(encoder_name: str, datasets_selected: list[str]):
+def _phase1_worker_init(encoder_name: str, datasets_selected: list[str],
+                        llm_name: str | None = None):
     """ProcessPool worker 초기화. 각 자식 프로세스에서 한 번 실행."""
     global _WORKER_PROCESSOR
     cfg = get_config(encoder_name)
+    if llm_name:
+        cfg["llm_model"] = llm_name   # --llm 오버라이드 전파
     tokenizer = AutoTokenizer.from_pretrained(
         cfg["llm_model"],
         cache_dir=cfg["model_cache_dir"],
@@ -368,6 +371,7 @@ def _run_phase1_parallel(
     tmp_writer,
     tmp_buf: dict,
     flush_every_rows: int,
+    llm_name: str | None = None,
 ) -> int:
     """batch-index dispatch 방식으로 phase 1 병렬 실행.
 
@@ -378,7 +382,7 @@ def _run_phase1_parallel(
     pool = mp.get_context("spawn").Pool(
         processes=num_workers,
         initializer=_phase1_worker_init,
-        initargs=(encoder_name, selected),
+        initargs=(encoder_name, selected, llm_name),
     )
 
     total_samples = 0
@@ -628,6 +632,7 @@ def pack_rank_mixed(
     encoder_name: str | None = None,
     shards_per_rank: int = 8,
     pack_subdir: str | None = None,
+    llm_name: str | None = None,
 ):
     out_dir = base_dir / "mixed" / (pack_subdir or f"packed_half_inlv_{cutoff_len}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -661,6 +666,7 @@ def pack_rank_mixed(
             tmp_writer=tmp_writer,
             tmp_buf=tmp_buf,
             flush_every_rows=FLUSH_EVERY,
+            llm_name=llm_name,
         )
     else:
         # Sequential phase 1 (기존 경로 유지)
@@ -932,12 +938,30 @@ def main():
                         help="§42: hash_split 결과 무시하고 모든 utt 를 sentence bin 으로 "
                              "패킹. interleave 비활성. 출력 디렉토리는 packed_sentence_only_{N}. "
                              "가설 A (interleave train/test mismatch) 검증용.")
+    parser.add_argument("--llm",             default=None,
+                        help="tokenizer 로 사용할 LLM 모델명 (기본: config.TRAIN_CONFIG['llm_model']). "
+                             "비기본값이면 출력 디렉토리에 family_tag suffix 가 붙음 "
+                             "(예: Qwen/Qwen3-1.7B → packed_half_inlv_16384_qwen3_1.7b/). "
+                             "Qwen3.5-2B 기본 packed 와 공존 가능.")
     args = parser.parse_args()
 
+    # --llm 오버라이드 시 출력 subdir 에 family_tag 를 붙여 기본 packed 와 분리.
+    # 기본 (None 또는 TRAIN_CONFIG llm_model 과 동일) 이면 suffix 없이 기존 경로 유지.
+    from config import TRAIN_CONFIG as _TC, _infer_llm_family, _infer_llm_tag
+    _default_llm = _TC["llm_model"]
+    llm_override = args.llm if args.llm and args.llm != _default_llm else None
+    if llm_override:
+        _fam = _infer_llm_family(llm_override).lower().replace(".", "_")  # qwen3 / qwen3_5
+        _tag = _infer_llm_tag(llm_override)                                # 1.7b / 2b
+        llm_suffix = f"_{_fam}_{_tag}"
+    else:
+        llm_suffix = ""
+
     # §42: sentence-only 면 출력 subdir 이 달라져야 함. rebalance 도 해당 subdir 타겟.
+    # §43: --llm 비기본값이면 suffix (예: _qwen3_1.7b) 를 붙여 공존.
     pack_subdir = (
-        f"packed_sentence_only_{{cutoff_len}}" if args.sentence_only
-        else f"packed_half_inlv_{{cutoff_len}}"
+        f"packed_sentence_only_{{cutoff_len}}{llm_suffix}" if args.sentence_only
+        else f"packed_half_inlv_{{cutoff_len}}{llm_suffix}"
     )
 
     if args.rebalance:
@@ -954,6 +978,8 @@ def main():
         parser.error("--rank 는 rebalance 모드가 아닐 때 필수")
 
     cfg = get_config(args.encoder)
+    if llm_override:
+        cfg["llm_model"] = llm_override   # main-process tokenizer + worker init 양쪽 전파
     cutoff_len = args.cutoff_len or cfg["packing_cutoff_len"]
 
     print(f"Encoder       : {args.encoder}")
@@ -1011,6 +1037,7 @@ def main():
             encoder_name=args.encoder,
             shards_per_rank=args.shards_per_rank,
             pack_subdir=pack_subdir.format(cutoff_len=cutoff_len),
+            llm_name=llm_override,
         )
     else:
         for ds_key in selected:

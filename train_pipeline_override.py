@@ -135,7 +135,7 @@ from tqdm import tqdm
 from datasets import load_dataset, interleave_datasets, Audio
 from transformers.trainer_pt_utils import IterableDatasetShard
 
-from config import get_config
+from config import get_config, _infer_llm_tag, _infer_llm_family
 from encoders import build_encoder
 from encoders.base import BaseAudioEncoder
 
@@ -195,6 +195,50 @@ def estimate_total_hours(selected_datasets: list[str]) -> float:
 # Model
 # ══════════════════════════════════════════════════════════
 
+def _qwen_family(llm_name: str) -> str | None:
+    """cfg['llm_model'] 문자열을 보고 Qwen family 분류.
+
+    "qwen3_5" : Qwen3.5-* (SSM hybrid, partial RoPE, RMSNorm offset 필요)
+    "qwen3"   : Qwen3-*   (plain transformer, 표준 liger 경로)
+    None      : 그 외 (Qwen2.5 등, 현재 미지원)
+
+    Liger kernel / FSDP transformer_layer_cls_to_wrap 분기 목적.
+    """
+    s = (llm_name or "").lower()
+    if "qwen3.5" in s or "qwen3_5" in s:
+        return "qwen3_5"
+    if "qwen3" in s:
+        return "qwen3"
+    return None
+
+
+def _llm_pack_suffix(llm_name: str) -> str:
+    """--llm 오버라이드 시 packer / precomputed lookup 이 쓰는 suffix.
+
+    기본값 (config.TRAIN_CONFIG['llm_model']) 과 동일 → "" (기존 경로 유지).
+    비기본값 → `_qwen3_1.7b` 처럼 family + tag suffix.
+    """
+    from config import TRAIN_CONFIG as _TC
+    if not llm_name or llm_name == _TC.get("llm_model"):
+        return ""
+    fam = _infer_llm_family(llm_name).lower().replace(".", "_")
+    tag = _infer_llm_tag(llm_name)
+    return f"_{fam}_{tag}"
+
+
+def _fsdp_wrap_cls_for(llm_name: str) -> list[str]:
+    """모델 family 에 맞는 FSDP auto_wrap 대상 DecoderLayer 클래스명 반환."""
+    fam = _qwen_family(llm_name)
+    if fam == "qwen3_5":
+        return ["Qwen3_5DecoderLayer"]
+    if fam == "qwen3":
+        return ["Qwen3DecoderLayer"]
+    raise ValueError(
+        f"Unknown LLM family for FSDP auto_wrap: {llm_name!r}. "
+        "Qwen3.5-* 또는 Qwen3-* 만 지원."
+    )
+
+
 class AudioQwen(nn.Module):
     """
     인코더 독립형 Audio-LLM.
@@ -226,69 +270,83 @@ class AudioQwen(nn.Module):
         logger.info(f"Loading LLM: {llm_name} (dtype={torch_dtype}, attn={attn_impl}, {'캐시' if cached else '다운로드'})...",) # By default, the log is called on main processes only. main_process_only=True
 
         # Liger kernel은 모델 로드 전에 적용해야 함 (import 시점에 모듈을 패치하기 때문)
+        # 모델 family 별 분기: Qwen3.5 (SSM hybrid) 와 Qwen3 (plain transformer) 는 서로 다른 패치 경로.
+        llm_family = _qwen_family(llm_name)  # "qwen3_5" | "qwen3" | None
         if cfg.get("use_liger_kernel", False):
             try:
-                try:
-                    from liger_kernel.transformers import apply_liger_kernel_to_qwen3_5 as apply_liger_qwen
-                    apply_liger_qwen(rope=True, rms_norm=True, swiglu=True, fused_linear_cross_entropy=True)
-                    logger.info("Liger kernel applied via qwen3_5 (rope, rms_norm, swiglu, fused_linear_ce).",
-                                main_process_only=True)
-                except ImportError:
-                    # liger-kernel 0.7.0은 qwen3_5 미지원 → 직접 패치
-                    # qwen3 fallback은 Qwen3_5 클래스를 건드리지 않아 사실상 no-op이므로 사용 금지
-                    import copy
-                    # fla를 먼저 import해야 modeling_qwen3_5 import 시 fla.modules를 찾을 수 있음
+                if llm_family == "qwen3_5":
                     try:
-                        import fla.modules  # noqa: F401
-                        import fla.ops  # noqa: F401
+                        from liger_kernel.transformers import apply_liger_kernel_to_qwen3_5 as apply_liger_qwen
+                        apply_liger_qwen(rope=True, rms_norm=True, swiglu=True, fused_linear_cross_entropy=True)
+                        logger.info("Liger kernel applied via qwen3_5 (rope, rms_norm, swiglu, fused_linear_ce).",
+                                    main_process_only=True)
                     except ImportError:
-                        pass
-                    import transformers.models.qwen3_5.modeling_qwen3_5 as _q35
-                    from liger_kernel.transformers.monkey_patch import (
-                        liger_rotary_pos_emb, LigerRMSNorm, LigerSwiGLUMLP,
-                    )
-                    from liger_kernel.transformers.model.qwen3 import lce_forward as _qwen3_lce_forward
-
-                    # 1) RoPE: Qwen3.5는 partial_rotary_factor=0.25 (head_dim=256 중 64만 RoPE)
-                    #    liger Triton kernel은 full head_dim RoPE를 가정하므로 직접 사용 불가.
-                    #    해결: 앞쪽 rope_dim=64만 liger에 넘기고 나머지 192는 pass-through.
-                    from liger_kernel.transformers.rope import LigerRopeFunction as _LigerRope
-
-                    def _partial_liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
-                        # cos shape: (bsz, seq_len, rope_dim) where rope_dim = head_dim * partial_rotary_factor
-                        rope_dim = cos.shape[-1]
-                        # q shape: (bsz, n_heads, seq_len, head_dim)
-                        q_rope, q_pass = q[..., :rope_dim], q[..., rope_dim:]
-                        k_rope, k_pass = k[..., :rope_dim], k[..., rope_dim:]
-                        # liger expects cos/sin as (bsz, seq_len, rope_dim) — matches
-                        q_rope, k_rope = _LigerRope.apply(
-                            q_rope.contiguous(), k_rope.contiguous(),
-                            cos, sin, position_ids, unsqueeze_dim,
+                        # liger-kernel 0.7.0은 qwen3_5 미지원 → 직접 패치
+                        # qwen3 fallback은 Qwen3_5 클래스를 건드리지 않아 사실상 no-op이므로 사용 금지
+                        import copy
+                        # fla를 먼저 import해야 modeling_qwen3_5 import 시 fla.modules를 찾을 수 있음
+                        try:
+                            import fla.modules  # noqa: F401
+                            import fla.ops  # noqa: F401
+                        except ImportError:
+                            pass
+                        import transformers.models.qwen3_5.modeling_qwen3_5 as _q35
+                        from liger_kernel.transformers.monkey_patch import (
+                            liger_rotary_pos_emb, LigerRMSNorm, LigerSwiGLUMLP,
                         )
-                        return torch.cat([q_rope, q_pass], dim=-1), torch.cat([k_rope, k_pass], dim=-1)
+                        from liger_kernel.transformers.model.qwen3 import lce_forward as _qwen3_lce_forward
 
-                    _q35.apply_rotary_pos_emb = _partial_liger_rotary_pos_emb
+                        # 1) RoPE: Qwen3.5는 partial_rotary_factor=0.25 (head_dim=256 중 64만 RoPE)
+                        #    liger Triton kernel은 full head_dim RoPE를 가정하므로 직접 사용 불가.
+                        #    해결: 앞쪽 rope_dim=64만 liger에 넘기고 나머지 192는 pass-through.
+                        from liger_kernel.transformers.rope import LigerRopeFunction as _LigerRope
 
-                    # 2) RMSNorm: Qwen3.5는 weight=zeros + (1+weight) 공식 → offset=1.0 필요
-                    class _Qwen3_5LigerRMSNorm(LigerRMSNorm):
-                        def __init__(self, dim: int, eps: float = 1e-6):
-                            super().__init__(dim, eps=eps, offset=1.0, init_fn="zeros")
-                    _q35.Qwen3_5RMSNorm = _Qwen3_5LigerRMSNorm
+                        def _partial_liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+                            # cos shape: (bsz, seq_len, rope_dim) where rope_dim = head_dim * partial_rotary_factor
+                            rope_dim = cos.shape[-1]
+                            # q shape: (bsz, n_heads, seq_len, head_dim)
+                            q_rope, q_pass = q[..., :rope_dim], q[..., rope_dim:]
+                            k_rope, k_pass = k[..., :rope_dim], k[..., rope_dim:]
+                            # liger expects cos/sin as (bsz, seq_len, rope_dim) — matches
+                            q_rope, k_rope = _LigerRope.apply(
+                                q_rope.contiguous(), k_rope.contiguous(),
+                                cos, sin, position_ids, unsqueeze_dim,
+                            )
+                            return torch.cat([q_rope, q_pass], dim=-1), torch.cat([k_rope, k_pass], dim=-1)
 
-                    # 3) SwiGLU: Qwen3.5 MLP는 (config, intermediate_size) 시그니처
-                    class _Qwen3_5LigerSwiGLUMLP(LigerSwiGLUMLP):
-                        def __init__(self, config, intermediate_size: int):
-                            cfg_copy = copy.copy(config)
-                            cfg_copy.intermediate_size = intermediate_size
-                            super().__init__(cfg_copy)
-                    _q35.Qwen3_5MLP = _Qwen3_5LigerSwiGLUMLP
+                        _q35.apply_rotary_pos_emb = _partial_liger_rotary_pos_emb
 
-                    # 4) Fused Linear CE: Qwen3_5ForCausalLM.forward 교체
-                    _q35.Qwen3_5ForCausalLM.forward = _qwen3_lce_forward
+                        # 2) RMSNorm: Qwen3.5는 weight=zeros + (1+weight) 공식 → offset=1.0 필요
+                        class _Qwen3_5LigerRMSNorm(LigerRMSNorm):
+                            def __init__(self, dim: int, eps: float = 1e-6):
+                                super().__init__(dim, eps=eps, offset=1.0, init_fn="zeros")
+                        _q35.Qwen3_5RMSNorm = _Qwen3_5LigerRMSNorm
 
-                    logger.info("Liger kernel manually patched for qwen3_5 "
-                                "(rms_norm+offset, swiglu, fused_linear_ce). RoPE SKIPPED (torch 2.6.0 compat).",
+                        # 3) SwiGLU: Qwen3.5 MLP는 (config, intermediate_size) 시그니처
+                        class _Qwen3_5LigerSwiGLUMLP(LigerSwiGLUMLP):
+                            def __init__(self, config, intermediate_size: int):
+                                cfg_copy = copy.copy(config)
+                                cfg_copy.intermediate_size = intermediate_size
+                                super().__init__(cfg_copy)
+                        _q35.Qwen3_5MLP = _Qwen3_5LigerSwiGLUMLP
+
+                        # 4) Fused Linear CE: Qwen3_5ForCausalLM.forward 교체
+                        _q35.Qwen3_5ForCausalLM.forward = _qwen3_lce_forward
+
+                        logger.info("Liger kernel manually patched for qwen3_5 "
+                                    "(rms_norm+offset, swiglu, fused_linear_ce). RoPE SKIPPED (torch 2.6.0 compat).",
+                                    main_process_only=True)
+                elif llm_family == "qwen3":
+                    # Qwen3 (plain transformer): liger-kernel 공식 경로 사용.
+                    # Qwen3.5 와 달리 partial RoPE / RMSNorm offset 불필요 — 기본 패치로 충분.
+                    from liger_kernel.transformers import apply_liger_kernel_to_qwen3
+                    apply_liger_qwen3 = apply_liger_kernel_to_qwen3
+                    apply_liger_qwen3(rope=True, rms_norm=True, swiglu=True, fused_linear_cross_entropy=True)
+                    logger.info("Liger kernel applied via qwen3 (rope, rms_norm, swiglu, fused_linear_ce).",
                                 main_process_only=True)
+                else:
+                    logger.warning(f"Liger kernel: unknown family for '{llm_name}', 건너뜀.",
+                                   main_process_only=True)
             except Exception as e:
                 logger.warning(f"Liger kernel 적용 실패: {e}. 계속 진행합니다...",)
                 raise RuntimeError("Liger kernel 적용 실패. pip install liger-kernel 필요.")
@@ -1461,10 +1519,19 @@ def count_total_precomputed_bins_per_rank(cfg, precomputed_dir, selected_dataset
             return sum(rdr.get_batch(i).num_rows for i in range(rdr.num_record_batches))
 
     # mixed packed shard 우선. §42: half_inlv / sentence_only 패킹 출력도 동일 schema 로 수용.
-    for mixed_subdir in (f"packed_{cutoff_len}",
-                          f"packed_half_inlv_{cutoff_len}",
-                          f"packed_sentence_only_{cutoff_len}",
-                          f"packed_sentence_{cutoff_len}"):
+    # §43: --llm 오버라이드 시 family_tag suffix (예: _qwen3_1.7b) 가 붙은 dir 우선 탐색.
+    _sfx = _llm_pack_suffix(cfg.get("llm_model", ""))
+    _mixed_subdirs = []
+    if _sfx:
+        _mixed_subdirs += [f"packed_{cutoff_len}{_sfx}",
+                            f"packed_half_inlv_{cutoff_len}{_sfx}",
+                            f"packed_sentence_only_{cutoff_len}{_sfx}",
+                            f"packed_sentence_{cutoff_len}{_sfx}"]
+    _mixed_subdirs += [f"packed_{cutoff_len}",
+                        f"packed_half_inlv_{cutoff_len}",
+                        f"packed_sentence_only_{cutoff_len}",
+                        f"packed_sentence_{cutoff_len}"]
+    for mixed_subdir in _mixed_subdirs:
         mixed_dir    = base_dir / "mixed" / mixed_subdir
         mixed_shards = sorted(mixed_dir.glob("rank0_s*.arrow"))
         mixed_single = mixed_dir / "rank0.arrow"
@@ -1536,21 +1603,27 @@ def build_precomputed_pipeline(cfg, accelerator, precomputed_dir, processor_fn, 
     # §42: 탐색 우선순위 — packed_sentence > packed_sentence_only > packed_half_inlv > packed_plain
     # §42+: skip_mixed_pack=True 면 mixed 조회 전부 건너뛰고 per-dataset 으로 직행.
     skip_mixed = cfg.get("skip_mixed_pack", False)
-    mixed_dir_sent = base_dir / "mixed" / f"packed_sentence_{cutoff_len}"
-    mixed_dir_so   = base_dir / "mixed" / f"packed_sentence_only_{cutoff_len}"
-    mixed_dir_hi   = base_dir / "mixed" / f"packed_half_inlv_{cutoff_len}"
-    mixed_dir_plain = base_dir / "mixed" / f"packed_{cutoff_len}"
-    if (sorted(mixed_dir_sent.glob(f"rank{rank}_s*.arrow"))
-            or (mixed_dir_sent / f"rank{rank}.arrow").exists()):
-        mixed_dir = mixed_dir_sent
-    elif (sorted(mixed_dir_so.glob(f"rank{rank}_s*.arrow"))
-            or (mixed_dir_so / f"rank{rank}.arrow").exists()):
-        mixed_dir = mixed_dir_so
-    elif (sorted(mixed_dir_hi.glob(f"rank{rank}_s*.arrow"))
-            or (mixed_dir_hi / f"rank{rank}.arrow").exists()):
-        mixed_dir = mixed_dir_hi
-    else:
-        mixed_dir = mixed_dir_plain
+    # §43: --llm 오버라이드 시 family_tag suffix (예: _qwen3_1.7b) 가 붙은 dir 우선 탐색.
+    _sfx = _llm_pack_suffix(cfg.get("llm_model", ""))
+    def _pick_mixed_dir(suffix: str):
+        _hi   = base_dir / "mixed" / f"packed_half_inlv_{cutoff_len}{suffix}"
+        _sent = base_dir / "mixed" / f"packed_sentence_{cutoff_len}{suffix}"
+        _so   = base_dir / "mixed" / f"packed_sentence_only_{cutoff_len}{suffix}"
+        _plain = base_dir / "mixed" / f"packed_{cutoff_len}{suffix}"
+        if (sorted(_sent.glob(f"rank{rank}_s*.arrow"))
+                or (_sent / f"rank{rank}.arrow").exists()): return _sent
+        if (sorted(_so.glob(f"rank{rank}_s*.arrow"))
+                or (_so / f"rank{rank}.arrow").exists()): return _so
+        if (sorted(_hi.glob(f"rank{rank}_s*.arrow"))
+                or (_hi / f"rank{rank}.arrow").exists()): return _hi
+        return _plain
+    # llm suffix 가 있는 경로 먼저. 해당 경로에 아무 arrow 도 없으면 suffix 없는 기본 경로로 fallback.
+    mixed_dir = _pick_mixed_dir(_sfx) if _sfx else _pick_mixed_dir("")
+    if _sfx and not (
+        sorted(mixed_dir.glob(f"rank{rank}_s*.arrow"))
+        or (mixed_dir / f"rank{rank}.arrow").exists()
+    ):
+        mixed_dir = _pick_mixed_dir("")
     mixed_shards = sorted(mixed_dir.glob(f"rank{rank}_s*.arrow"))
     mixed_single = mixed_dir / f"rank{rank}.arrow"
     if not skip_mixed and (mixed_shards or mixed_single.exists()):
@@ -2492,7 +2565,7 @@ def run_stage1(cfg, accelerator, model, train_dataset, val_dataset, train_eval_d
         **({
             "fsdp": "full_shard auto_wrap",
             "fsdp_config": {
-                "fsdp_transformer_layer_cls_to_wrap": ["Qwen3_5DecoderLayer"],
+                "fsdp_transformer_layer_cls_to_wrap": _fsdp_wrap_cls_for(cfg["llm_model"]),
                 "fsdp_use_orig_params": True,
                 "fsdp_backward_prefetch": "backward_pre",
                 "fsdp_state_dict_type": "SHARDED_STATE_DICT",
@@ -2713,7 +2786,7 @@ def build_stage2_trainer(cfg, accelerator, model, first_train_dataset,
         **({
             "fsdp": "full_shard auto_wrap",
             "fsdp_config": {
-                "fsdp_transformer_layer_cls_to_wrap": ["Qwen3_5DecoderLayer"],
+                "fsdp_transformer_layer_cls_to_wrap": _fsdp_wrap_cls_for(cfg["llm_model"]),
                 "fsdp_use_orig_params": True,
                 "fsdp_backward_prefetch": "backward_pre",
                 "fsdp_state_dict_type": "SHARDED_STATE_DICT",
@@ -2805,7 +2878,14 @@ def main():
     args = parser.parse_args()
 
     cfg = get_config(args.encoder)
-    if args.llm:       cfg["llm_model"]          = args.llm
+    if args.llm:
+        cfg["llm_model"] = args.llm
+        # get_config 는 TRAIN_CONFIG["llm_model"] 로 project_name 을 계산해버리므로
+        # --llm 오버라이드 시 wandb project 도 새 모델에 맞게 재산출.
+        cfg["project_name"] = (
+            f"{_infer_llm_family(cfg['llm_model'])}-{_infer_llm_tag(cfg['llm_model'])}"
+            f"-ASR-{cfg['encoder_name']}"
+        )
     if args.cache_dir: cfg["model_cache_dir"]    = args.cache_dir
     if args.attn_impl: cfg["attn_implementation"] = args.attn_impl
     cfg["use_liger_kernel"] = args.liger
@@ -2839,7 +2919,7 @@ def main():
     # 사용하게 하고, WANDB_RUN_ID + WANDB_RESUME=allow 로 모든 split 을 동일 run 에 이어붙임.
     import datetime
     run_id = datetime.datetime.now().strftime("%m%d_%H%M")
-    llm_tag  = "2b" if "2B" in cfg.get("llm_model", "") else "4b"
+    llm_tag  = _infer_llm_tag(cfg.get("llm_model", ""))
     stage_tag = {"1": "S1", "2": "S2", "all": "S1S2"}.get(args.stage, "S1")
     run_name = f"{cfg.get('encoder_name', 'encoder')}_{llm_tag}_{stage_tag}_{run_id}"
     if cfg.get("wandb_mode") != "disabled":

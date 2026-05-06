@@ -1,5 +1,28 @@
 import math
 import os
+import re
+
+
+def _infer_llm_family(llm_model: str) -> str:
+    """`cfg["llm_model"]` → "Qwen3.5" | "Qwen3". (확장 시 여기만 건드리면 됨)"""
+    s = (llm_model or "")
+    if "Qwen3.5" in s or "qwen3_5" in s.lower():
+        return "Qwen3.5"
+    if "Qwen3" in s or "qwen3" in s.lower():
+        return "Qwen3"
+    # Fallback: 원본 문자열 그대로 두되 wandb 라벨만 ambiguous.
+    return s.split("/")[-1].split("-")[0] or "LLM"
+
+
+def _infer_llm_tag(llm_model: str) -> str:
+    """`Qwen/Qwen3-1.7B` → "1.7b" / `Qwen/Qwen3.5-2B` → "2b" 처럼 사이즈 토큰 추출.
+
+    Qwen family 의 실제 size 토큰(`-?(\\d+(?:\\.\\d+)?)[Bb]`)을 정규식으로 잡는다.
+    """
+    m = re.search(r"(\d+(?:\.\d+)?)[Bb]\b", llm_model or "")
+    if m:
+        return f"{m.group(1)}b"
+    return "unk"
 
 # ==========================================
 # 학습 하이퍼파라미터 (encoder 무관)
@@ -14,19 +37,20 @@ TRAIN_CONFIG = {
     "stage1_lr": 2e-4,   # baseline
     "stage1_epochs": 3,
 
-    # ── Projector collapse 대응 옵션 (§42+) ───────────────────────────────
+    # ── Projector collapse 대응 옵션 (§42+) — §43.5 baseline 로 되돌림 ───────
     # proj_norm_mode: "ln" (default, γ=1) | "ln_small_gamma" | "none"
-    # §43 "none": LayerNorm 완전 제거 (Identity). γ lock-in 수학적 원인 제거.
-    # projector 마지막 Conv init std=0.02 → 자연 output norm ≈ 0.9 (Qwen 0.67 와 근사).
-    "proj_norm_mode":        "none",
+    # 이전 "none" / "ln_small_gamma" 는 γ lock-in 방어용 실험. 기본값 "ln" 로 복원.
+    "proj_norm_mode":        "ln",
     # stage1_diversity_reg: 0.0 = off
     "stage1_diversity_reg":  0.0,
+    # §43.5 stage1 LR scheduler: §42 이전 legacy "constant" 로 복원 (cosine+warmup 제거).
+    "stage1_lr_scheduler_type": "constant",
 
     "stage2_lr": 2e-5,
     "stage2_epochs": 3,
 
     "max_grad_norm": 1.0,
-    "warmup_ratio": 0.1,
+    "warmup_ratio": 0.0,
 
     "max_audio_len": 16000 * 20,
     "max_text_len": 256,
@@ -206,8 +230,11 @@ def get_config(encoder_name: str) -> dict:
 
     cfg["encoder_name"] = encoder_name
     cfg["encoder"]      = enc_cfg
-    llm_tag = "2b" if "2B" in cfg["llm_model"] else "4b"
-    cfg["project_name"] = f"Qwen3.5-{llm_tag}-ASR-{encoder_name}"
+    # Qwen3.5 와 Qwen3 family 를 같이 지원하므로 family / size 둘 다 분기.
+    # llm_tag 예: "2b" (Qwen3.5-2B), "1.7b" (Qwen3-1.7B), "4b" (Qwen3.5-4B or Qwen3-4B)
+    llm_tag    = _infer_llm_tag(cfg["llm_model"])
+    llm_family = _infer_llm_family(cfg["llm_model"])   # "Qwen3.5" | "Qwen3"
+    cfg["project_name"] = f"{llm_family}-{llm_tag}-ASR-{encoder_name}"
 
     # Qwen2.5 <|image_pad|> (id=151655) — 미학습 슬롯, audio placeholder로 재사용
     # (새 special token 추가 불필요, resize_token_embeddings 불필요)
