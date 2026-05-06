@@ -13,7 +13,9 @@ Reused from `omni_dataset.py` (no behavior change):
 """
 
 import io
+import os
 import random
+import signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
@@ -52,6 +54,24 @@ from .whisper_features import (
 NUBES_CONNECT_TIMEOUT = 3.0
 NUBES_READ_TIMEOUT = 5.0
 NUBES_BATCH_DEADLINE = 30.0
+
+# Outer watchdog: even non-nubes layers (audio decode, mel extract, tokenize,
+# packing) can hang on bad samples or syscalls. A SIGALRM-based deadline lets
+# us return a partial batch instead of letting one bad row stall the rank for
+# 600s and trip NCCL. Each fire is logged with the row that was active at the
+# time + the running count, so a deterministic-step crash leaves a pattern.
+PROCESS_BATCH_DEADLINE = 60  # seconds
+
+
+class _BatchTimeout(Exception):
+    """Raised by SIGALRM handler when process_samples exceeds the deadline."""
+
+
+def _on_alarm(signum, frame):
+    raise _BatchTimeout()
+
+
+_watchdog_fire_count = [0]  # mutable holder; per-worker process
 
 
 def create_omni_processor_whisper(
@@ -199,95 +219,126 @@ def create_omni_processor_whisper(
         all_modality_ids: list[list[int]] = []
 
         rows = _rows(examples)
+        n = len(rows)
+        # Updated as we walk through the batch so the watchdog log can name the
+        # row that was active when the deadline fired.
+        active_stage = "init"
+        active_row_info = ""
 
-        # Pre-fetch nubes audio bytes in parallel
-        needs_nubes_idx = [i for i, r in enumerate(rows)
-                           if (r.get("modality") or "audio_asr") != "text"
-                           and load_from_nubes
-                           and r.get("nubes_path")]
-        nubes_bytes: dict[int, bytes | None] = {}
-        if needs_nubes_idx:
-            paths = [rows[i]["nubes_path"] for i in needs_nubes_idx]
-            pool = ThreadPoolExecutor(max_workers=nubes_max_workers)
-            futures = {
-                pool.submit(_download_from_nubes, p): (i, p)
-                for i, p in zip(needs_nubes_idx, paths)
-            }
-            try:
-                for fut in as_completed(futures, timeout=NUBES_BATCH_DEADLINE):
-                    i, _ = futures[fut]
-                    try:
-                        nubes_bytes[i] = fut.result()
-                    except Exception as e:
-                        print(f"[omni-whisper] future error: {e}", flush=True)
-                        nubes_bytes[i] = None
-            except FuturesTimeoutError:
-                for fut, (i, p) in futures.items():
-                    if not fut.done():
-                        nubes_bytes[i] = None
-                        fut.cancel()
-                        print(
-                            f"[omni-whisper] nubes batch deadline {NUBES_BATCH_DEADLINE}s exceeded; "
-                            f"skipping {p}",
-                            flush=True,
-                        )
-            finally:
-                pool.shutdown(wait=False)
+        old_handler = signal.signal(signal.SIGALRM, _on_alarm)
+        signal.alarm(PROCESS_BATCH_DEADLINE)
+        try:
+            # Pre-fetch nubes audio bytes in parallel
+            active_stage = "nubes_fetch"
+            needs_nubes_idx = [i for i, r in enumerate(rows)
+                               if (r.get("modality") or "audio_asr") != "text"
+                               and load_from_nubes
+                               and r.get("nubes_path")]
+            nubes_bytes: dict[int, bytes | None] = {}
+            if needs_nubes_idx:
+                paths = [rows[i]["nubes_path"] for i in needs_nubes_idx]
+                pool = ThreadPoolExecutor(max_workers=nubes_max_workers)
+                futures = {
+                    pool.submit(_download_from_nubes, p): (i, p)
+                    for i, p in zip(needs_nubes_idx, paths)
+                }
+                try:
+                    for fut in as_completed(futures, timeout=NUBES_BATCH_DEADLINE):
+                        i, _ = futures[fut]
+                        try:
+                            nubes_bytes[i] = fut.result()
+                        except Exception as e:
+                            print(f"[omni-whisper] future error: {e}", flush=True)
+                            nubes_bytes[i] = None
+                except FuturesTimeoutError:
+                    for fut, (i, p) in futures.items():
+                        if not fut.done():
+                            nubes_bytes[i] = None
+                            fut.cancel()
+                            print(
+                                f"[omni-whisper] nubes batch deadline {NUBES_BATCH_DEADLINE}s exceeded; "
+                                f"skipping {p}",
+                                flush=True,
+                            )
+                finally:
+                    pool.shutdown(wait=False)
 
-        for i, row in enumerate(rows):
-            modality = row.get("modality") or "audio_asr"
-            pt = _build_prompt_targets(row)
-            if pt is None:
-                continue
-            user_suffix_text, target_text = pt
-
-            # ---- (A) waveform → mel ----------------------------------------
-            mel = None
-            t_audio = 0
-            if modality != "text":
-                wav = _load_waveform(row, nubes_bytes.get(i))
-                if wav is None:
+            for i, row in enumerate(rows):
+                modality = row.get("modality") or "audio_asr"
+                active_row_info = (
+                    f"i={i}/{n} mod={modality} "
+                    f"src={row.get('source')} "
+                    f"path={row.get('nubes_path') or row.get('path') or row.get('audio_path')}"
+                )
+                active_stage = "build_prompt"
+                pt = _build_prompt_targets(row)
+                if pt is None:
                     continue
-                if max_audio_samples is not None and wav.shape[0] > max_audio_samples:
-                    # Manifest split should have prevented this, but trim defensively.
-                    wav = wav[:max_audio_samples]
-                t_audio = audio_pad_token_count(wav.shape[0])
-                if t_audio == 0:
+                user_suffix_text, target_text = pt
+
+                # ---- (A) waveform → mel ----------------------------------------
+                mel = None
+                t_audio = 0
+                if modality != "text":
+                    active_stage = "load_waveform"
+                    wav = _load_waveform(row, nubes_bytes.get(i))
+                    if wav is None:
+                        continue
+                    if max_audio_samples is not None and wav.shape[0] > max_audio_samples:
+                        # Manifest split should have prevented this, but trim defensively.
+                        wav = wav[:max_audio_samples]
+                    t_audio = audio_pad_token_count(wav.shape[0])
+                    if t_audio == 0:
+                        continue
+                    active_stage = "extract_mel"
+                    mel = extract_mel(wav, model_id=whisper_model_id)  # [80, 3000]
+
+                # ---- (B) tokenize ----------------------------------------------
+                active_stage = "tokenize"
+                user_suffix_ids = _enc(user_suffix_text)
+                target_ids = _enc(target_text)
+                if not target_ids:
                     continue
-                mel = extract_mel(wav, model_id=whisper_model_id)  # [80, 3000]
 
-            # ---- (B) tokenize ----------------------------------------------
-            user_suffix_ids = _enc(user_suffix_text)
-            target_ids = _enc(target_text)
-            if not target_ids:
-                continue
+                # ---- (C) chatml assembly ---------------------------------------
+                active_stage = "assemble"
+                input_ids = list(sys_user_ids)
+                if t_audio > 0:
+                    input_ids.extend(audio_start_ids)
+                    input_ids.extend([audio_pad_token_id] * t_audio)
+                    input_ids.extend(audio_end_ids)
+                input_ids.extend(user_suffix_ids)
+                input_ids.extend(end_user_ids)
+                context_len = len(input_ids)
+                input_ids.extend(target_ids)
+                input_ids.append(eos_token_id)
 
-            # ---- (C) chatml assembly ---------------------------------------
-            input_ids = list(sys_user_ids)
-            if t_audio > 0:
-                input_ids.extend(audio_start_ids)
-                input_ids.extend([audio_pad_token_id] * t_audio)
-                input_ids.extend(audio_end_ids)
-            input_ids.extend(user_suffix_ids)
-            input_ids.extend(end_user_ids)
-            context_len = len(input_ids)
-            input_ids.extend(target_ids)
-            input_ids.append(eos_token_id)
+                labels = [IGNORE_INDEX] * context_len + list(target_ids) + [eos_token_id]
 
-            labels = [IGNORE_INDEX] * context_len + list(target_ids) + [eos_token_id]
+                all_input_ids.append(input_ids)
+                all_labels.append(labels)
+                mod_id = MODALITY_ID_MAP.get(modality, MODALITY_PAD_ID)
+                all_modality_ids.append([mod_id] * len(input_ids))
 
-            all_input_ids.append(input_ids)
-            all_labels.append(labels)
-            mod_id = MODALITY_ID_MAP.get(modality, MODALITY_PAD_ID)
-            all_modality_ids.append([mod_id] * len(input_ids))
-
-            if mel is not None:
-                all_audio_features.append(mel)         # [80, 3000]
-                all_audio_lengths.append(t_audio)
-            else:
-                # Length-0 placeholder for text-only rows; collator skips these.
-                all_audio_features.append(torch.zeros((WHISPER_MEL_BINS, 0), dtype=torch.float32))
-                all_audio_lengths.append(0)
+                if mel is not None:
+                    all_audio_features.append(mel)         # [80, 3000]
+                    all_audio_lengths.append(t_audio)
+                else:
+                    # Length-0 placeholder for text-only rows; collator skips these.
+                    all_audio_features.append(torch.zeros((WHISPER_MEL_BINS, 0), dtype=torch.float32))
+                    all_audio_lengths.append(0)
+        except _BatchTimeout:
+            _watchdog_fire_count[0] += 1
+            print(
+                f"[omni-watchdog] FIRE #{_watchdog_fire_count[0]} (whisper) "
+                f"deadline={PROCESS_BATCH_DEADLINE}s "
+                f"stage={active_stage} {active_row_info} "
+                f"completed={len(all_input_ids)}/{n} pid={os.getpid()}",
+                flush=True,
+            )
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 
         return {
             "input_ids": all_input_ids,

@@ -23,6 +23,7 @@ import glob
 import io
 import os
 import random
+import signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
@@ -46,6 +47,24 @@ from .collator import batch_group_counter, prepare_4d_attention_mask
 NUBES_CONNECT_TIMEOUT = 3.0
 NUBES_READ_TIMEOUT = 5.0
 NUBES_BATCH_DEADLINE = 30.0
+
+# Outer watchdog: even non-nubes layers (audio decode, mel extract, tokenize,
+# packing) can hang on bad samples or syscalls. A SIGALRM-based deadline lets
+# us return a partial batch instead of letting one bad row stall the rank for
+# 600s and trip NCCL. Each fire is logged with the row that was active at the
+# time + the running count, so a deterministic-step crash leaves a pattern.
+PROCESS_BATCH_DEADLINE = 60  # seconds
+
+
+class _BatchTimeout(Exception):
+    """Raised by SIGALRM handler when process_samples exceeds the deadline."""
+
+
+def _on_alarm(signum, frame):
+    raise _BatchTimeout()
+
+
+_watchdog_fire_count = [0]  # mutable holder; per-worker process
 
 
 # ---------------------------------------------------------------------------
@@ -377,124 +396,153 @@ def create_omni_processor(
 
         rows = _rows(examples)
         n = len(rows)
+        active_stage = "init"
+        active_row_info = ""
 
-        # Pre-download nubes audio in parallel (only for rows that need it).
-        needs_nubes_idx = [i for i, r in enumerate(rows)
-                           if (r.get("modality") or "audio_asr") != "text"
-                           and load_from_nubes
-                           and r.get("nubes_path")]
-        nubes_results: dict[int, Any] = {}
-        if needs_nubes_idx:
-            paths = [rows[i]["nubes_path"] for i in needs_nubes_idx]
-            pool = ThreadPoolExecutor(max_workers=nubes_max_workers)
-            futures = {
-                pool.submit(_download_from_nubes, p): (i, p)
-                for i, p in zip(needs_nubes_idx, paths)
-            }
-            try:
-                for fut in as_completed(futures, timeout=NUBES_BATCH_DEADLINE):
-                    i, _ = futures[fut]
-                    try:
-                        nubes_results[i] = fut.result()
-                    except Exception as e:
-                        print(f"[omni] future error: {e}", flush=True)
-                        nubes_results[i] = None
-            except FuturesTimeoutError:
-                for fut, (i, p) in futures.items():
-                    if not fut.done():
-                        nubes_results[i] = None
-                        fut.cancel()
-                        print(
-                            f"[omni] nubes batch deadline {NUBES_BATCH_DEADLINE}s exceeded; "
-                            f"skipping {p}",
-                            flush=True,
-                        )
-            finally:
-                pool.shutdown(wait=False)
-
-        for i, row in enumerate(rows):
-            modality = row.get("modality") or "audio_asr"
-            pt = _build_prompt_targets(row)
-            if pt is None:
-                continue
-            user_suffix_text, target_text = pt
-
-            # ---- (A) get waveform for audio rows, skip for text -------------
-            waveform = None
-            if modality != "text":
+        old_handler = signal.signal(signal.SIGALRM, _on_alarm)
+        signal.alarm(PROCESS_BATCH_DEADLINE)
+        try:
+            # Pre-download nubes audio in parallel (only for rows that need it).
+            active_stage = "nubes_fetch"
+            needs_nubes_idx = [i for i, r in enumerate(rows)
+                               if (r.get("modality") or "audio_asr") != "text"
+                               and load_from_nubes
+                               and r.get("nubes_path")]
+            nubes_results: dict[int, Any] = {}
+            if needs_nubes_idx:
+                paths = [rows[i]["nubes_path"] for i in needs_nubes_idx]
+                pool = ThreadPoolExecutor(max_workers=nubes_max_workers)
+                futures = {
+                    pool.submit(_download_from_nubes, p): (i, p)
+                    for i, p in zip(needs_nubes_idx, paths)
+                }
                 try:
-                    if load_from_nubes and row.get("nubes_path"):
-                        result = nubes_results.get(i)
-                        if result is None:
+                    for fut in as_completed(futures, timeout=NUBES_BATCH_DEADLINE):
+                        i, _ = futures[fut]
+                        try:
+                            nubes_results[i] = fut.result()
+                        except Exception as e:
+                            print(f"[omni] future error: {e}", flush=True)
+                            nubes_results[i] = None
+                except FuturesTimeoutError:
+                    for fut, (i, p) in futures.items():
+                        if not fut.done():
+                            nubes_results[i] = None
+                            fut.cancel()
+                            print(
+                                f"[omni] nubes batch deadline {NUBES_BATCH_DEADLINE}s exceeded; "
+                                f"skipping {p}",
+                                flush=True,
+                            )
+                finally:
+                    pool.shutdown(wait=False)
+
+            for i, row in enumerate(rows):
+                modality = row.get("modality") or "audio_asr"
+                active_row_info = (
+                    f"i={i}/{n} mod={modality} "
+                    f"src={row.get('source')} "
+                    f"path={row.get('nubes_path') or row.get('path') or row.get('audio_path')}"
+                )
+                active_stage = "build_prompt"
+                pt = _build_prompt_targets(row)
+                if pt is None:
+                    continue
+                user_suffix_text, target_text = pt
+
+                # ---- (A) get waveform for audio rows, skip for text -------------
+                waveform = None
+                if modality != "text":
+                    active_stage = "load_waveform"
+                    try:
+                        if load_from_nubes and row.get("nubes_path"):
+                            result = nubes_results.get(i)
+                            if result is None:
+                                continue
+                            waveform, sr = result
+                        elif row.get("path"):
+                            waveform, sr = torchaudio.load(row["path"])
+                        elif row.get("audio_path"):
+                            waveform, sr = torchaudio.load(row["audio_path"])
+                        else:
                             continue
-                        waveform, sr = result
-                    elif row.get("path"):
-                        waveform, sr = torchaudio.load(row["path"])
-                    elif row.get("audio_path"):
-                        waveform, sr = torchaudio.load(row["audio_path"])
-                    else:
+                    except Exception as e:
+                        print(f"[omni] Audio load error: {e} "
+                              f"(nubes_path={row.get('nubes_path')}, "
+                              f"path={row.get('path') or row.get('audio_path')})", flush=True)
                         continue
-                except Exception as e:
-                    print(f"[omni] Audio load error: {e} "
-                          f"(nubes_path={row.get('nubes_path')}, "
-                          f"path={row.get('path') or row.get('audio_path')})", flush=True)
+
+                    active_stage = "resample"
+                    if sr != sample_rate:
+                        waveform = torchaudio.functional.resample(waveform, sr, sample_rate)
+                    if waveform.shape[0] > 1:
+                        waveform = waveform.mean(dim=0, keepdim=True)
+                    if max_audio_samples is not None and waveform.shape[-1] > max_audio_samples:
+                        continue
+
+                # ---- (B) token counts -------------------------------------------
+                active_stage = "token_counts"
+                if waveform is not None:
+                    num_samples = waveform.shape[-1]
+                    t_audio = num_samples // hop_length
+                    if t_audio == 0:
+                        continue
+                else:
+                    t_audio = 0
+
+                active_stage = "tokenize"
+                user_suffix_ids = _enc(user_suffix_text)
+                target_ids = _enc(target_text)
+                if not target_ids:
                     continue
 
-                if sr != sample_rate:
-                    waveform = torchaudio.functional.resample(waveform, sr, sample_rate)
-                if waveform.shape[0] > 1:
-                    waveform = waveform.mean(dim=0, keepdim=True)
-                if max_audio_samples is not None and waveform.shape[-1] > max_audio_samples:
-                    continue
+                # ---- (C) assemble input_ids + labels ----------------------------
+                active_stage = "assemble"
+                input_ids = list(sys_user_ids)
+                if t_audio > 0:
+                    input_ids.extend(audio_start_ids)
+                    input_ids.extend([audio_pad_token_id] * t_audio)
+                    input_ids.extend(audio_end_ids)
+                input_ids.extend(user_suffix_ids)
+                input_ids.extend(end_user_ids)
+                context_len = len(input_ids)
+                input_ids.extend(target_ids)
+                input_ids.append(eos_token_id)
 
-            # ---- (B) token counts -------------------------------------------
-            if waveform is not None:
-                num_samples = waveform.shape[-1]
-                t_audio = num_samples // hop_length
-                if t_audio == 0:
-                    continue
-            else:
-                t_audio = 0
+                labels = [IGNORE_INDEX] * context_len + list(target_ids) + [eos_token_id]
 
-            user_suffix_ids = _enc(user_suffix_text)
-            target_ids = _enc(target_text)
-            if not target_ids:
-                continue
-
-            # ---- (C) assemble input_ids + labels ----------------------------
-            input_ids = list(sys_user_ids)
-            if t_audio > 0:
-                input_ids.extend(audio_start_ids)
-                input_ids.extend([audio_pad_token_id] * t_audio)
-                input_ids.extend(audio_end_ids)
-            input_ids.extend(user_suffix_ids)
-            input_ids.extend(end_user_ids)
-            context_len = len(input_ids)
-            input_ids.extend(target_ids)
-            input_ids.append(eos_token_id)
-
-            labels = [IGNORE_INDEX] * context_len + list(target_ids) + [eos_token_id]
-
-            all_input_ids.append(input_ids)
-            all_labels.append(labels)
-            # Per-token modality id aligned with input_ids; used downstream for
-            # per-task loss decomposition. A single row has one modality, so
-            # fill the whole sequence with the row's modality id.
-            mod_id = MODALITY_ID_MAP.get(modality, MODALITY_PAD_ID)
-            all_modality_ids.append([mod_id] * len(input_ids))
-            # Maintain 1:1 index alignment with input_ids. Text rows get a
-            # length-0 placeholder — packer filters these out via the
-            # `audio_lengths > 0` check, so no empty tensor ever reaches
-            # the collator's stack(). audio_modality_ids parallels
-            # audio_features so the encoder can gate noise aug per modality.
-            if waveform is not None:
-                all_audio_features.append(waveform.squeeze(0))
-                all_audio_lengths.append(t_audio)
-                all_audio_modality_ids.append(mod_id)
-            else:
-                all_audio_features.append(torch.zeros(0, dtype=torch.float32))
-                all_audio_lengths.append(0)
-                all_audio_modality_ids.append(MODALITY_PAD_ID)
+                all_input_ids.append(input_ids)
+                all_labels.append(labels)
+                # Per-token modality id aligned with input_ids; used downstream for
+                # per-task loss decomposition. A single row has one modality, so
+                # fill the whole sequence with the row's modality id.
+                mod_id = MODALITY_ID_MAP.get(modality, MODALITY_PAD_ID)
+                all_modality_ids.append([mod_id] * len(input_ids))
+                # Maintain 1:1 index alignment with input_ids. Text rows get a
+                # length-0 placeholder — packer filters these out via the
+                # `audio_lengths > 0` check, so no empty tensor ever reaches
+                # the collator's stack(). audio_modality_ids parallels
+                # audio_features so the encoder can gate noise aug per modality.
+                if waveform is not None:
+                    all_audio_features.append(waveform.squeeze(0))
+                    all_audio_lengths.append(t_audio)
+                    all_audio_modality_ids.append(mod_id)
+                else:
+                    all_audio_features.append(torch.zeros(0, dtype=torch.float32))
+                    all_audio_lengths.append(0)
+                    all_audio_modality_ids.append(MODALITY_PAD_ID)
+        except _BatchTimeout:
+            _watchdog_fire_count[0] += 1
+            print(
+                f"[omni-watchdog] FIRE #{_watchdog_fire_count[0]} (dac) "
+                f"deadline={PROCESS_BATCH_DEADLINE}s "
+                f"stage={active_stage} {active_row_info} "
+                f"completed={len(all_input_ids)}/{n} pid={os.getpid()}",
+                flush=True,
+            )
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 
         return {
             "input_ids": all_input_ids,
