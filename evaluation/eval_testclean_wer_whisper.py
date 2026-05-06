@@ -251,14 +251,32 @@ def run_batch(model, tokenizer, cfg, batch):
 def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
                     out_dir: Path, normalizer: EnglishTextNormalizer):
     print(f"[eval] loading {ckpt_path}", flush=True)
-    cfg = AutoConfig.from_pretrained(ckpt_path, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(ckpt_path, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        ckpt_path,
-        dtype=torch.bfloat16,
-        trust_remote_code=True,
-        attn_implementation="sdpa",
-    ).cuda().eval()
+
+    # Detect LoRA adapter checkpoint
+    _adapter_cfg = ckpt_path / "adapter_config.json"
+    if _adapter_cfg.exists():
+        import json as _json
+        from peft import PeftModel
+        _base_path = _json.loads(_adapter_cfg.read_text())["base_model_name_or_path"]
+        print(f"[eval] LoRA adapter → base: {_base_path}", flush=True)
+        cfg = AutoConfig.from_pretrained(_base_path, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(ckpt_path, trust_remote_code=True)
+        _base = AutoModel.from_pretrained(
+            _base_path,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            attn_implementation="sdpa",
+        )
+        model = PeftModel.from_pretrained(_base, str(ckpt_path)).cuda().eval()
+    else:
+        cfg = AutoConfig.from_pretrained(ckpt_path, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(ckpt_path, trust_remote_code=True)
+        model = AutoModel.from_pretrained(
+            ckpt_path,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            attn_implementation="sdpa",
+        ).cuda().eval()
 
     # Patch DynamicCache so the hybrid linear-attention path uses _PatchedCache,
     # which makes has_previous_state() callable (it's a @property in newer transformers).
@@ -352,6 +370,8 @@ def _has_safetensors(p: Path) -> bool:
         or (p / "model.safetensors").exists()
         or (p / "pytorch_model.bin.index.json").exists()
         or (p / "pytorch_model.bin").exists()
+        or (p / "adapter_model.safetensors").exists()
+        or (p / "adapter_config.json").exists()
     )
 
 
@@ -371,11 +391,14 @@ def find_checkpoints(root: Path, steps_filter=None, include_partial=False):
         if not _has_safetensors(p):
             print(f"[eval] skip {p.name} (no safetensors yet)", flush=True)
             continue
-        st = p / "model.safetensors.index.json"
-        if not st.exists():
-            st = p / "model.safetensors"
-        mtime = st.stat().st_mtime
-        if not include_partial and (time.time() - mtime) < 60:
+        st = next(
+            (p / n for n in (
+                "model.safetensors.index.json", "model.safetensors",
+                "adapter_model.safetensors", "adapter_config.json",
+            ) if (p / n).exists()),
+            None,
+        )
+        if st and not include_partial and (time.time() - st.stat().st_mtime) < 60:
             print(f"[eval] skip {p.name} (save in progress)", flush=True)
             continue
         ckpts.append((step, p))

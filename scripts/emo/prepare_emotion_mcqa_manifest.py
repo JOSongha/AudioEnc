@@ -79,6 +79,9 @@ def build_meld_index() -> dict[str, dict]:
     idx = {}
     for split in ("train", "dev"):
         csvp = RAW / "MELD" / "MELD.Raw" / f"{split}_sent_emo.csv"
+        if not csvp.exists():
+            print(f"  [MELD] {csvp} not found — skipping MELD")
+            return {}
         df = pd.read_csv(csvp)
         for _, r in df.iterrows():
             stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
@@ -94,6 +97,9 @@ def build_dailytalk_index() -> dict[str, dict]:
     DailyTalk's on-disk layout (e.g. '0_1_d0'). metadata.json is keyed by
     (dialog_id, utterance_id)."""
     idx = {}
+    if not _DAILYTALK_META_PATH.exists():
+        print(f"  [DailyTalk] {_DAILYTALK_META_PATH} not found — skipping DailyTalk")
+        return {}
     meta = json.loads(_DAILYTALK_META_PATH.read_text())
     for dialog_id, utts in meta.items():
         for utt_id, row in utts.items():
@@ -107,15 +113,31 @@ def build_dailytalk_index() -> dict[str, dict]:
 
 # ----- EmoV-DB ---------------------------------------------------------------
 def emov_emotion_from_path(path: str) -> str | None:
-    # /EmoV-DB/<speaker>/<Emotion>/<file>.wav
+    # Two layouts observed in the wild:
+    #   (a) /EmoV-DB/<speaker>/<Emotion>/<file>.wav  (subdirectory layout)
+    #   (b) /EmoV-DB/<emotion>_<range>_<num>.wav     (flat OpenSLR 115 layout)
+    # Filename prefixes observed: amused, anger, disgust, Disgust, neutral, Neutral, sleepiness
+    EMOV_EMOTIONS = {"amused", "angry", "disgusted", "neutral", "sleepy"}
+    PREFIX_MAP = {
+        "amused": "amused", "anger": "angry", "angry": "angry",
+        "disgust": "disgusted", "disgusted": "disgusted",
+        "neutral": "neutral", "sleepy": "sleepy", "sleepiness": "sleepy",
+    }
     parts = path.split("/")
+    # Try subdirectory layout first (parent dir = emotion)
     try:
         emotion_dir = parts[-2].lower()
+        if emotion_dir in EMOV_EMOTIONS:
+            return emotion_dir
+        if emotion_dir in PREFIX_MAP:
+            return PREFIX_MAP[emotion_dir]
     except IndexError:
-        return None
-    # EmoV uses "Amused", "Angry", "Disgusted", "Neutral", "Sleepy" dirs
-    if emotion_dir in {"amused", "angry", "disgusted", "neutral", "sleepy"}:
-        return emotion_dir
+        pass
+    # Fall back to filename prefix (e.g. "amused_1-15_0001.wav" → "amused")
+    stem = Path(path).stem.lower()
+    for prefix, canonical in PREFIX_MAP.items():
+        if stem.startswith(prefix):
+            return canonical
     return None
 
 
@@ -136,6 +158,9 @@ def ravdess_emotion_from_path(path: str) -> str | None:
 def build_mustard_index() -> dict[str, dict]:
     csvp = RAW / "MUStARD_Plus_Plus" / "mustard++_text.csv"
     idx = {}
+    if not csvp.exists():
+        print(f"  [MUStARD] {csvp} not found — skipping MUStARD")
+        return {}
     with csvp.open() as f:
         rdr = csv.DictReader(f)
         for r in rdr:

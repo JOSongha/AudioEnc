@@ -71,6 +71,14 @@ EVAL_AUDIO_DIR = Path(_os.environ.get(
 ))
 
 EVAL_STEM = "List the sound events in this audio, separated by commas."
+# Closed-set variant: prepends the 200-class vocabulary to the prompt so the
+# task becomes "pick from this list" instead of open-set recall. Note this is
+# OOD wrt training (training prompts never include vocab), so scores measure
+# a different capability — useful as a comparison point, not a fair upper bound.
+EVAL_STEM_CLOSED_TMPL = (
+    "List the sound events in this audio, separated by commas. "
+    "Choose only from the following classes: {vocab}."
+)
 MAX_NEW_TOKENS = 96
 
 
@@ -160,13 +168,14 @@ def parse_predicted_labels(text: str, vocab_norm: dict[str, int]) -> list[int]:
 
 @torch.inference_mode()
 def run_batch(model, tokenizer, cfg, batch: list[dict],
-              max_new_tokens: int, use_cache: bool = True) -> list[str]:
+              max_new_tokens: int, use_cache: bool = True,
+              stem: str = EVAL_STEM) -> list[str]:
     audio_pad_id = cfg.audio_pad_token_id
     prompts, waveforms = [], []
     for r in batch:
         wav = r["_wav"]
         t_audio = t_audio_for(cfg, wav.shape[-1])
-        prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_STEM))
+        prompts.append(build_prompt_ids(tokenizer, audio_pad_id, t_audio, stem))
         waveforms.append(wav)
     return generate_greedy(
         model, tokenizer, cfg, prompts, waveforms,
@@ -194,6 +203,7 @@ def _run_sequence_scoring(
     out_dir: Path,
     ckpt_path: Path,
     label_batch_size: int,
+    stem: str = EVAL_STEM,
 ) -> dict:
     """Score all 200 labels per sample via teacher-forced log-prob, compute mAP."""
     from sklearn.metrics import average_precision_score  # deferred
@@ -217,7 +227,7 @@ def _run_sequence_scoring(
                 y_true[row_i, j] = 1
 
             t_audio = t_audio_for(cfg, r["_wav"].shape[-1])
-            prompt_ids = build_prompt_ids(tokenizer, audio_pad_id, t_audio, EVAL_STEM)
+            prompt_ids = build_prompt_ids(tokenizer, audio_pad_id, t_audio, stem)
 
             try:
                 scores = score_labels_teacher_forced(
@@ -278,7 +288,7 @@ def _run_sequence_scoring(
         "mAP_macro": mAP_macro,
         "mAP_micro": mAP_micro,
         "elapsed_sec": time.time() - t0,
-        "stem": EVAL_STEM,
+        "stem": stem,
         "score_mode": "sequence",
         "note": "Teacher-forced per-label log-prob scoring (length-normalized); "
                 "ranking scores feed sklearn.average_precision_score.",
@@ -307,6 +317,7 @@ def eval_checkpoint(
     use_cache: bool = True,
     score_mode: str = "greedy",
     label_batch_size: int = 50,
+    stem: str = EVAL_STEM,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_path = out_dir / "predictions.jsonl"
@@ -351,6 +362,7 @@ def eval_checkpoint(
             model, tokenizer, cfg, prepared, vocab, vocab_norm,
             out_dir=out_dir, ckpt_path=ckpt_path,
             label_batch_size=label_batch_size,
+            stem=stem,
         )
         del model
         torch.cuda.empty_cache()
@@ -367,12 +379,14 @@ def eval_checkpoint(
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
             try:
-                hyps = run_batch(model, tokenizer, cfg, batch, max_new_tokens, use_cache=use_cache)
+                hyps = run_batch(model, tokenizer, cfg, batch, max_new_tokens,
+                                 use_cache=use_cache, stem=stem)
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 hyps = []
                 for one in batch:
-                    hyps.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens, use_cache=use_cache))
+                    hyps.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens,
+                                          use_cache=use_cache, stem=stem))
 
             for r, hyp in zip(batch, hyps):
                 pred_idxs = parse_predicted_labels(hyp, vocab_norm)
@@ -441,7 +455,7 @@ def eval_checkpoint(
         "avg_labels_true": mean_true,
         "avg_labels_pred": mean_pred,
         "elapsed_sec": time.time() - t0,
-        "stem": EVAL_STEM,
+        "stem": stem,
         "note": "score_mode=greedy: model emits hard label list; F1/Jaccard "
                 "reported. For mAP use --score-mode sequence.",
         "score_mode": "greedy",
@@ -475,6 +489,11 @@ def parse_args():
     p.add_argument("--label-batch-size", type=int, default=50,
                    help="Label sub-batch for sequence scoring "
                         "(200 labels total; memory/speed tradeoff).")
+    p.add_argument("--vocab-in-prompt", action="store_true",
+                   help="Closed-set MCQ mode: prepend the 200-class vocabulary "
+                        "to the prompt. OOD wrt training prompts — produces a "
+                        "different (typically inflated) score; use only for "
+                        "comparing closed-set vs open-set capability.")
     p.add_argument("--include-partial", action="store_true")
     return p.parse_args()
 
@@ -495,6 +514,12 @@ def main():
 
     vocab, vocab_norm = load_vocab()
     rows = load_eval(args.max_samples)
+    if args.vocab_in_prompt:
+        stem = EVAL_STEM_CLOSED_TMPL.format(vocab=", ".join(vocab))
+        print(f"[fsd50k] CLOSED-SET prompt: vocab list prepended "
+              f"(~{len(stem.split())} words)", flush=True)
+    else:
+        stem = EVAL_STEM
     print(f"[fsd50k] vocab={len(vocab)} rows={len(rows)}", flush=True)
 
     all_summaries = []
@@ -515,6 +540,7 @@ def main():
                 use_cache=not args.no_cache,
                 score_mode=args.score_mode,
                 label_batch_size=args.label_batch_size,
+                stem=stem,
             )
             all_summaries.append(s)
         except Exception:
