@@ -118,19 +118,31 @@ class OmniTrainer(Seq2SeqTrainer):
     def get_train_dataloader(self):
         """Skip accelerator.prepare to avoid double-sharding on IterableDataset.
         DDP sharding is already done via ds.shard() before .map() in _build_dataset.
+
+        Wrapped in FaultTolerantDataLoader: the wrapper rebuilds the DataLoader
+        if a worker subprocess dies (audio decode hangs reaped by a watchdog,
+        OOM kill, etc.) so a single rank's worker death doesn't crash the
+        whole training run. Rebuild duration must fit inside the NCCL
+        collective timeout — see ``patch_default_pg_timeout`` in
+        ``llamafactory/data/fault_tolerant.py`` and ``ddp_timeout`` in the
+        Trainer args.
         """
         from torch.utils.data import DataLoader
 
-        dataloader = DataLoader(
-            self.train_dataset,
-            batch_size=self._train_batch_size,
-            collate_fn=self.data_collator,
-            num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,
-            prefetch_factor=self.args.dataloader_prefetch_factor,
-            persistent_workers=self.args.dataloader_persistent_workers,
-        )
-        return dataloader
+        from ...data.fault_tolerant import FaultTolerantDataLoader
+
+        def _build():
+            return DataLoader(
+                self.train_dataset,
+                batch_size=self._train_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+                prefetch_factor=self.args.dataloader_prefetch_factor,
+                persistent_workers=self.args.dataloader_persistent_workers,
+            )
+
+        return FaultTolerantDataLoader(_build, max_retries=8)
 
     @override
     def get_eval_dataloader(self, eval_dataset=None):
