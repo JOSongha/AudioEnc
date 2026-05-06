@@ -1,0 +1,78 @@
+### model
+# Stage 1 (redesigned): projector pretrain on three pools mixed ~1:1:1 per batch.
+# Pools: ASR (transcription) + LAION freesound (sound captioning) + speech emotion
+#        (natural-language describe target — NO MCQA single-letter EOS bias).
+# Goal: build projector with diverse audio→text alignment from the start, so
+# Stage 2 fine-tune doesn't have to drag projector through subspace shifts and
+# doesn't pick up EOS-after-1-token from MCQA single-letter targets.
+model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B-wavtok-40-unify
+flash_attn: fa2
+enable_liger_kernel: true
+disable_gradient_checkpointing: false
+trust_remote_code: true
+
+### method
+stage: omni
+do_train: true
+do_eval: false
+finetuning_type: full
+freeze_vision_tower: true
+deepspeed: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/configs/qwen3_5ae-asr/ds_z2_no_fused.json
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+# 50 epochs × 46,991 rows = 2,349,550 total rows.
+# Per-batch composition (after shuffle): ~33% ASR / 33% LAION / 33% emotion_describe.
+# Per-row visits over 100k step × 24 batch = 2.4M rows seen:
+#   ASR (40K pool, frac 0.39):    ~19.5 visits/row
+#   LAION (414K pool, frac 0.038): ~1.9 visits/row
+#   emotion (15.7K pool, frac 1.0): ~50 visits/row (small pool, accept overfit risk)
+dataset: speechx_v9
+omni_manifest: /mnt/tmp/listen_analysis/train_manifest/stage1_asr_laion_emotion_eprandom
+load_from_nubes: true
+omni_packing_bucket_size: 128
+omni_sample_rate: 24000
+omni_hop_length: 600
+omni_max_audio_samples: 720000   # 30s @ 24kHz (1080000=45s caused 32-bit overflow in SEANet)
+template: omni
+cutoff_len: 3584
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 4
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5_wavtok_40_unify_Stage1_asr_laion_emotion
+output_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1_asr_laion_emotion
+logging_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1_asr_laion_emotion
+logging_steps: 5
+save_steps: 1000
+save_total_limit: 8
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_steps: 100000
+lr_scheduler_type: warmup_stable_decay
+warmup_steps: 1000
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_dataset: speechx_v9

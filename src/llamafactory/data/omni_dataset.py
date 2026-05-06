@@ -133,6 +133,20 @@ TASK_PROMPTS: dict[str, list[str]] = {
         "Emotion?",
         "Speaker emotion:",
     ],
+    "emotion_describe": [
+        # Describe-format prompts; pair with natural-language target sentences
+        # so projector pretraining doesn't learn EOS-after-single-token.
+        "What emotion does the speaker express?",
+        "How does the speaker sound emotionally?",
+        "Describe the speaker's emotional state.",
+        "What is the speaker feeling in this audio?",
+        "What mood does the speaker convey?",
+        "Tell me how the speaker sounds emotionally.",
+        "What kind of emotion is heard in the speaker's voice?",
+        "Identify the emotion in this speech.",
+        "From the speaker's tone, what emotion comes through?",
+        "What emotional state does the speaker seem to be in?",
+    ],
 }
 
 
@@ -207,6 +221,25 @@ def create_omni_processor(
             return (rng.choice(TASK_PROMPTS["asr"]), text)
 
         if modality == "audio_emotion":
+            # Describe format (Stage 1 projector pretrain): row carries `label`
+            # but no MCQA `choices`. Target is a natural sentence so the model
+            # doesn't bias toward single-token EOS firing.
+            if row.get("label") and not row.get("choices"):
+                label = str(row["label"]).strip()
+                if not label:
+                    return None
+                # Rotate template phrasings to vary target length / surface form.
+                templates = [
+                    f"The speaker sounds {label}.",
+                    f"The speaker is {label}.",
+                    f"This is a {label} voice.",
+                    f"The emotion is {label}.",
+                    f"I hear a {label} tone in the speaker's voice.",
+                    f"The speaker seems {label}.",
+                ]
+                return (rng.choice(TASK_PROMPTS["emotion_describe"]), rng.choice(templates))
+
+            # MCQA format (Stage 2 fine-tune)
             q = row.get("question")
             choices = row.get("choices") or []
             ans = row.get("answer")
@@ -222,7 +255,10 @@ def create_omni_processor(
 
         if modality == "audio_env_sound":
             src = row.get("source", "")
-            if src == "clotho":
+            if src in ("clotho", "laion_freesound"):
+                # Both are caption-based sound rows. Clotho ships 5 captions per
+                # clip; LAION-Freesound ships 1-2 (already filtered for nontrivial
+                # length by prepare_laion_freesound_manifest.py).
                 caps = row.get("captions") or []
                 if not caps:
                     return None
@@ -239,6 +275,15 @@ def create_omni_processor(
                     return None
                 return (rng.choice(TASK_PROMPTS["sound_classify_single"]),
                         str(labels[0]))
+            if src == "esc50_closedset":
+                # Row carries a fully-rendered prompt with all 50 class names
+                # listed (shuffled per sample) and a target = canonical label.
+                # Used for ESC-50 overfit / encoder-capacity probes; bypasses
+                # TASK_PROMPTS so the candidate set is fully deterministic.
+                prompt = row.get("prompt"); target = row.get("target")
+                if not prompt or not target:
+                    return None
+                return (str(prompt), str(target))
             return None
 
         if modality == "text":
@@ -343,6 +388,10 @@ def create_omni_processor(
                 if waveform.shape[0] > 1:
                     waveform = waveform.mean(dim=0, keepdim=True)
                 if max_audio_samples is not None and waveform.shape[-1] > max_audio_samples:
+                    continue
+                # SEANet encoder (WavTok) has stride=7 conv layers; clips shorter
+                # than ~4 tokens (100ms @ 24kHz) crash with "kernel > padded input".
+                if waveform.shape[-1] < 4 * hop_length:
                     continue
 
             # ---- (B) token counts -------------------------------------------

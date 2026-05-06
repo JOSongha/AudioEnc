@@ -54,6 +54,20 @@ INPUTS = {
     "asr": "asr_manifest.jsonl",
     "env": "env_sound_manifest.jsonl",
     "text": "text_sft_manifest.jsonl",
+    "laion": "laion_freesound_manifest.jsonl",
+    # Stage 1 only: natural-language emotion targets (no MCQA single-letter EOS bias).
+    "emotion_describe": "emotion_describe_manifest.jsonl",
+}
+
+# Pool name → modality used by omni_dataset router. laion shares audio_env_sound
+# (sound captioning) with the env pool; the dataset processor branches on `source`.
+_MODALITY_BY_POOL = {
+    "emotion": "audio_emotion",
+    "emotion_describe": "audio_emotion",
+    "asr":     "audio_asr",
+    "env":     "audio_env_sound",
+    "text":    "text",
+    "laion":   "audio_env_sound",
 }
 
 
@@ -65,30 +79,48 @@ def load_pool(name: str) -> list[dict]:
     with p.open() as f:
         for line in f:
             r = json.loads(line)
-            r.setdefault("modality", {
-                "emotion": "audio_emotion", "asr": "audio_asr",
-                "env": "audio_env_sound", "text": "text",
-            }[name])
+            r.setdefault("modality", _MODALITY_BY_POOL[name])
             rows.append(r)
     return rows
 
 
 def sample_without_replacement(rows: list[dict], k: int, rng: random.Random) -> list[dict]:
-    if k >= len(rows):
-        return list(rows)  # full keep
-    return rng.sample(rows, k)
+    """Sample k rows. If k > len(rows), oversample with replacement so every row
+    appears at least floor(k/len) times (used for LAION-anchored stage1 where
+    smaller pools must be repeated to match the largest pool per-epoch quota)."""
+    if k <= len(rows):
+        return rng.sample(rows, k)
+    full_repeats = k // len(rows)
+    remainder = k - full_repeats * len(rows)
+    out: list[dict] = []
+    for _ in range(full_repeats):
+        shuffled = list(rows)
+        rng.shuffle(shuffled)
+        out.extend(shuffled)
+    if remainder:
+        out.extend(rng.sample(rows, remainder))
+    return out
 
 
 def build(epochs: int, fractions: dict[str, float], seed: int,
           out_name: str) -> None:
     rng_master = random.Random(seed)
 
-    # Load pools once
+    # Load pools once. Active pools = those with fraction > 0 in the fractions
+    # dict. Pools not present in `fractions` (e.g. env/text in stage1 mode) are
+    # silently skipped so the same builder serves both stage1 and stage2.
     print("[v2] loading pools...")
-    pools = {name: load_pool(name) for name in INPUTS}
+    active = [name for name in INPUTS if fractions.get(name, 0.0) > 0]
+    skipped = [name for name in INPUTS if name not in active]
+    if skipped:
+        print(f"[v2] skipping pools (fraction=0 or absent): {skipped}")
+    pools = {name: load_pool(name) for name in active}
     pool_sizes = {name: len(p) for name, p in pools.items()}
 
     per_epoch_quota = {
+        # `emotion` (legacy MCQA stage2) is always full-keep regardless of frac
+        # to preserve historical stage2 behavior. New `emotion_describe` (stage1)
+        # respects its --emotion-describe-frac so per-batch ratios stay tunable.
         name: (len(p) if name == "emotion"
                else round(len(p) * fractions[name]))
         for name, p in pools.items()
@@ -112,7 +144,7 @@ def build(epochs: int, fractions: dict[str, float], seed: int,
     fhs = [open(out_dir / f"shard_{i:05d}.jsonl", "w") for i in range(N_SHARDS)]
 
     total_written = 0
-    per_modality_written = {name: 0 for name in INPUTS}
+    per_modality_written = {name: 0 for name in pools}
 
     try:
         for ep in range(epochs):
@@ -165,17 +197,24 @@ def build(epochs: int, fractions: dict[str, float], seed: int,
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--mode", choices=["stage2", "stage1"], default="stage2",
+                   help="stage2: emotion+asr+env+text(+laion). "
+                        "stage1: asr+laion+emotion_describe (projector pretrain, "
+                        "no MCQA single-token bias).")
     p.add_argument("--epochs", type=int, default=20,
-                   help="how many pseudo-epochs to materialize. With "
-                        "max_steps=50k × batch=24 = 1.2 M rows seen, "
-                        "20 epochs × ~75 k rows = 1.5 M provides a small buffer.")
+                   help="how many pseudo-epochs to materialize.")
     p.add_argument("--asr-frac", type=float, default=1.0,
                    help="ASR pool fraction sampled per epoch (default: full)")
     p.add_argument("--env-frac", type=float, default=0.5,
-                   help="env-sound pool fraction per epoch (default: half)")
+                   help="(stage2 only) env-sound pool fraction per epoch")
     p.add_argument("--text-frac", type=float, default=0.3,
-                   help="text pool fraction per epoch (default: 0.3 — most "
-                        "aggressive subsample to mitigate text overfit)")
+                   help="(stage2 only) text pool fraction per epoch")
+    p.add_argument("--laion-frac", type=float, default=0.0,
+                   help="LAION-Audio Freesound pool fraction per epoch. "
+                        "Pool is large (~414K rows); set small for balance "
+                        "(stage1: ~0.038 → match emotion 15K/epoch).")
+    p.add_argument("--emotion-describe-frac", type=float, default=1.0,
+                   help="(stage1 only) emotion_describe pool fraction (default full).")
     p.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p.add_argument("--out-name", type=str, default=DEFAULT_OUT_NAME)
     return p.parse_args()
@@ -183,12 +222,21 @@ def parse_args():
 
 def main():
     args = parse_args()
-    fractions = {
-        "emotion": 1.0,
-        "asr": args.asr_frac,
-        "env": args.env_frac,
-        "text": args.text_frac,
-    }
+    if args.mode == "stage1":
+        # Projector pretrain: ASR + LAION + emotion_describe. No MCQA, no text-only.
+        fractions = {
+            "asr":               args.asr_frac,
+            "laion":             args.laion_frac,
+            "emotion_describe":  args.emotion_describe_frac,
+        }
+    else:
+        fractions = {
+            "emotion": 1.0,
+            "asr":     args.asr_frac,
+            "env":     args.env_frac,
+            "text":    args.text_frac,
+            "laion":   args.laion_frac,
+        }
     build(args.epochs, fractions, args.seed, args.out_name)
 
 
