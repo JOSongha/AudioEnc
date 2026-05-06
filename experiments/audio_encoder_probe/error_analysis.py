@@ -22,6 +22,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.preprocessing import StandardScaler
 
+from experiments.audio_encoder_probe._html_utils import audio_relpath as _relpath
+
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -110,20 +113,6 @@ def main():
     logger.info(f"Wrote HTML viewer to {out_html}")
     logger.info(f"To view: cd {OUT_DIR.parent.parent}/.. && python -m http.server 8765 → open http://localhost:8765/{out_html.relative_to(ROOT.parent.parent)}")
 
-
-def _relpath(audio_path: str) -> str:
-    """Convert absolute audio_path to a path relative to OUT_DIR (for HTTP serving).
-    Maps /mnt/tmp/datasets/music/... to nsynth_audio_root/... via symlink."""
-    p = audio_path
-    # nsynth + future music dataset roots live under /mnt/tmp/datasets/music/
-    if p.startswith("/mnt/tmp/datasets/music/"):
-        return "nsynth_audio_root/" + p[len("/mnt/tmp/datasets/music/"):]
-    if p.startswith("/mnt/tmp/datasets/"):
-        return "audio_root/" + p[len("/mnt/tmp/datasets/"):]
-    if p.startswith("/mnt/ddn/kyudan/IEMOCAP/"):
-        return "iemocap_audio_root/" + p[len("/mnt/ddn/kyudan/IEMOCAP/"):]
-    # fallback: file:// URL (browser may block)
-    return "file://" + p
 
 
 def _build_html(df, classes, cm, overall_acc, max_per_cell, enc, ds):
