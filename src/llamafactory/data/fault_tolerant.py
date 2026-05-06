@@ -199,11 +199,19 @@ def patch_default_pg_timeout(seconds: int = 3600) -> None:
     rebuild has time to complete before peer ranks declare the rebuilding
     rank dead.
 
+    The plain Python rebind of ``_DEFAULT_PG_NCCL_TIMEOUT`` is *not* enough — it
+    only updates the Python alias; the C++ side keeps the original 600 s
+    constant which sub-PG creation reads. The reliable fix is to wrap
+    ``dist.init_process_group`` and ``dist.new_group`` so every PG (incl. the
+    DeepSpeed ZeRO-2 ``dp_process_group``) gets an explicit ``timeout`` even
+    when the caller forgets to pass one.
+
     Idempotent. Call once near the top of ``launcher.py`` *before* any code
     triggers ``torch.distributed.init_process_group``.
     """
     try:
         import datetime
+        import torch.distributed as dist
         import torch.distributed.distributed_c10d as c10d
     except Exception:
         return
@@ -217,3 +225,65 @@ def patch_default_pg_timeout(seconds: int = 3600) -> None:
         c10d._DEFAULT_PG_NCCL_TIMEOUT = new
     except Exception:
         pass
+
+    # Wrap init_process_group and new_group so callers without an explicit
+    # ``timeout`` (DeepSpeed ZeRO-2 dp_process_group, accelerate, etc.) still
+    # get the bumped value. Mark with a sentinel so we don't double-wrap on
+    # repeated calls.
+    def _wrap(func, name):
+        if getattr(func, "_lf_pg_timeout_wrapped", False):
+            return func
+
+        def wrapped(*args, **kwargs):
+            if kwargs.get("timeout") is None:
+                kwargs["timeout"] = new
+            return func(*args, **kwargs)
+
+        wrapped._lf_pg_timeout_wrapped = True
+        wrapped.__wrapped__ = func
+        wrapped.__name__ = name
+        return wrapped
+
+    if hasattr(dist, "init_process_group"):
+        dist.init_process_group = _wrap(dist.init_process_group, "init_process_group")
+        c10d.init_process_group = dist.init_process_group
+    if hasattr(dist, "new_group"):
+        dist.new_group = _wrap(dist.new_group, "new_group")
+        c10d.new_group = dist.new_group
+
+
+def install_grad_nan_guard(model) -> int:
+    """Sanitize NaN / Inf gradients in-place before any collective sees them.
+
+    Why: a NaN gradient on one rank causes NCCL reduce-scatter on that rank to
+    enter a bad state and never complete. Other ranks then stall at the next
+    collective and trip the 600 s timeout. Stack trace at hang shows DeepSpeed
+    ``mask_nan_or_inf_with_val_inplace`` (Whisper-small v4 Stage1, step 12850,
+    deterministic across re-runs).
+
+    The hook fires post-accumulation per parameter, so the gradient is sanitized
+    before DeepSpeed's reduce-scatter / allreduce.
+
+    Returns the number of hooks installed.
+    """
+    try:
+        import torch
+    except Exception:
+        return 0
+    n = 0
+
+    def _hook(p):
+        if p.grad is None:
+            return
+        torch.nan_to_num_(p.grad, nan=0.0, posinf=0.0, neginf=0.0)
+
+    for p in model.parameters():
+        if not p.requires_grad:
+            continue
+        # Newer torch only; if the API isn't there we silently skip.
+        reg = getattr(p, "register_post_accumulate_grad_hook", None)
+        if reg is None:
+            continue
+        reg(_hook)
+        n += 1
+    return n
