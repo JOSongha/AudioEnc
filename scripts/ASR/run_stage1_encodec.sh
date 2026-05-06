@@ -55,12 +55,12 @@ export CC=/usr/bin/gcc
 export CXX=/usr/bin/g++
 export CUDAHOSTCXX=/usr/bin/g++
 
-# ── Training configuration ─────────────────
-FORCE_TORCHRUN=1 NNODES=$NSML_WORLD_SIZE NODE_RANK=$NSML_RANK MASTER_ADDR=$NSML_HOST_RANK0 MASTER_PORT=21267 \
-    llamafactory-cli train /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/configs/ASR/stage1_encodec_24k.yaml
-# jos single-node fallback (non-NSML):
-# export WANDB_MODE=disabled
-# cd "$REPO"
-# NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-# FORCE_TORCHRUN=1 NPROC_PER_NODE=$NGPU \
-#     $ENV_PREFIX/bin/llamafactory-cli train configs/ASR/stage1_encodec_24k.yaml
+export WANDB_PROJECT=qwen3_5ae-asr
+# WANDB_API_KEY는 ~/.netrc에 저장되어 있음 (`wandb login`)
+
+cd "$REPO"
+NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+echo "[s1-encodec] launching on $NGPU GPUs"
+
+FORCE_TORCHRUN=1 NPROC_PER_NODE=$NGPU \
+    $ENV_PREFIX/bin/llamafactory-cli train configs/ASR/stage1_encodec_24k.yaml

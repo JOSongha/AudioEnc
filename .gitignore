@@ -194,3 +194,6 @@ external/models/**/latest
 external/models/**/rng_state_*.pth
 external/models/**/__pycache__/
 .claude/
+
+# large analysis artifacts (>100 MB GitHub limit)
+docs/**/*.npz

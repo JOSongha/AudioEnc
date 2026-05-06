@@ -21,6 +21,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
 # Panel layout: list of (panel_title, [(metric, label, lower_is_better, color)])
 # Each panel can show multiple lines (e.g. per-corpus emotion).
@@ -89,11 +90,21 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--cols", type=int, default=2,
                    help="number of subplot columns")
+    p.add_argument("--title", default=None,
+                   help="custom suptitle (line 1). Default: derived from data span.")
+    p.add_argument("--exclude", default="",
+                   help="comma-separated panel-title substrings to skip "
+                        "(case-insensitive, e.g. 'ESC-50,Text retention').")
     args = p.parse_args()
 
     data = load_csv(Path(args.csv))
+    excludes = [e.strip().lower() for e in args.exclude.split(",") if e.strip()]
+    def _excluded(title: str) -> bool:
+        t = title.lower()
+        return any(e in t for e in excludes)
     panels = [(title, lines) for title, lines in PANELS
-              if any(metric in data for metric, *_ in lines)]
+              if any(metric in data for metric, *_ in lines)
+              and not _excluded(title)]
     n = len(panels)
     cols = args.cols
     rows = (n + cols - 1) // cols
@@ -109,10 +120,16 @@ def main():
             if not series:
                 continue
             ckpts = sorted(series.keys())
-            values = [series[c] for c in ckpts]
+            raw_values = [series[c] for c in ckpts]
+            values = list(raw_values)
             # Special-case: scale Clotho BLEU-4 ×5 to share the BLEU-1 panel
             if metric == "Clotho_BLEU4":
                 values = [v * 5 for v in values]
+            # WER reported as percent (×100). y-axis clipped to [1, 100]
+            # below so early-training spikes (>100%) drop off-axis.
+            is_pct = metric.startswith("WER_") or metric.startswith("CER_")
+            if is_pct:
+                values = [v * 100 for v in values]
             ax.plot([c / 1000 for c in ckpts], values,
                     "o-", color=color, label=label, markersize=4, linewidth=1.4)
             # Mark best
@@ -123,12 +140,31 @@ def main():
             ax.scatter([ckpts[bi] / 1000], [values[bi]],
                        s=80, marker="*", color=color, edgecolor="black",
                        linewidth=0.5, zorder=5)
+            # Annotate best value next to the star.
+            best_step = ckpts[bi] // 1000
+            if is_pct:
+                txt = f"{values[bi]:.2f}% @{best_step}k"
+            else:
+                # show unscaled value (raw_values for BLEU-4 ×5)
+                txt = f"{raw_values[bi]:.3f} @{best_step}k"
+            ax.annotate(txt, xy=(ckpts[bi] / 1000, values[bi]),
+                        xytext=(5, 5), textcoords="offset points",
+                        fontsize=7, color=color,
+                        path_effects=[
+                            pe.withStroke(linewidth=1.6, foreground="white")
+                        ])
             any_data = True
 
         ax.set_title(title, fontsize=10)
         ax.set_xlabel("ckpt (×1k step)", fontsize=8)
         ax.tick_params(labelsize=8)
         ax.grid(True, alpha=0.3)
+        # WER reported in percent. Clip y-axis to [1, 100] so early-training
+        # spikes (>100% at ckpt-1k from insertions) drop off-axis instead of
+        # squashing the converged region.
+        if "WER" in title:
+            ax.set_ylim(1, 100)
+            ax.set_ylabel("%", fontsize=8)
         if any_data:
             ax.legend(fontsize=7, loc="best", framealpha=0.85)
 
@@ -136,8 +172,19 @@ def main():
     for k in range(len(panels), len(axes)):
         axes[k].set_visible(False)
 
+    all_ckpts = sorted({c for series in data.values() for c in series})
+    if args.title:
+        line1 = args.title
+    elif all_ckpts:
+        cmin, cmax = all_ckpts[0], all_ckpts[-1]
+        # detect stride from most common gap
+        gaps = [b-a for a,b in zip(all_ckpts, all_ckpts[1:])]
+        stride = min(gaps) if gaps else 1000
+        line1 = f"Eval trajectory ({cmin//1000}k → {cmax//1000}k step, ckpt-{stride} step)"
+    else:
+        line1 = "Eval trajectory"
     fig.suptitle(
-        "Stage-2 v1 — eval trajectory (1k → 25k step, ckpt-1000 step)\n"
+        line1 + "\n"
         "★ marks per-line best ckpt. Lower-is-better for WER. "
         "Clotho BLEU-4 scaled ×5 to share BLEU-1 panel.",
         fontsize=11, y=0.995,

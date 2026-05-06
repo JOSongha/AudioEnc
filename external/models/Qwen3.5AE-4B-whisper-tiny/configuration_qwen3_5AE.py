@@ -50,6 +50,7 @@ class AudioConfig(PretrainedConfig):
         attention_dropout=0.0,
         initializer_range=0.02,
         use_cache=True,
+        decoder_block_type="llama",
         # Whisper encoder hyperparameters
         whisper_model_id="openai/whisper-small.en",
         whisper_sample_rate=16000,
@@ -75,6 +76,12 @@ class AudioConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.initializer_range = initializer_range
         self.use_cache = use_cache
+
+        if decoder_block_type not in ("llama", "qwen3"):
+            raise ValueError(
+                f"decoder_block_type must be 'llama' or 'qwen3', got {decoder_block_type!r}"
+            )
+        self.decoder_block_type = decoder_block_type
 
         self.whisper_model_id = whisper_model_id
         self.whisper_sample_rate = whisper_sample_rate

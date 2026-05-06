@@ -307,7 +307,7 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
     hyps_by_id = {}
     t0 = time.time()
     pbar = tqdm(total=len(prepared), desc=ckpt_path.name, unit="sample", dynamic_ncols=True)
-    with open(hyp_path, "w") as f:
+    with open(hyp_path, "w", encoding="utf-8") as f:
         for i in range(0, len(prepared), batch_size):
             chunk = prepared[i : i + batch_size]
             batch_in = [(r["id"], r["text"], r["wav"]) for r in chunk]
@@ -351,7 +351,7 @@ def eval_checkpoint(ckpt_path: Path, rows, batch_size: int, max_samples: int,
         "audio_format": "log-mel [80, 3000]" if _is_whisper_config(cfg) else "raw [N, 1, S] bf16",
         "normalizer": "whisper.EnglishTextNormalizer",
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
     print(f"[eval] {ckpt_path.name}  WER(norm)={wer_norm:.4f}  CER(norm)={cer_norm:.4f}  "
@@ -464,7 +464,7 @@ def main():
             traceback.print_exc()
 
     global_summary = out_root / "summary_all.json"
-    with open(global_summary, "w") as f:
+    with open(global_summary, "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
     print(f"[eval] wrote {global_summary}", flush=True)
 

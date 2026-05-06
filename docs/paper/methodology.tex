@@ -1,0 +1,131 @@
+% !TeX root = ../main.tex
+% Methodology section for a conference-length paper on Qwen3.5AE-4B ASR Stage-1.
+% Scope: Stage-1 frozen-encoder ablation (5-encoder comparison: EnCodec, Mimi acoustic/semantic, DACVAE, Whisper-small).
+% Stage-2 LoRA SFT (DACVAE-only v2 chain) is documented separately in docs/stage2/.
+% One sentence per line; citation keys match methodology.md § 10.
+% Target length: compact prose suitable for a single conference-paper section.
+%
+% Required packages (add to main preamble if missing):
+%   \usepackage{amssymb}   % \mathbb{R}
+%   \usepackage{booktabs}  % \toprule, \midrule, \bottomrule
+%   \usepackage{amsmath}   % aligned math (align environment, \text{})
+%   \usepackage{hyperref}  % optional, for clickable \cite / \ref
+%   \usepackage[T1]{fontenc}  % optional, for | and < > rendering in verbatim/texttt
+
+\section{Experiment Design}
+% Encoder -> projector (Lamma) -> LM
+% 각 encoder에서 feature 어디꺼 가져왔는지
+% 학습 단계별 loss -> SFT
+% 데이터셋, 각 encoder, evaluation benchmark, 분석 dataset
+
+\label{sec:methodology}
+
+\subsection{Architecture}
+\label{sec:method:arch}
+
+We adopt a three-stage encoder, projector, and LM architecture \cite{FLM25,SLAM24}, where a frozen audio encoder maps the waveform to a continuous latent sequence, a trainable projector aligns this latent with the LM embedding space, and a frozen LM autoregressively generates the transcript.
+
+\paragraph{Audio encoders.}
+We treat the audio encoder as a swappable component and study five pretrained candidates that span distinct architectural and training-objective design points, summarized in Table~\ref{tab:encoders}.
+Four are neural audio codecs, namely \textbf{EnCodec}~\cite{Df22}, \textbf{Mimi}~\cite{Mi24} in its acoustic and semantic variants, and \textbf{DACVAE}~\cite{DAC23,AS24}, while the fifth is the supervised ASR encoder of \textbf{Whisper-small}~\cite{Wh23}.
+For EnCodec, Mimi, and DACVAE we extract only the feed-forward encode path, omitting any decoder, residual vector quantizer, watermarker, or output projection; for Whisper we use the encoder stack only, discarding the text decoder.
+In all cases the encoder is frozen throughout Stage-1 training.
+
+\begin{table}[t]
+\centering
+\caption{Audio encoder candidates. ``Arch.'' abbreviates Conv (SEANet-style convolutional stack), Tr (Transformer), VAE (variational bottleneck). ``Obj.'' abbreviates Cdc (neural codec), Cdc\,+\,Sem (codec with a semantic-distillation Transformer head), Cdc\,+\,WM (codec with localized acoustic watermarking), ASR (supervised automatic speech recognition). Params are the parameter count of the active forward path; tokens/s $= \text{SR} / \text{hop}$. Pretrained checkpoint URIs are listed in Table~\ref{tab:encoder-checkpoints} of the appendix.}
+\label{tab:encoders}
+\small
+\begin{tabular}{lllrrrrrr}
+\toprule
+Encoder            & Arch.     & Obj.         & SR (kHz) & Hop & Tokens/s & Dim. & Params & Ref. \\
+\midrule
+EnCodec            & Conv      & Cdc          & $24$ & $320$  & $75$ & $128$ & $7.43$M  & \cite{Df22} \\
+Mimi (acoustic)    & Conv      & Cdc          & $24$ & $960$  & $25$ & $512$ & $12.63$M & \cite{Mi24} \\
+DACVAE             & Conv+VAE  & Cdc + WM     & $48$ & $1920$ & $25$ & $128$ & $27.55$M & \cite{DAC23,AS24} \\
+Mimi (semantic)    & Conv+Tr   & Cdc + Sem    & $24$ & $960$  & $25$ & $512$ & $37.82$M & \cite{Mi24} \\
+Whisper-small      & Tr        & ASR          & $16$ & $320$  & $50$ & $768$ & $88.15$M & \cite{Wh23} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Projector and LM.}
+The LM is Qwen3.5AE-4B, an audio-enabled derivative of Qwen3.5-4B~\cite{QW24} with a hybrid linear and full attention backbone and reserved audio placeholder tokens.
+The encoder output is mapped into the LM embedding space by a four-layer causal Llama decoder adapter~\cite{Ll23} whose total size stays within $\pm 2\%$ of $18.2$M parameters across all encoders in Table~\ref{tab:encoders}; see Appendix~\ref{app:projector} for details.
+At forward time the projector output replaces the LM embeddings at positions marked by the placeholder token \texttt{<|audio\_pad|>}~\cite{QA24}, after which the LM generates the transcript autoregressively.
+
+\subsection{Projector Alignment Objective}
+\label{sec:method:objective}
+
+Stage-1 training updates only the projector's $18.16$M parameters (roughly $0.45\%$ of the LLM) and freezes everything else.
+Each sample is wrapped in the ChatML template~\cite{OAI23}: a system prompt, a user turn containing $t_{\text{audio}} = \lfloor n_{\text{samples}} / 1920 \rfloor$ copies of the audio placeholder token \texttt{<|audio\_pad|>} bracketed by \texttt{<|audio\_start|>} and \texttt{<|audio\_end|>}~\cite{QA24}, a fixed instruction ``Transcribe the audio to text.'', and an assistant turn containing the ground-truth transcript followed by the end-of-sequence token.
+At forward time the projector output replaces the \texttt{<|audio\_pad|>} embeddings in the LLM input, producing an input sequence whose audio-conditioned region has the same length as the projector output.
+The training objective is standard causal cross-entropy, but restricted to the transcript and EOS tokens: all system, user, audio-placeholder, and instruction tokens are marked with the ignore-index of $-100$~\cite{HF23}.
+Further training details, including sequence packing, optimizer settings, learning-rate schedule, and system-level kernels, are deferred to Appendix~\ref{app:training}.
+
+\subsection{Data}
+\label{sec:method:data}
+
+We train on an English ASR mixture of LibriTTS-R~\cite{Ko23}, the English subset of Multilingual LibriSpeech~\cite{Pr20}, and the English portion of VoxPopuli~\cite{Wa21}, totalling $46{,}074$ hours (Table~\ref{tab:datasets}).
+Audio is streamed on demand from an internal object storage; files stored at $16$\,kHz are resampled to $48$\,kHz online to match the DACVAE sampling rate.
+Starting from a pre-shuffled 128-shard JSONL manifest that also contained CommonVoice and GigaSpeech, we retain only the three corpora in Table~\ref{tab:datasets} by substring-matching the audio path, yielding $11{,}345{,}224$ entries ($54.9\%$ of the original) across $128$ roughly equal shards.
+The streaming pipeline is built on Hugging Face \texttt{IterableDataset}~\cite{HF23}, with shards distributed across data-parallel ranks via \texttt{split\_dataset\_by\_node}, a per-rank packing buffer of $128$ utterances, a $45$-second maximum audio length, and a $12$-worker download pool.
+
+\begin{table}[t]
+\centering
+\caption{Stage-1 English ASR training data.}
+\label{tab:datasets}
+\small
+\begin{tabular}{lrl}
+\toprule
+Corpus & Duration (h) & Ref. \\
+\midrule
+LibriTTS-R           & $552.42$      & \cite{Ko23} \\
+MLS (en)             & $45{,}000.00$ & \cite{Pr20} \\
+VoxPopuli (en)       & $522.00$      & \cite{Wa21} \\
+\midrule
+Total                & $46{,}074$    &             \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Benchmark}
+\label{sec:method:eval}
+
+% TODO: finalize benchmark selection.
+% Candidate benchmarks to consider:
+%   - LibriSpeech test-clean / test-other (word error rate)
+%   - TED-LIUM 3 (out-of-domain read speech)
+%   - VoxPopuli test (European Parliament, conversational)
+%   - CommonVoice test (accented / noisy, cross-domain)
+%   - GigaSpeech test (in-the-wild podcast / YouTube)
+%   - FLEURS (multilingual — English subset for zero-shot cross-lingual check)
+% TODO: decide primary metric. Default = WER after Whisper-style text normalization.
+% TODO: decide decoding strategy. Default = greedy with temperature 0; also report beam search if competitive baselines require it.
+% TODO: decide whether to report both in-domain and out-of-domain results separately.
+
+We evaluate all encoder variants on a common set of English ASR benchmarks that cover in-domain read speech, out-of-domain read speech, and spontaneous / conversational speech.
+\emph{[Benchmark list TBD.]}
+The primary metric is word error rate (WER) after Whisper-style text normalization~\cite{Wh23}, and we additionally report character error rate (CER) for fine-grained comparison.
+Decoding is performed greedily with temperature $0$ and no additional language model.
+All encoder variants share identical evaluation code, tokenization, and normalization to isolate the effect of the audio representation.
+
+\subsection{Analysis Settings and Methods}
+\label{sec:method:analysis}
+
+% TODO: finalize analysis design.
+% Candidate axes / probes:
+%   - Paralinguistic probing: prosody, emotion, speaker attributes (see FLM25, LSTN26).
+%   - Robustness: noise injection, speed perturbation, volume scaling.
+%   - Representation geometry: CKA / linear probing across encoder layers.
+%   - Token-rate ablation: downsample encoder output to match a common FPS.
+%   - Dead-weight cost: forward latency / GPU memory per encoder.
+%   - Sample-efficiency: WER vs. training-step curves.
+% TODO: choose datasets for each analysis (may reuse subsets of the training / eval data).
+% TODO: decide whether analysis is per-encoder ablation, or joint comparison.
+
+Beyond benchmark WER, we analyse each encoder along several axes intended to expose how its pretraining objective and architecture shape the downstream ASR behaviour.
+\emph{[Analysis axes and datasets TBD.]}
+Candidate axes under consideration include (i) paralinguistic sensitivity~\cite{FLM25,LSTN26}, (ii) robustness to additive noise and speed perturbation, (iii) representation geometry across encoder layers measured by centered kernel alignment and linear probing, (iv) the effect of matching all encoders to a common token rate by downsampling, and (v) wall-clock and memory cost of the encoder forward pass.
+All analyses share the Stage-1 projector weights and differ only in the evaluation-time inputs or probes, so they do not require retraining.
+

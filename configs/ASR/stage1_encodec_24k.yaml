@@ -41,7 +41,7 @@ accelerator_config:
   non_blocking: true
 
 ### output (kept on /mnt/tmp xfs — Lustre quota is full at the cluster level)
-run_name: Qwen3.5_encodec_24k_Stage1_jos
+run_name: Qwen3.5AE-ASR-Stage1-encodec-24k
 output_dir: /mnt/tmp/Qwen3.5_encodec_24k_Stage1_jos
 logging_dir: /mnt/tmp/Qwen3.5_encodec_24k_Stage1_jos
 # TODO(sehyun): switch back to DDN when quota available

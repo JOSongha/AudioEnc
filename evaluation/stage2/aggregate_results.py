@@ -40,6 +40,10 @@ EVAL_METRICS: dict[str, list[tuple[str, callable, bool]]] = {
     "eval_esc50": [
         ("ESC50_acc", lambda s: s["accuracy_pooled"], False),
     ],
+    "eval_esc50_acc": [
+        ("ESC50_acc", lambda s: s["accuracy_pooled"], False),
+        ("ESC50_acc_per_fold_mean", lambda s: s.get("accuracy_mean_per_fold"), False),
+    ],
     "eval_text_retention": [
         ("text_mean", lambda s: s["unweighted_mean_accuracy"], False),
     ],
@@ -49,16 +53,40 @@ EVAL_METRICS: dict[str, list[tuple[str, callable, bool]]] = {
         ("Clotho_CIDEr", lambda s: s.get("CIDEr"), False),
         ("Clotho_METEOR", lambda s: s.get("METEOR"), False),
     ],
+    "eval_clotho_caption": [
+        ("Clotho_BLEU1", lambda s: s["bleu1"], False),
+        ("Clotho_BLEU4", lambda s: s["bleu4"], False),
+        ("Clotho_CIDEr", lambda s: s.get("CIDEr"), False),
+        ("Clotho_METEOR", lambda s: s.get("METEOR"), False),
+        ("Clotho_ROUGE_L", lambda s: s.get("ROUGE_L"), False),
+        ("Clotho_SPICE", lambda s: s.get("SPICE"), False),
+    ],
     "eval_fsd50k": [
         ("FSD50K_F1mi",   lambda s: s["f1_micro"], False),
         ("FSD50K_F1ma",   lambda s: s["f1_macro"], False),
+        ("FSD50K_Jacc",   lambda s: s["jaccard_mean"], False),
+    ],
+    "eval_fsd50k_map": [
+        ("FSD50K_F1mi",   lambda s: s["f1_micro"], False),
+        ("FSD50K_F1ma",   lambda s: s["f1_macro"], False),
+        ("FSD50K_Pmi",    lambda s: s.get("precision_micro"), False),
+        ("FSD50K_Rmi",    lambda s: s.get("recall_micro"), False),
         ("FSD50K_Jacc",   lambda s: s["jaccard_mean"], False),
     ],
     "eval_fsd50k_map_seq": [
         ("FSD50K_mAPma",  lambda s: s.get("mAP_macro"), False),
         ("FSD50K_mAPmi",  lambda s: s.get("mAP_micro"), False),
     ],
+    "eval_audioset_map": [
+        ("AudioSet_F1mi", lambda s: s["f1_micro"], False),
+        ("AudioSet_F1ma", lambda s: s["f1_macro"], False),
+        ("AudioSet_Jacc", lambda s: s["jaccard"], False),
+    ],
     "eval_librispeech": [
+        ("WER_clean", lambda s: s.get("wer_normalized", s.get("wer")), True),
+        ("CER_clean", lambda s: s.get("cer_normalized", s.get("cer")), True),
+    ],
+    "eval_librispeech_wer": [
         ("WER_clean", lambda s: s.get("wer_normalized", s.get("wer")), True),
         ("CER_clean", lambda s: s.get("cer_normalized", s.get("cer")), True),
     ],
@@ -66,16 +94,40 @@ EVAL_METRICS: dict[str, list[tuple[str, callable, bool]]] = {
         ("WER_other", lambda s: s.get("wer_normalized", s.get("wer")), True),
         ("CER_other", lambda s: s.get("cer_normalized", s.get("cer")), True),
     ],
+    "eval_librispeech_wer_other": [
+        ("WER_other", lambda s: s.get("wer_normalized", s.get("wer")), True),
+        ("CER_other", lambda s: s.get("cer_normalized", s.get("cer")), True),
+    ],
     "eval_listen": [
         ("LISTEN_acc",     lambda s: s["accuracy"], False),
         ("LISTEN_F1",      lambda s: s["macro_f1"], False),
+    ],
+    "eval_listen_mcqa": [
+        ("LISTEN_acc",     lambda s: s["accuracy"], False),
+        ("LISTEN_F1",      lambda s: s["macro_f1"], False),
+        ("LISTEN_acc_parsed", lambda s: s.get("accuracy_parsed_only"), False),
     ],
     "eval_listen_official": [
         # Per-experiment metric. Aggregate by mean across experiments.
         ("LISTENo_WAmean", lambda s: _listen_official_mean(s, "weighted_accuracy"), False),
         ("LISTENo_F1mean", lambda s: _listen_official_mean(s, "macro_f1"), False),
     ],
+    "eval_asr_external": [
+        ("MLS_WER",       lambda s: _asr_ext(s, "mls", "wer_normalized"), True),
+        ("MLS_CER",       lambda s: _asr_ext(s, "mls", "cer_normalized"), True),
+        ("VoxPopuli_WER", lambda s: _asr_ext(s, "voxpopuli", "wer_normalized"), True),
+        ("VoxPopuli_CER", lambda s: _asr_ext(s, "voxpopuli", "cer_normalized"), True),
+        ("Gigaspeech_WER", lambda s: _asr_ext(s, "gigaspeech", "wer_normalized"), True),
+        ("Gigaspeech_CER", lambda s: _asr_ext(s, "gigaspeech", "cer_normalized"), True),
+    ],
 }
+
+
+def _asr_ext(s: dict, ds: str, key: str):
+    d = s.get("datasets", {}).get(ds, {})
+    if d.get("status") == "ok":
+        return d.get(key)
+    return None
 
 
 def _listen_official_mean(s: dict, key: str) -> float | None:

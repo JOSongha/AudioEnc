@@ -84,8 +84,11 @@ EMO_MAP = {
 }
 
 # Experiment -> (input_mode, parquet filter experiment_type)
-# 1_* map to type "1"; 2C/3C reuse 2B/3B audio (add transcription in prompt);
-# 4 is not in local parquet.
+# 1_* map to type "1"; 2C/3C reuse 2B/3B audio (add transcription in prompt).
+# Type 4 (paralinguistic) was originally absent from the local LISTEN-test parquet;
+# 2026-04-30: a combined parquet at /mnt/tmp/listen_analysis/data/test_with_type4.parquet
+# adds the 975 type-4 rows from train shard 2. Caveat: type-4 was in the LISTEN-train
+# pool used for Stage-2 supervision, so eval on type 4 is upper-bound (training contamination).
 EXPERIMENTS: dict[str, tuple[str, str]] = {
     "1_text":            ("text",           "1"),
     "1_audio":           ("audio",          "1"),
@@ -96,6 +99,7 @@ EXPERIMENTS: dict[str, tuple[str, str]] = {
     "3A":                ("text",           "3A"),
     "3B":                ("audio",          "3B"),
     "3C":                ("audio_and_text", "3B"),
+    "4":                 ("audio",          "4"),
 }
 
 
@@ -355,7 +359,7 @@ def run_experiment(
     audio_pad_id = cfg.audio_pad_token_id
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         i = 0
         while i < len(prepared):
             batch = prepared[i : i + batch_size]
@@ -440,7 +444,7 @@ def run_experiment(
         "elapsed_sec": time.time() - t0,
         "use_cache": use_cache,
     }
-    with open(out_dir / f"summary_{exp}.json", "w") as f:
+    with open(out_dir / f"summary_{exp}.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[listen-off] {ckpt_path.name}/{exp}  WA={metrics['weighted_accuracy']:.4f} "
           f"UAR={metrics['uar']:.4f} macroF1={metrics['macro_f1']:.4f} "
@@ -485,7 +489,7 @@ def eval_checkpoint(
         summaries[exp] = s
 
     combined = {"checkpoint": str(ckpt_path), "per_experiment": summaries}
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(combined, f, indent=2, ensure_ascii=False)
 
     del model
@@ -562,7 +566,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     # Tabulate

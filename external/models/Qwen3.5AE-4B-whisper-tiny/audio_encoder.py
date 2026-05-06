@@ -15,16 +15,39 @@ from transformers.models.llama.modeling_llama import (
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
 )
+from transformers.models.qwen3.modeling_qwen3 import (
+    Qwen3Config,
+    Qwen3DecoderLayer,
+    Qwen3RMSNorm,
+    Qwen3RotaryEmbedding,
+)
+
+
+# Selectable decoder-block recipe. Both share the LLaMA recipe (pre-norm RMSNorm,
+# RoPE, SwiGLU, bias-free); Qwen3 additionally applies QK-norm inside attention.
+# Default "llama" preserves checkpoint compatibility.
+_DECODER_BLOCK_REGISTRY = {
+    "llama": (LlamaConfig, LlamaDecoderLayer, LlamaRMSNorm, LlamaRotaryEmbedding),
+    "qwen3": (Qwen3Config, Qwen3DecoderLayer, Qwen3RMSNorm, Qwen3RotaryEmbedding),
+}
 
 
 class AudioProjector(nn.Module):
-    """4-layer causal Llama-style adapter projecting Whisper hidden -> LLM embed dim."""
+    """4-layer causal Transformer adapter (LLaMA/Qwen3 recipe) projecting Whisper hidden -> LLM embed dim."""
 
     def __init__(self, config):
         super().__init__()
         self.config = config
 
-        self.llama_config = LlamaConfig(
+        block_type = getattr(config, "decoder_block_type", "llama")
+        if block_type not in _DECODER_BLOCK_REGISTRY:
+            raise ValueError(
+                f"decoder_block_type must be one of {list(_DECODER_BLOCK_REGISTRY)}, got {block_type!r}"
+            )
+        BlockConfig, DecoderLayer, RMSNorm, RotaryEmbedding = _DECODER_BLOCK_REGISTRY[block_type]
+        self.block_type = block_type
+
+        self.block_config = BlockConfig(
             hidden_size=config.adapter_hidden_size,
             intermediate_size=config.intermediate_size,
             num_attention_heads=config.num_attention_heads,
@@ -39,17 +62,17 @@ class AudioProjector(nn.Module):
         )
         # `getattr(..., "eager")` is not enough — PretrainedConfig sets `_attn_implementation = None`
         # by default, so the missing-default arm never triggers. Explicitly fall back when None.
-        self.llama_config._attn_implementation = getattr(config, "_attn_implementation", None) or "eager"
-        self.llama_config.rope_theta = config.rope_theta
+        self.block_config._attn_implementation = getattr(config, "_attn_implementation", None) or "eager"
+        self.block_config.rope_theta = config.rope_theta
         if config.rope_scaling is not None:
-            self.llama_config.rope_scaling = config.rope_scaling
+            self.block_config.rope_scaling = config.rope_scaling
 
         self.input_proj = nn.Linear(config.audio_hidden_size, config.adapter_hidden_size, bias=False)
         self.layers = nn.ModuleList(
-            [LlamaDecoderLayer(self.llama_config, layer_idx=i) for i in range(config.num_adapter_layers)]
+            [DecoderLayer(self.block_config, layer_idx=i) for i in range(config.num_adapter_layers)]
         )
-        self.final_norm = LlamaRMSNorm(config.adapter_hidden_size, eps=config.rms_norm_eps)
-        self.rotary_emb = LlamaRotaryEmbedding(config=self.llama_config)
+        self.final_norm = RMSNorm(config.adapter_hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = RotaryEmbedding(config=self.block_config)
 
         if config.adapter_hidden_size != config.llm_embed_size:
             self.output_proj = nn.Linear(config.adapter_hidden_size, config.llm_embed_size, bias=False)
@@ -74,7 +97,7 @@ class AudioProjector(nn.Module):
         ).unsqueeze(0)
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        if self.llama_config._attn_implementation in ("flash_attention_2", "sdpa"):
+        if self.block_config._attn_implementation in ("flash_attention_2", "sdpa"):
             causal_mask = None
         else:
             total_len = past_seen_tokens + seq_len

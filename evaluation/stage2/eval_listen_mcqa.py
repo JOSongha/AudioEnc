@@ -224,7 +224,7 @@ def eval_checkpoint(
     label_pred: list[str] = []
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
             try:
@@ -335,7 +335,7 @@ def eval_checkpoint(
         "max_audio_samples": max_audio_samples,
         "use_cache": use_cache,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
     print(f"[listen] {ckpt_path.name} "
@@ -424,7 +424,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY ===")

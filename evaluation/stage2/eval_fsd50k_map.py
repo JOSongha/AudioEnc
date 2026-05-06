@@ -79,7 +79,9 @@ EVAL_STEM_CLOSED_TMPL = (
     "List the sound events in this audio, separated by commas. "
     "Choose only from the following classes: {vocab}."
 )
+SENTENCE_STEM = "Describe what you hear in this audio. Mention every distinct sound event."
 MAX_NEW_TOKENS = 96
+SENTENCE_MAX_NEW_TOKENS = 256
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +185,23 @@ def run_batch(model, tokenizer, cfg, batch: list[dict],
     )
 
 
+def parse_labels_sentence(text: str, vocab: list[str]) -> list[int]:
+    """Sentence mode: substring-match each label name in the free-form description.
+    Word-boundary aware; tolerates plurals and underscore-vs-space."""
+    text_lower = text.lower()
+    out = set()
+    for idx, name in enumerate(vocab):
+        # FSD50K names use underscores e.g. "Computer_keyboard" -- normalize to space
+        clean = name.lower().replace("_", " ").replace("-", " ").strip()
+        if not clean:
+            continue
+        words = clean.split()
+        pat = r"\b" + r"\s+".join(re.escape(w) for w in words[:-1] + [words[-1]]) + r"s?\b"
+        if re.search(pat, text_lower):
+            out.add(idx)
+    return sorted(out)
+
+
 def _fsd_label_token_seqs(tokenizer, vocab: list[str]) -> list[list[int]]:
     """Pre-tokenize each vocab label for teacher-forced scoring. The leading
     space makes the first token BPE-match the typical continuation context."""
@@ -219,7 +238,7 @@ def _run_sequence_scoring(
 
     pred_path = out_dir / "predictions_seq.jsonl"
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for row_i, r in enumerate(prepared):
             true_idxs = [vocab_norm[norm_label(l)] for l in r["labels"]
                          if norm_label(l) in vocab_norm]
@@ -293,7 +312,7 @@ def _run_sequence_scoring(
         "note": "Teacher-forced per-label log-prob scoring (length-normalized); "
                 "ranking scores feed sklearn.average_precision_score.",
     }
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     # Also save raw score matrix (useful for re-analysis)
     np.savez(out_dir / "scores.npz",
@@ -368,28 +387,35 @@ def eval_checkpoint(
         torch.cuda.empty_cache()
         return s
 
-    # greedy path below
+    # greedy / sentence path
+    if score_mode == "sentence":
+        active_stem = SENTENCE_STEM
+        active_max_new = max_new_tokens or SENTENCE_MAX_NEW_TOKENS
+        parse_fn = lambda txt: parse_labels_sentence(txt, vocab)
+    else:
+        active_stem = EVAL_STEM
+        active_max_new = max_new_tokens
+        parse_fn = lambda txt: parse_predicted_labels(txt, vocab_norm)
+
     n_labels = len(vocab)
     y_true = np.zeros((len(prepared), n_labels), dtype=np.uint8)
     y_pred = np.zeros((len(prepared), n_labels), dtype=np.uint8)
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         row_i = 0
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
             try:
-                hyps = run_batch(model, tokenizer, cfg, batch, max_new_tokens,
-                                 use_cache=use_cache, stem=stem)
+                hyps = run_batch(model, tokenizer, cfg, batch, active_max_new, use_cache=use_cache, stem=active_stem)
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 hyps = []
                 for one in batch:
-                    hyps.extend(run_batch(model, tokenizer, cfg, [one], max_new_tokens,
-                                          use_cache=use_cache, stem=stem))
+                    hyps.extend(run_batch(model, tokenizer, cfg, [one], active_max_new, use_cache=use_cache, stem=active_stem))
 
             for r, hyp in zip(batch, hyps):
-                pred_idxs = parse_predicted_labels(hyp, vocab_norm)
+                pred_idxs = parse_fn(hyp)
                 true_idxs = [vocab_norm[norm_label(l)] for l in r["labels"]
                              if norm_label(l) in vocab_norm]
                 for j in true_idxs:
@@ -455,13 +481,13 @@ def eval_checkpoint(
         "avg_labels_true": mean_true,
         "avg_labels_pred": mean_pred,
         "elapsed_sec": time.time() - t0,
-        "stem": stem,
-        "note": "score_mode=greedy: model emits hard label list; F1/Jaccard "
-                "reported. For mAP use --score-mode sequence.",
-        "score_mode": "greedy",
+        "stem": active_stem,
+        "note": ("score_mode=sentence: free-form description with substring label match" if score_mode == "sentence"
+                 else "score_mode=greedy: model emits hard label list; F1/Jaccard reported. For mAP use --score-mode sequence."),
+        "score_mode": score_mode,
         "use_cache": use_cache,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[fsd50k] {ckpt_path.name} F1-micro={f1_micro:.4f} "
           f"F1-macro={f1_macro:.4f} Jaccard={jaccard:.4f}", flush=True)
@@ -483,7 +509,7 @@ def parse_args():
     p.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     p.add_argument("--no-cache", action="store_true",
                    help="Disable KV/conv cache during generation (shim-free ground truth).")
-    p.add_argument("--score-mode", choices=["greedy", "sequence"], default="greedy",
+    p.add_argument("--score-mode", choices=["greedy", "sequence", "sentence"], default="greedy",
                    help="greedy = parse generated label list (F1/Jaccard); "
                         "sequence = teacher-forced per-label log-prob (mAP).")
     p.add_argument("--label-batch-size", type=int, default=50,
@@ -547,7 +573,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY ===")

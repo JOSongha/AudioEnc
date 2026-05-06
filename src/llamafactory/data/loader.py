@@ -614,8 +614,10 @@ def get_omni_dataset(
         resolve_jsonl_files,
     )
 
-    if data_args.omni_manifest is None:
-        raise ValueError("`omni_manifest` is required for omni pipeline.")
+    if data_args.omni_manifest is None and not data_args.omni_per_modality_manifests:
+        raise ValueError(
+            "Either `omni_manifest` or `omni_per_modality_manifests` is required for omni pipeline."
+        )
 
     # Resolve audio_pad_token_id from tokenizer
     audio_pad_token_id = getattr(tokenizer, "audio_pad_token_id", None)
