@@ -31,8 +31,13 @@ EMO_MAP = {
 
 
 def main():
-    wavs = sorted(ROOT.glob("Actor_*/*.wav"))
-    print(f"[ravdess] found {len(wavs)} wavs")
+    # eval_source_emotion.load_ravdess_heldout uses Actors 21-24; exclude here.
+    HELD_OUT_ACTORS = {21, 22, 23, 24}
+    all_wavs = sorted(ROOT.glob("Actor_*/*.wav"))
+    held_count = sum(1 for w in all_wavs if int(w.parent.name.split("_")[1]) in HELD_OUT_ACTORS)
+    wavs = [w for w in all_wavs if int(w.parent.name.split("_")[1]) not in HELD_OUT_ACTORS]
+    print(f"[ravdess] held-out (eval) actors={sorted(HELD_OUT_ACTORS)}, n_held={held_count}")
+    print(f"[ravdess] found {len(wavs)} wavs (after held-out exclusion)")
 
     items = []
     skipped = 0

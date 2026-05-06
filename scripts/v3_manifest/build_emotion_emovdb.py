@@ -18,6 +18,8 @@ QUESTION = "What emotion is expressed in this audio clip?"
 SOURCE = "emovdb"
 LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 SPEAKERS = ["bea", "jenie", "josh", "sam"]
+# eval_source_emotion.load_emov_jenie holds out the Jenie speaker; exclude here.
+HELD_OUT_SPEAKERS = {"jenie"}
 EMO_DIRS = ["Amused", "Angry", "Disgusted", "Neutral", "Sleepy"]
 # Lowercase normalized labels
 EMO_MAP = {
@@ -31,7 +33,12 @@ EMO_MAP = {
 
 def main():
     items = []
+    n_held_out = 0
     for sp in SPEAKERS:
+        if sp in HELD_OUT_SPEAKERS:
+            held = sum(1 for emo in EMO_DIRS for _ in (ROOT / sp / emo).glob("*.wav") if (ROOT / sp / emo).is_dir())
+            n_held_out += held
+            continue
         for emo_dir in EMO_DIRS:
             d = ROOT / sp / emo_dir
             if not d.is_dir():
@@ -39,6 +46,7 @@ def main():
             label = EMO_MAP[emo_dir]
             for wp in sorted(d.glob("*.wav")):
                 items.append((str(wp), label))
+    print(f"[emovdb] held-out (eval) speakers={sorted(HELD_OUT_SPEAKERS)}, n_held={n_held_out}")
     classes = sorted(set(EMO_MAP.values()))
     print(f"[emovdb] valid={len(items)} classes={len(classes)}: {classes}")
 
