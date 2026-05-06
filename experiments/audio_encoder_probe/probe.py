@@ -52,6 +52,7 @@ def load_split(encoder: str, dataset: str):
         "gtzan": "label",
         "nsynth_train_30k": "label",
         "nsynth_test": "label",
+        "medley_solos": "label",
     }
     FOLD_COL = {
         "iemocap_4class": "session",
@@ -61,6 +62,7 @@ def load_split(encoder: str, dataset: str):
         "gtzan": "fold",
         "nsynth_train_30k": "fold",
         "nsynth_test": "fold",
+        "medley_solos": "fold",
     }
     label_col = LABEL_COL[dataset]
     fold_col = FOLD_COL[dataset]
