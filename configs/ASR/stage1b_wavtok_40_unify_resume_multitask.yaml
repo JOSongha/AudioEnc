@@ -1,0 +1,73 @@
+### model
+# Phase 1b-A: Resume curriculum from ASR-only Stage 1 ckpt-100000.
+# Multi-task projector pretrain to move projector out of ASR-friendly subspace
+# before Stage 2 LoRA fine-tune.
+model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1/Qwen3.5_wavtok_40_unify_Stage1/checkpoint-100000
+flash_attn: fa2
+enable_liger_kernel: true
+disable_gradient_checkpointing: false
+trust_remote_code: true
+
+### method
+stage: omni
+do_train: true
+do_eval: false
+finetuning_type: full
+freeze_vision_tower: true
+deepspeed: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/configs/qwen3_5ae-asr/ds_z2_no_fused.json
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+# Stage 2 combined shards (1.17M rows over 20 epochs; mix: emo 1.0 / asr 0.33 / env 0.5 / text 0.3).
+# Reused as-is; streaming dataloader handles wraparound for max_steps × batch.
+dataset: speechx_v9
+omni_manifest: /mnt/tmp/listen_analysis/train_manifest/stage2_combined_shards_eprandom
+load_from_nubes: true
+omni_packing_bucket_size: 128
+omni_sample_rate: 24000
+omni_hop_length: 600
+omni_max_audio_samples: 720000    # 30s @ 24kHz (1080000=45s caused 32-bit index overflow in SEANet F.pad)
+template: omni
+cutoff_len: 3584
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 4
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5_wavtok_40_unify_Stage1b_resume
+output_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1b_resume
+logging_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1b_resume
+logging_steps: 5
+save_total_limit: 8
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+resume_from_checkpoint: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1b_resume/Qwen3.5_wavtok_40_unify_Stage1b_resume/checkpoint-8000
+ignore_data_skip: true
+save_steps: 500
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+weight_decay: 0.01
+max_steps: 30000
+lr_scheduler_type: warmup_stable_decay
+warmup_steps: 500
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_dataset: speechx_v9
