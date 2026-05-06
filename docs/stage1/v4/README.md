@@ -34,7 +34,7 @@ v3와 데이터 자체는 같음. **bug 하나만 고친 것**:
 |---|---|---|
 | DAC-VAE | `Qwen3.5AE-ASR-Stage1-dac-vae-v4` | ✅ 100k step 완주, 100 ckpts 평가 완료 |
 | Whisper-tiny | `Qwen3.5AE-ASR-Stage1-whisper-tiny-v4` | 🔄 진행 중 (~18k step, 12k에서 NCCL timeout 후 resume) |
-| Whisper-small | `Qwen3.5AE-ASR-Stage1-whisper-small-v4` | ⏸ 미시작 |
+| Whisper-small | `Qwen3.5AE-ASR-Stage1-whisper-small-v4` | 🔄 진행 중 (다른 노드) |
 
 학습 산출물 위치: `/mnt/tmp/Qwen3.5_<encoder>_v4_Stage1_jos/Qwen3.5AE-ASR-Stage1-<encoder>-v4/checkpoint-N/`.
 
