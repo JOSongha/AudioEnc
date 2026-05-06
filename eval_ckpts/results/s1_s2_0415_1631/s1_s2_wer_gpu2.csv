@@ -1,4 +1,0 @@
-order,stage,name,wer_percent,elapsed_sec,mtime
-1,s1,s1_proj_split3.pt,120.93,289.2,04-15 17:49:03
-2,s2,checkpoint_fe1_split6,125.24,256.5,04-15 20:32:48
-3,s2,checkpoint_fe2_split2,133.13,269.7,04-16 00:02:54
