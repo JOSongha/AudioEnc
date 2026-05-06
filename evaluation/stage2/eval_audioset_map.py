@@ -462,14 +462,15 @@ def main():
         json.dump(all_results, f, indent=2)
 
     print("\n=== SUMMARY ===")
-    if args.score_mode == "greedy":
-        print(f"{'ckpt':30s}  {'F1-mi':>6s}  {'F1-ma':>6s}  {'Jacc':>6s}")
-        for name, s in all_results.items():
-            print(f"{name:30s}  {s['f1_micro']:6.4f}  {s['f1_macro']:6.4f}  {s['jaccard']:6.4f}")
-    else:
+    if args.score_mode == "sequence":
         print(f"{'ckpt':30s}  {'mAP-mi':>6s}  {'mAP-ma':>6s}")
         for name, s in all_results.items():
             print(f"{name:30s}  {s['mAP_micro']:6.4f}  {s['mAP_macro']:6.4f}")
+    else:
+        # greedy + sentence both report f1_micro / f1_macro / jaccard
+        print(f"{'ckpt':30s}  {'F1-mi':>6s}  {'F1-ma':>6s}  {'Jacc':>6s}")
+        for name, s in all_results.items():
+            print(f"{name:30s}  {s['f1_micro']:6.4f}  {s['f1_macro']:6.4f}  {s['jaccard']:6.4f}")
 
 
 if __name__ == "__main__":
