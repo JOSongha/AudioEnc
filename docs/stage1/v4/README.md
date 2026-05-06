@@ -36,13 +36,13 @@ v3와 데이터 자체는 같음. **bug 하나만 고친 것**:
 | Whisper-tiny | `Qwen3.5AE-ASR-Stage1-whisper-tiny-v4` | 🔄 진행 중 (~18k step, 12k에서 NCCL timeout 후 resume) |
 | Whisper-small | `Qwen3.5AE-ASR-Stage1-whisper-small-v4` | 🔄 진행 중 (다른 노드) |
 
-학습 산출물 위치: `/mnt/tmp/Qwen3.5_<encoder>_v4_Stage1_jos/Qwen3.5AE-ASR-Stage1-<encoder>-v4/checkpoint-N/`.
+학습 산출물 위치는 각 yaml의 `output_dir` 참조. 기본 패턴: `<output_dir>/Qwen3.5AE-ASR-Stage1-<encoder>-v4/checkpoint-N/`.
 
 ## 5. Eval 결과 (DAC-VAE v4)
 
 100 ckpts × 9 task evaluation:
 
-- **결과 root**: `/mnt/tmp/Qwen3.5_dac_vae_v4_Stage1_jos/eval_v4/eval_<task>/checkpoint-N/summary.json` (canonical layout)
+- **결과 root**: `<output_dir>/eval_v4/eval_<task>/checkpoint-N/summary.json` (canonical layout, `eval_<task>`는 task 이름 그대로)
 - **canonical aggregator + plot**: `_analysis/{results,results_wide}.csv`, `results.md`, `best_per_task.md`, `trajectories.pdf`
   - 생성 명령: `python -m evaluation.stage2.aggregate_results --root <eval_v4> --out <eval_v4>/_analysis` 후 `python -m evaluation.stage2.plot_trajectories --csv ... --out ... --cols 3 --title ... --exclude "ESC-50,Text retention"`
 - **method-C composite + group rank trajectories** (커스텀): `_aggregate/{results,composite_fullcov}.csv`, `trajectories{,_raw}.{pdf,png}`
@@ -59,10 +59,8 @@ v3와 데이터 자체는 같음. **bug 하나만 고친 것**:
 - **MELD class imbalance**: gold 분포 neutral 48%, joy 15%, anger 13%, ..., fear 1.9%. 모델 prediction은 neutral 55% / joy 22% / fear 0.6% 식으로 majority bias 잔존 (ckpt-68000). majority-pure baseline (acc 48%, F1 9%)보다는 위지만 minority recall (fear 2%, disgust 4%) 약함. balanced metric 선호.
 - **emotion modality 16 shards**: HF datasets streaming `.shard()`가 file-level 분할만 지원해서 world_size=8보다 file 적으면 IndexError. v3 6 shards를 v4 launch 시 row-level 16 shard로 균등 split. 자세한 건 `dac_vae_dataflow.md` 각주¹.
 - **NCCL timeout**: dataloader 단일 worker가 nubes audio 다운로드에서 stall하면 600s 후 NCCL 터짐. omni dataset에 SIGALRM watchdog (30s) + nubes connect/read split timeout 추가됨 (`6cf6bf8f` 커밋). 그래도 12k 근처에서 timeout 한 번 발생.
-- **dataset shard 외부 사용자 소유 일부**: `cremad` (shkim), `iemocap` (sehyun + kyudan) 데이터는 v4_quarantine으로 제외. emotion 학습 풀에 안 들어감.
+- **dataset shard 외부 사용자 소유 일부**: `cremad`, `iemocap`은 외부 사용자 소유라 v4_quarantine으로 제외. emotion 학습 풀에 안 들어감.
 
 ## 7. Paper artifact
 
-논문 working dir: `/mnt/ddn/users/jos/AudioEnc/log/tmp/latex_work/`. v4 관련 표:
-
-- `tbl/encoder_comparison.tex` — Table 2에 "DAC-VAE v4" column 포함. caption에 "DAC-VAE v4 column reports the Stage-1-only multi-task model at its method-C balanced default ckpt-68000 (no Stage-2 fine-tuning, hence weaker on multiple-choice format tasks like ESC-50 and the LM benchmarks)" 명시.
+논문 LaTeX working dir의 `tbl/encoder_comparison.tex` Table 2에 "DAC-VAE v4" column 포함. caption에 "DAC-VAE v4 column reports the Stage-1-only multi-task model at its method-C balanced default ckpt-68000 (no Stage-2 fine-tuning, hence weaker on multiple-choice format tasks like ESC-50 and the LM benchmarks)" 명시.

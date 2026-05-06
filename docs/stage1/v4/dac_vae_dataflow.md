@@ -2,7 +2,7 @@
 
 > Config: [`configs/ASR/stage1_dac_vae_v4.yaml`](../../configs/ASR/stage1_dac_vae_v4.yaml)
 > Run script: [`scripts/ASR/run_stage1_dac_vae_v4.sh`](../../scripts/ASR/run_stage1_dac_vae_v4.sh)
-> Manifest dir: `/mnt/tmp/datasets/manifests/v4/{audio_asr,audio_env_sound,audio_emotion}/` (v3 shards로 symlink)
+> Manifest dir: yaml `omni_per_modality_manifests`에 modality별 path. 각 dir은 v3 shards로 symlink.
 > Loader: [`src/llamafactory/data/loader.py:get_omni_dataset`](../../src/llamafactory/data/loader.py#L600-L812)
 
 ## v3 vs v4 — 단 한 가지 차이
@@ -26,7 +26,7 @@
 
 ¹ emotion v3 6 shards → v4 launch 시 row-level 16 shard 균등 split (HF datasets streaming `.shard()` 가 file-level 분할만 지원 → world_size=8 보다 file 적으면 IndexError 회피).
 
-제외(`v3_quarantine`): cremad (shkim 데이터), iemocap (sehyun + kyudan 데이터) — 외부 사용자 소유로 jos 학습에서 제외.
+제외(`v3_quarantine`): cremad, iemocap — 외부 사용자 소유 데이터로 본 v4 학습 풀에서 제외.
 
 ## Pipeline — 비율은 어디서 적용되나
 
@@ -97,9 +97,9 @@ v3 (5-step logging) 에서는 emotion 0.36% × 16 GBS × 5 step = 평균 0.3 emo
 ## 실행
 
 ```bash
+# repo root에서:
 bash scripts/ASR/run_stage1_dac_vae_v4.sh
 # 또는 직접:
-cd /mnt/ddn/users/jos/audiollm-trainer
 llamafactory-cli train configs/ASR/stage1_dac_vae_v4.yaml
 ```
 
@@ -108,4 +108,4 @@ llamafactory-cli train configs/ASR/stage1_dac_vae_v4.yaml
 - `configs/ASR/stage1_dac_vae_v4.yaml` — 신규. `omni_per_modality_manifests` + `omni_per_modality_probs` + `omni_per_modality_stopping`. logging_steps 5 → 50
 - `scripts/ASR/run_stage1_dac_vae_v4.sh` — 신규. v3.sh 와 환경 동일, config path 만 v4
 - `src/llamafactory/data/loader.py:617-621` — patch. `omni_manifest` OR `omni_per_modality_manifests` 둘 중 하나 만족하면 통과 (기존 v3 호환 유지)
-- `/mnt/tmp/datasets/manifests/v3_emotion_split/` — 16 jsonl. v4 audio_emotion symlink target. v3 6 shards 의 row union 후 균등 분할
+- `<datasets_root>/manifests/v3_emotion_split/` — 16 jsonl. v4 `audio_emotion` symlink target. v3 6 shards의 row union 후 균등 분할 (HF datasets streaming `.shard()`가 file-level 분할만 지원, world_size=8보다 file 적으면 IndexError 회피)
