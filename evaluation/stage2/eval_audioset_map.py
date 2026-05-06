@@ -251,7 +251,7 @@ def evaluate_one(
     y_pred = np.zeros((len(prepared), n_labels), dtype=np.uint8)
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for bs_start in range(0, len(prepared), batch_size):
             batch = prepared[bs_start:bs_start + batch_size]
             try:
@@ -317,7 +317,7 @@ def evaluate_one(
         "stem": active_stem,
         "score_mode": score_mode,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
     del model
@@ -337,7 +337,7 @@ def _run_sequence_scoring(model, tokenizer, cfg, prepared, vocab, vocab_norm,
     t0 = time.time()
     pred_path = out_dir / "predictions.jsonl"
     audio_pad_id = cfg.audio_pad_token_id
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for i, r in enumerate(prepared):
             wav = r["_wav"]
             t_audio = t_audio_for(cfg, wav.shape[-1])
@@ -388,7 +388,7 @@ def _run_sequence_scoring(model, tokenizer, cfg, prepared, vocab, vocab_norm,
         "stem": EVAL_STEM,
         "score_mode": "sequence",
     }
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     return summary
 
@@ -458,7 +458,7 @@ def main():
         )
         all_results[ck.name] = s
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2)
 
     print("\n=== SUMMARY ===")

@@ -29,11 +29,19 @@ def main():
     classes = sorted({r["response"] for r in rows})
     print(f"[meld] loaded {len(rows)} rows, {len(classes)} classes: {classes}")
 
+    # The shards reference /mnt/ddn/users/sehyun/CACHE/meld/wav/<split>/...wav,
+    # but actual extracted audio lives at
+    # /mnt/tmp/datasets/emotion_raw/MELD/audio/<split>/...wav. Remap.
+    REMAP_FROM = "/mnt/ddn/users/sehyun/CACHE/meld/wav/"
+    REMAP_TO = "/mnt/tmp/datasets/emotion_raw/MELD/audio/"
+
     out_rows = []
     skipped_missing = 0
     skipped_unknown = 0
     for idx, r in enumerate(rows):
         ap = r.get("audio_path")
+        if ap and ap.startswith(REMAP_FROM):
+            ap = REMAP_TO + ap[len(REMAP_FROM):]
         label = r.get("response")
         if not label or label not in classes:
             skipped_unknown += 1

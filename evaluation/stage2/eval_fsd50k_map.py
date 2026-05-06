@@ -229,7 +229,7 @@ def _run_sequence_scoring(
 
     pred_path = out_dir / "predictions_seq.jsonl"
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for row_i, r in enumerate(prepared):
             true_idxs = [vocab_norm[norm_label(l)] for l in r["labels"]
                          if norm_label(l) in vocab_norm]
@@ -303,7 +303,7 @@ def _run_sequence_scoring(
         "note": "Teacher-forced per-label log-prob scoring (length-normalized); "
                 "ranking scores feed sklearn.average_precision_score.",
     }
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     # Also save raw score matrix (useful for re-analysis)
     np.savez(out_dir / "scores.npz",
@@ -391,7 +391,7 @@ def eval_checkpoint(
     y_pred = np.zeros((len(prepared), n_labels), dtype=np.uint8)
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         row_i = 0
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
@@ -476,7 +476,7 @@ def eval_checkpoint(
         "score_mode": score_mode,
         "use_cache": use_cache,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[fsd50k] {ckpt_path.name} F1-micro={f1_micro:.4f} "
           f"F1-macro={f1_macro:.4f} Jaccard={jaccard:.4f}", flush=True)
@@ -550,7 +550,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY ===")

@@ -211,7 +211,7 @@ def eval_checkpoint(
     all_refs: list[list[list[str]]] = []  # per-sample list of tokenized refs
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
             try:
@@ -289,7 +289,7 @@ def eval_checkpoint(
         "max_audio_samples": max_audio_samples,
         "use_cache": use_cache,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
     print(f"[clotho] {ckpt_path.name} BLEU-1={bleu1:.4f} BLEU-4={bleu4:.4f} "
@@ -361,7 +361,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY ===")

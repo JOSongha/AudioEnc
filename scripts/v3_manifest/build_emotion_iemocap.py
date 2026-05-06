@@ -39,11 +39,19 @@ def main():
     classes = sorted({r["response"] for r in rows})
     print(f"[iemocap] loaded {len(rows)} rows, {len(classes)} classes: {classes}")
 
+    # The shards reference /mnt/ddn/users/sehyun/CACHE/iemocap/wav/<file>.wav,
+    # but on this filesystem the actual IEMOCAP audio lives at
+    # /mnt/ddn/kyudan/IEMOCAP/data/<file>.wav. Remap accordingly.
+    REMAP_FROM = "/mnt/ddn/users/sehyun/CACHE/iemocap/wav/"
+    REMAP_TO = "/mnt/ddn/kyudan/IEMOCAP/data/"
+
     out_rows = []
     skipped_missing = 0
     skipped_unknown = 0
     for idx, r in enumerate(rows):
         ap = r.get("audio_path")
+        if ap and ap.startswith(REMAP_FROM):
+            ap = REMAP_TO + ap[len(REMAP_FROM):]
         label = r.get("response")
         if not label or label not in classes:
             skipped_unknown += 1

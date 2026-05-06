@@ -277,7 +277,7 @@ def run_corpus(
     conf_pred: list[str] = []
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for i in range(0, len(prepared), batch_size):
             batch = prepared[i : i + batch_size]
             prompts, waveforms = [], []
@@ -378,7 +378,7 @@ def run_corpus(
         "use_cache": use_cache,
         "skipped_label_out_of_taxonomy": dict(skip_label),
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[src-emo] {ckpt_path.name}/{corpus}  "
           f"acc={summary['accuracy']:.4f} macroF1={macro_f1:.4f} "
@@ -426,7 +426,7 @@ def eval_checkpoint(
         summaries[corpus] = s
 
     combined = {"checkpoint": str(ckpt_path), "per_corpus": summaries}
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(combined, f, indent=2, ensure_ascii=False)
     del model
     torch.cuda.empty_cache()
@@ -502,7 +502,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY (source-corpus held-out emotion eval) ===")

@@ -359,7 +359,7 @@ def run_experiment(
     audio_pad_id = cfg.audio_pad_token_id
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         i = 0
         while i < len(prepared):
             batch = prepared[i : i + batch_size]
@@ -444,7 +444,7 @@ def run_experiment(
         "elapsed_sec": time.time() - t0,
         "use_cache": use_cache,
     }
-    with open(out_dir / f"summary_{exp}.json", "w") as f:
+    with open(out_dir / f"summary_{exp}.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[listen-off] {ckpt_path.name}/{exp}  WA={metrics['weighted_accuracy']:.4f} "
           f"UAR={metrics['uar']:.4f} macroF1={metrics['macro_f1']:.4f} "
@@ -489,7 +489,7 @@ def eval_checkpoint(
         summaries[exp] = s
 
     combined = {"checkpoint": str(ckpt_path), "per_experiment": summaries}
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(combined, f, indent=2, ensure_ascii=False)
 
     del model
@@ -566,7 +566,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     # Tabulate

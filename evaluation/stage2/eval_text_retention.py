@@ -229,7 +229,7 @@ def run_bench(
     by_letter_total = Counter()
 
     t0 = time.time()
-    with open(pred_path, "w") as fp:
+    with open(pred_path, "w", encoding="utf-8") as fp:
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
             prompts = [
@@ -310,7 +310,7 @@ def run_bench(
         "elapsed_sec": time.time() - t0,
         "use_cache": use_cache,
     }
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"[text-ret] {ckpt_path.name}/{bench}  "
           f"acc={acc:.4f} (random~{mixed_random:.3f})  parsed={n_parsed}/{total}",
@@ -352,7 +352,7 @@ def eval_checkpoint(
         "per_benchmark": summaries,
         "unweighted_mean_accuracy": unweighted_mean,
     }
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(combined, f, indent=2, ensure_ascii=False)
     print(f"[text-ret] {ckpt_path.name}  mean_acc={unweighted_mean:.4f}", flush=True)
 
@@ -425,7 +425,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-    with open(out_root / "summary_all.json", "w") as f:
+    with open(out_root / "summary_all.json", "w", encoding="utf-8") as f:
         json.dump(all_summaries, f, indent=2, ensure_ascii=False)
 
     print("\n=== SUMMARY (Tier-4 text retention) ===")

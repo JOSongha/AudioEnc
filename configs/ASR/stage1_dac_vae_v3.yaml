@@ -6,7 +6,7 @@
 model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B
 flash_attn: fa2
 enable_liger_kernel: true
-disable_gradient_checkpointing: true
+disable_gradient_checkpointing: false
 trust_remote_code: true
 
 ### method
@@ -26,7 +26,7 @@ omni_manifest: /mnt/tmp/datasets/manifests/v3
 load_from_nubes: true
 omni_packing_bucket_size: 128
 # DAC-VAE native: 48 kHz, hop 1920 — defaults from data_args.py, kept implicit.
-omni_max_audio_samples: 2160000   # 45s @ 48k (longer clips dropped by loader)
+omni_max_audio_samples: 1440000   # 30s @ 48k (longer clips dropped — v3 LAION has up to 45s, OOM at 45s+45s+45s pack)
 template: omni
 cutoff_len: 3584
 overwrite_cache: false
@@ -55,7 +55,7 @@ plot_loss: false
 overwrite_output_dir: true
 
 ### train
-per_device_train_batch_size: 3
+per_device_train_batch_size: 2
 gradient_accumulation_steps: 1
 learning_rate: 2.0e-4
 weight_decay: 0.01
