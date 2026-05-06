@@ -19,9 +19,9 @@ report_to: [tensorboard, wandb]
 ### dataset
 dataset: speechx_v9  # unused when omni_per_modality_manifests is set
 omni_per_modality_manifests:
-  audio_asr:        /mnt/tmp/datasets/manifests/v4/audio_asr
-  audio_env_sound:  /mnt/tmp/datasets/manifests/v4/audio_env_sound
-  audio_emotion:    /mnt/tmp/datasets/manifests/v4/audio_emotion
+  audio_asr:        /mnt/tmp/datasets/manifests/v5/audio_asr
+  audio_env_sound:  /mnt/tmp/datasets/manifests/v5/audio_env_sound
+  audio_emotion:    /mnt/tmp/datasets/manifests/v5/audio_emotion
 omni_per_modality_probs:
   audio_asr:        0.65
   audio_env_sound:  0.25

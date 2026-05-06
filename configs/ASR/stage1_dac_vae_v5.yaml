@@ -28,9 +28,9 @@ dataset: speechx_v9  # unused when omni_per_modality_manifests is set
 # stopping_strategy=all_exhausted lets emotion (62k rows) cycle multiple times
 # while libri_mls_vox (11.3M) is still draining — desirable here.
 omni_per_modality_manifests:
-  audio_asr:        /mnt/tmp/datasets/manifests/v4/audio_asr
-  audio_env_sound:  /mnt/tmp/datasets/manifests/v4/audio_env_sound
-  audio_emotion:    /mnt/tmp/datasets/manifests/v4/audio_emotion
+  audio_asr:        /mnt/tmp/datasets/manifests/v5/audio_asr
+  audio_env_sound:  /mnt/tmp/datasets/manifests/v5/audio_env_sound
+  audio_emotion:    /mnt/tmp/datasets/manifests/v5/audio_emotion
 omni_per_modality_probs:
   audio_asr:        0.65
   audio_env_sound:  0.25
