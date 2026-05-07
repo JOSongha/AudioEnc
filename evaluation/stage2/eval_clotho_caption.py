@@ -126,24 +126,47 @@ def corpus_bleu(list_of_refs: list[list[list[str]]], hyps: list[list[str]],
 
 
 def load_clotho_split(split: str) -> list[dict]:
-    """Return list of {file_path, captions[5]}."""
-    csv_path = CLOTHO_ROOT / f"captions_{split}.csv"
-    audio_dir = CLOTHO_ROOT / split
+    """Return list of {file_path, captions[5]}.
+
+    USE_NUBES=1 + split == 'development' 만 nubes 지원 (eval / val 은 nubes 부재).
+    """
+    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    import io as _io
     rows = []
-    with open(csv_path) as f:
+    if USE_NUBES and split == "development":
+        csv_text = fetch_nubes_text(NUBES_BASES["clotho"]["captions_dev"])
+        f = _io.StringIO(csv_text)
+        audio_base = NUBES_BASES["clotho"]["audio"]
         reader = csv.DictReader(f)
         for r in reader:
             fn = r["file_name"]
-            ap = audio_dir / fn
-            if not ap.exists():
-                continue
+            ap = audio_base + fn
             caps = [r[f"caption_{i}"] for i in range(1, 6) if r.get(f"caption_{i}")]
-            rows.append({"file": fn, "path": str(ap), "captions": caps})
+            rows.append({"file": fn, "path": ap, "captions": caps})
+    else:
+        if USE_NUBES:
+            print(f"[clotho] WARN: USE_NUBES=1 but split={split!r} not on nubes; falling back to local",
+                  flush=True)
+        csv_path = CLOTHO_ROOT / f"captions_{split}.csv"
+        audio_dir = CLOTHO_ROOT / split
+        with open(csv_path) as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                fn = r["file_name"]
+                ap = audio_dir / fn
+                if not ap.exists():
+                    continue
+                caps = [r[f"caption_{i}"] for i in range(1, 6) if r.get(f"caption_{i}")]
+                rows.append({"file": fn, "path": str(ap), "captions": caps})
     return rows
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    wav, sr = torchaudio.load(path)
+    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    if USE_NUBES and not str(path).startswith("/"):
+        wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
+    else:
+        wav, sr = torchaudio.load(path)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

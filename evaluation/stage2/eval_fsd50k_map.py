@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import re
 import sys
@@ -83,8 +84,15 @@ SENTENCE_MAX_NEW_TOKENS = 256
 
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """Return (label_list, name -> index)."""
+    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
     labels = []
-    with open(VOCAB_CSV) as f:
+    if USE_NUBES:
+        csv_text = fetch_nubes_text(
+            f"{NUBES_BASES['fsd50k_eval']['ground_truth']}vocabulary.csv")
+        f = io.StringIO(csv_text)
+    else:
+        f = open(VOCAB_CSV)
+    if True:
         for row in csv.reader(f):
             # vocabulary.csv has no header: idx,label_name,mid
             if len(row) < 2:
@@ -95,23 +103,42 @@ def load_vocab() -> tuple[list[str], dict[str, int]]:
 
 
 def load_eval(max_samples: int | None) -> list[dict]:
+    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES
     rows = []
-    with open(EVAL_CSV) as f:
+    if USE_NUBES:
+        # nubes 모드: eval.csv 도 nubes 에서 fetch
+        from evaluation.stage2._nubes_loader import fetch_nubes_text
+        csv_text = fetch_nubes_text(
+            f"{NUBES_BASES['fsd50k_eval']['ground_truth']}eval.csv")
+        reader = csv.DictReader(io.StringIO(csv_text))
+    else:
+        f = open(EVAL_CSV)
         reader = csv.DictReader(f)
-        for r in reader:
-            fname = r["fname"]
+
+    audio_base = NUBES_BASES["fsd50k_eval"]["audio"] if USE_NUBES else None
+    for r in reader:
+        fname = r["fname"]
+        if USE_NUBES:
+            ap = audio_base + f"{fname}.wav"  # nubes path
+        else:
             ap = EVAL_AUDIO_DIR / f"{fname}.wav"
             if not ap.exists():
                 continue
-            labels = [l for l in r["labels"].split(",") if l]
-            rows.append({"fname": fname, "path": str(ap), "labels": labels})
+            ap = str(ap)
+        labels = [l for l in r["labels"].split(",") if l]
+        rows.append({"fname": fname, "path": ap, "labels": labels})
     if max_samples:
         rows = rows[:max_samples]
     return rows
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    wav, sr = torchaudio.load(path)
+    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    if USE_NUBES and not path.startswith("/"):
+        # nubes path (no leading slash)
+        wav, sr = fetch_nubes_audio_tensor(path, target_sr=target_sr)
+    else:
+        wav, sr = torchaudio.load(path)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

@@ -76,7 +76,13 @@ def _norm(s: str) -> str:
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """AudioSet vocab = label names from ontology.json (~632 entries; ~527
     appear in eval). Return (label_list, normalized_name -> index)."""
-    with open(ONTOLOGY_JSON) as f:
+    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    if USE_NUBES:
+        ont = json.loads(fetch_nubes_text(NUBES_BASES["audioset_eval"]["ontology"]))
+    else:
+        with open(ONTOLOGY_JSON) as f:
+            ont = json.load(f)
+    if False:
         ont = json.load(f)
     labels = [e["name"] for e in ont]
     name_to_idx = {_norm(n): i for i, n in enumerate(labels)}
@@ -89,14 +95,29 @@ def load_eval(max_samples: int | None) -> list[dict]:
     Each row: {video_id, audio_bytes (FLAC), labels (mid IDs), human_labels (text)}.
     Pre-decoded waveform may be loaded later via _DECODED_CACHE env var.
     """
+    from evaluation.stage2._nubes_loader import (
+        USE_NUBES, NUBES_BASES, list_nubes_dir, fetch_nubes_bytes)
     import pyarrow.parquet as pq
     rows: list[dict] = []
-    files = sorted(EVAL_PARQUET_DIR.glob("*.parquet"))
-    for pf in files:
+    if USE_NUBES:
+        # nubes 의 parquet 들을 list + fetch
+        nubes_prefix = NUBES_BASES["audioset_eval"]["parquet"]
+        files = list(list_nubes_dir(nubes_prefix, suffix=".parquet"))
+        files = [(f, "nubes") for f in files]
+    else:
+        files = [(p, "local") for p in sorted(EVAL_PARQUET_DIR.glob("*.parquet"))]
+    for pf, src in files:
         try:
-            table = pq.read_table(pf)
+            if src == "nubes":
+                # fetch parquet bytes from nubes, read with pyarrow from BytesIO
+                pf_bytes = fetch_nubes_bytes(pf)
+                table = pq.read_table(io.BytesIO(pf_bytes))
+                pf_name = pf.split("/")[-1]
+            else:
+                table = pq.read_table(pf)
+                pf_name = pf.name
         except Exception as e:
-            print(f"[audioset] read fail {pf.name}: {e}", flush=True)
+            print(f"[audioset] read fail {pf}: {e}", flush=True)
             continue
         df = table.to_pandas()
         for _, r in df.iterrows():
