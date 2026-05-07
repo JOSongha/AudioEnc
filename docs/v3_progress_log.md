@@ -95,7 +95,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
 - 단일 caption만 (spec 준수). `labels` 필드 제거 (spec 미정의).
 - 2 shards: `audioset_bal_train_0000.jsonl` (15,000) + `audioset_bal_train_0001.jsonl` (3,683)
 - 출력: `/mnt/tmp/datasets/manifests/v3/audioset_bal_train_*.jsonl`
-- 스크립트: `scripts/v3_manifest/build_audioset.py`
+- 스크립트: `scripts/manifest_builders/build_audioset.py`
   (audio는 prepare_manifest.py가 미리 추출해둔 `/mnt/tmp/datasets/env_sound/AudioSet/audio/<vid>.flac` 그대로 사용)
 - 1차 빌드 stale shards는 스크립트가 시작 시 unlink 후 재작성
 
@@ -113,7 +113,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
   - 실제 source = TAU Urban Acoustic Scenes 2019 Development (Zenodo 2589280, 21 zip × ~1.7GB ≈ 36GB)
   - target = airport/park/public_square 3,930 files only
   - DL→extract MACS targets only→delete zip 방식, 별도 백그라운드 진행 (완료 후 row 표 갱신)
-- 스크립트: `scripts/v3_manifest/build_{audiocaps,clotho,macs}.py`
+- 스크립트: `scripts/manifest_builders/build_{audiocaps,clotho,macs}.py`
 
 ### [2026-05-01 07:19] T6 ✅ FSD50K dev manifest (Agent B, spec 준수 재빌드)
 - 40,966 clips kept (dev.csv 전체 = train+val sub-split, drop 없음)
@@ -122,7 +122,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
 - 단일 caption만 (spec 준수). `labels` 필드 제거.
 - 3 shards: `fsd50k_dev_0000.jsonl` (15,000) + `fsd50k_dev_0001.jsonl` (15,000) + `fsd50k_dev_0002.jsonl` (10,966)
 - 출력: `/mnt/tmp/datasets/manifests/v3/fsd50k_dev_*.jsonl`
-- 스크립트: `scripts/v3_manifest/build_fsd50k.py`
+- 스크립트: `scripts/manifest_builders/build_fsd50k.py`
 
 ### [07:30~07:45] 🚨 Eval contamination 격리 + 분배 외 shard 정리 (직접)
 
@@ -158,7 +158,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
 - mp4 → wav 추출: 1201 wavs, 0 fail (16kHz mono)
 - emotion_mustardpp manifest 재빌드: **1 → 1200 rows** (9 native classes via Explicit_Emotion)
 - 클래스 분포: neutral 438, happiness 244, sadness 149, excitement 115, surprise 101, anger 53, frustration 48, disgust 29, fear 23
-- 스크립트: `scripts/v3_manifest/{download_mustardpp_curl,extract_mustardpp_wav,build_emotion_mustardpp}.py`
+- 스크립트: `scripts/manifest_builders/{download_mustardpp_curl,extract_mustardpp_wav,build_emotion_mustardpp}.py`
 
 ### [08:10] T9 — Agent C download 완료, 추출 단계 직접 인계
 - Agent C가 21/21 TAU2019 zip 다운로드는 완료했으나 (07:39 종료, 34 GB) 추출/manifest 단계로 진행 안 됨 (process 종료)
@@ -199,7 +199,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
   - source breakdown: LibriSpeech 0, MLS 10,808,037, VoxPopuli 182,466, unknown 354,721
   - unknown_asr 354,721은 모두 LibriTTS-R (path = `en_LibriTTS_R_single/...`); 스펙대로 "librispeech" 문자열 매칭이 안 되어 unknown으로 분류됨. 이 데이터셋에 LibriSpeech 자체는 포함되지 않은 것으로 확인.
   - 1:1 shard mapping (no resharding); 기존 `nubes_path`/`text` 그대로 보존 + `modality`/`source` prepend
-- 스크립트: `scripts/v3_manifest/build_audiostock.py` + `scripts/v3_manifest/convert_libri_mls_vox.py`
+- 스크립트: `scripts/manifest_builders/build_audiostock.py` + `scripts/manifest_builders/convert_libri_mls_vox.py`
 
 ### [2026-05-01 07:30] T12+T13+T14 ✅ Direct 작업 완료
 - **T12 loader**: `omni_dataset.py:282-307` + `omni_dataset_whisper.py:99-122` — `_build_prompt_targets()` 의 `audio_env_sound` 분기를 captions 우선·labels 백워드 호환으로 단순화. v3 9개 source (clotho/audiocaps/macs/laion_*/audioset/fsd50k) 모두 captions 라우팅 1줄로 통일.
@@ -252,7 +252,7 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
   - **MUStARD**: 본격 사용 불가 (1 row만 존재, 나머지 1,201 rows 모두 audio missing). 다운로드 보강 필요.
   - **CREMA-D**: 원본 `emotion_raw/CREMA-D/AudioWAV` 비어 있음 → shkim의 mirror 사용으로 회수.
   - **IEMOCAP**: 라이선스 데이터, sehyun shards에 path가 sehyun cache로 박혀 있어 → kyudan IEMOCAP wav로 remap. 모두 존재 확인 (10,039 wav 중 10,013 mappable).
-- **사이드 메모**: 기존 `scripts/v3_manifest/build_emotion_*.py` 스크립트들은 per-source labels + shuffled choices를 사용 — T11 spec과 충돌하므로 새 unified 스크립트로 대체. (기존 파일은 유지, 빌드 진입점은 `scripts/emo/build_emotion_v3_manifest.py`.)
+- **사이드 메모**: 기존 `scripts/manifest_builders/build_emotion_*.py` 스크립트들은 per-source labels + shuffled choices를 사용 — T11 spec과 충돌하므로 새 unified 스크립트로 대체. (기존 파일은 유지, 빌드 진입점은 `scripts/emo/build_emotion_v3_manifest.py`.)
 
 ### [07:42] T11 ✅ Emotion 7 manifests (MCQA)
 - iemocap: 10039 rows / 10 classes
@@ -262,14 +262,14 @@ Shard 크기: 15000 rows/shard. 파일명: `<src>_<split>_<NNNN>.jsonl`.
 - emovdb: 6893 / 5
 - mustardpp: 1 / 9
 - ravdess: 1440 / 8
-- 스크립트: scripts/v3_manifest/build_emotion_*.py (7개)
+- 스크립트: scripts/manifest_builders/build_emotion_*.py (7개)
 
 ### [08:07] T11+ ✅ MUStARD++ raw 보강 (Agent F)
-- GDrive 1202 utterance mp4 다운 (성공: 1200 / 1202; 2개는 already-exists 1_60_u 중복 ID, 0 fail). gdown `--folder` 모드는 Drive rate-limit 으로 directory listing만 성공 후 파일 다운로드 모두 실패 → file ID 추출 후 직접 `curl https://drive.google.com/uc?export=download&id=<id>` 8-worker 병렬 (`scripts/v3_manifest/download_mustardpp_curl.py`).
-- ffmpeg 추출 → audio_wav/<KEY>_u.wav (1201 wavs / 8-worker 병렬, 0 fail). 추출 스크립트: `scripts/v3_manifest/extract_mustardpp_wav.py`
+- GDrive 1202 utterance mp4 다운 (성공: 1200 / 1202; 2개는 already-exists 1_60_u 중복 ID, 0 fail). gdown `--folder` 모드는 Drive rate-limit 으로 directory listing만 성공 후 파일 다운로드 모두 실패 → file ID 추출 후 직접 `curl https://drive.google.com/uc?export=download&id=<id>` 8-worker 병렬 (`scripts/manifest_builders/download_mustardpp_curl.py`).
+- ffmpeg 추출 → audio_wav/<KEY>_u.wav (1201 wavs / 8-worker 병렬, 0 fail). 추출 스크립트: `scripts/manifest_builders/extract_mustardpp_wav.py`
 - emotion_mustardpp manifest 재빌드: **1200 rows** / native 9-class (`anger, disgust, excitement, fear, frustration, happiness, neutral, sadness, surprise`) — Explicit_Emotion 사용. 1 row drop 사유: `3_S03E03_012_u` (CSV 라벨은 있으나 Drive 폴더 listing에 mp4 없음).
-- 스크립트: scripts/v3_manifest/build_emotion_mustardpp.py (변경 없음, 기존 builder 그대로 재실행)
-- 보조 스크립트 추가: scripts/v3_manifest/download_mustardpp_curl.py, scripts/v3_manifest/extract_mustardpp_wav.py
+- 스크립트: scripts/manifest_builders/build_emotion_mustardpp.py (변경 없음, 기존 builder 그대로 재실행)
+- 보조 스크립트 추가: scripts/manifest_builders/download_mustardpp_curl.py, scripts/manifest_builders/extract_mustardpp_wav.py
 
 ---
 
