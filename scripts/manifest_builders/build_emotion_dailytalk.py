@@ -24,21 +24,13 @@ LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 
 def main():
     meta = json.load(open(META))
-    # Held-out for eval (matches eval_source_emotion.load_dailytalk_heldout):
-    # last 5% of dialogues by sorted integer dialog_id.
-    ids_sorted = sorted(int(k) for k in meta.keys())
-    held_out_cutoff = ids_sorted[int(len(ids_sorted) * 0.95)]
-    held_out_ids = {i for i in ids_sorted if i >= held_out_cutoff}
-    print(f"[dailytalk] held-out (eval) cutoff={held_out_cutoff}, n_held={len(held_out_ids)}")
+    # v6: canonical split 없는 source 는 통째로 학습 (v5 leak-fix 폐기).
+    # Stage-2 미진행이라 자체 held-out 도 불필요.
     items = []
     skipped_unknown = 0
     skipped_missing = 0
-    skipped_eval = 0
     classes_seen = set()
     for dialog_id, utts in meta.items():
-        if int(dialog_id) in held_out_ids:
-            skipped_eval += len(utts)
-            continue
         for utt_id, info in utts.items():
             label = info.get("emotion")
             if not label:
