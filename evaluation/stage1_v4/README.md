@@ -1,12 +1,26 @@
-# Stage-1 v4 — caption-prompt eval
+# Stage-1 caption-prompt eval (legacy v4 dir name, fits v5 / v6 better)
 
 Stage-2 evaluators (`evaluation.stage2.eval_*`) ask the model with a
 classification-style stem (`Classify this sound.`, `List the sound events
 in this audio, separated by commas.`) that mirrors the Stage-2 training
-mixture. **v4 Stage-1 trains the audio_env_sound modality in caption form
-only** (TASK_PROMPTS["sound_caption"] / sound_describe_*), so those Stage-2
-prompts are out-of-distribution for v4 and the resulting F1 / accuracy
-underestimate the encoder.
+mixture. **All Stage-1 chains since v3 train the audio_env_sound modality
+in caption-form prompts** (TASK_PROMPTS["sound_caption"] / sound_describe_*),
+so the Stage-2 classification prompts are OOD across the entire Stage-1
+lineage and underestimate the encoder.
+
+**Caveat (target-text drift)**: caption-form *prompt* is unchanged across
+v3 / v4 / v5 / v6, but caption *target text* changed in v5:
+- v3 / v4 AudioSet & FSD50K: synthetic "sound of X, Y, Z" comma-list captions
+  built from labels.
+- v5 + v6: ontology-description sentence captions (see
+  [`datasets.md` v5 changelog](../../docs/setup/datasets.md)).
+
+So when these wrappers force `--score-mode sentence` (asking the model for a
+sentence response) they fit v5 / v6 ckpts cleanly, but penalize v4 ckpts —
+v4 was trained to emit "sound of X, Y" comma-list, not full sentences. F1
+on v4 ckpts via this wrapper is artificially low. Treat the dir name
+`stage1_v4/` as legacy; for v6 production ckpts these wrappers are the
+correct caption-form eval path.
 
 This folder mirrors the three sound-classification evaluators with
 caption-form prompts and free-form output parsing.

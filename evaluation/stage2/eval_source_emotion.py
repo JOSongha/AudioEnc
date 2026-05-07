@@ -1,13 +1,22 @@
-"""Source-corpus emotion eval for Qwen3.5AE Stage-2 checkpoints.
+"""Source-corpus emotion eval for Qwen3.5AE Stage-1 v6 / Stage-2 checkpoints.
 
-Evaluates on the PER-CORPUS held-out splits that Stage-2 training explicitly
-reserved (see [`eval_plan.md §7.1`](../docs/stage2/eval_plan.md) and
-[`build_training_manifest.py`](../scripts/emo/build_training_manifest.py)):
+Evaluates on the official MELD test split. v6 룰 ("canonical split 없는 source
+는 통째로 학습") 적용 후 DailyTalk / EmoV-DB / RAVDESS 의 self-held-out
+(v5 leak-fix) 가 폐기됐고, 이 corpus 들은 학습 풀에 통째로 들어감 — eval 도
+함께 폐기. 외부 cross-corpus eval (LISTEN / SAVEE / JL-Corpus / MSP-Podcast)
+는 별도 스크립트 (`eval_listen_*`, `eval_savee.py`, `eval_jl_corpus.py`,
+`eval_msp_podcast.py`) 사용.
 
     MELD        : official test split          (2 747 wavs, 7-class)
-    DailyTalk   : last 5% of dialogues         (~1 168 dialogs, 7-class)
-    EmoV-DB     : Jenie speaker                (1 790 wavs, 5-class)
-    RAVDESS     : Actors 21-24                 (240 wavs, 8-class)
+
+⚠ **Stage-2 LISTEN-mix contamination caveat**: For Stage-1 v6 ckpts the MELD
+test split is clean (v6 manifest does not include LISTEN). However the
+Stage-2 LISTEN composite training pool *pulls in MELD-test and MOSEI-test
+rows* (see project memory `project_listen_contamination`). When this script
+is run on a Stage-2 LoRA ckpt with `--base-model ...` whose Stage-2 training
+included LISTEN, the MELD reading here is no longer a clean held-out — at
+minimum the MELD-test rows that bleed into LISTEN-train have been seen by
+the model.
 
 Prompt format mirrors training's emotion MCQA rows (lettered choices, same
 `"Answer with the letter."` suffix) so the training distribution covers the
@@ -19,7 +28,7 @@ Usage:
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_source_emotion \
         --base-model /mnt/tmp/s2_init_42k \
-        --ckpts 1000,2000 --corpora meld dailytalk emov ravdess --batch-size 4
+        --ckpts 1000,2000 --corpora meld --batch-size 4
 """
 
 from __future__ import annotations
@@ -54,13 +63,8 @@ RAW = Path("/mnt/tmp/datasets/emotion_raw")
 # training. Pinned here to avoid cross-module import dep.
 QUESTION = "What emotion does the speaker convey?"
 
-# Per-corpus taxonomies: identical to scripts/emo/prepare_emotion_mcqa_manifest.py
+# MELD taxonomy (other corpus held-outs 폐기 — v6 룰 참조).
 MELD_EMOTIONS = ["anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise"]
-DAILYTALK_EMOTIONS = ["no emotion", "happiness", "sadness", "anger", "surprise",
-                     "fear", "disgust"]
-EMOV_EMOTIONS = ["amused", "angry", "disgusted", "neutral", "sleepy"]
-RAVDESS_EMOTIONS = ["neutral", "calm", "happy", "sad", "angry", "fearful",
-                    "disgust", "surprised"]
 
 LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 MAX_NEW_TOKENS = 96  # letter + optional rationale (training target may include one)
@@ -90,92 +94,8 @@ def load_meld_test() -> list[dict]:
     return rows
 
 
-def load_dailytalk_heldout() -> list[dict]:
-    """Last 5% of dialogues (matches build_training_manifest.py:136-148)."""
-    meta = json.loads((RAW / "DailyTalk" / "dailytalk" / "metadata.json").read_text())
-    d_root = RAW / "DailyTalk" / "dailytalk" / "data"
-    ids_sorted = sorted(int(k) for k in meta.keys())
-    if not ids_sorted:
-        return []
-    cutoff = ids_sorted[int(len(ids_sorted) * 0.95)]
-    held = [i for i in ids_sorted if i >= cutoff]
-
-    rows = []
-    for did in held:
-        dlg_dir = d_root / str(did)
-        if not dlg_dir.exists():
-            continue
-        for wav_path in sorted(dlg_dir.glob("*.wav")):
-            stem = wav_path.stem
-            # filename "{utt_id}_{speaker}_d{dialog_id}.wav"
-            m = re.match(r"(\d+)_(\d+)_d(\d+)", stem)
-            if not m:
-                continue
-            utt_id, _, dlg_id = m.group(1), m.group(2), m.group(3)
-            dlg_meta = meta.get(dlg_id)
-            if dlg_meta is None:
-                continue
-            utt_meta = dlg_meta.get(utt_id)
-            if utt_meta is None:
-                continue
-            rows.append({
-                "id": stem,
-                "path": str(wav_path),
-                "label": str(utt_meta.get("emotion", "no emotion")).strip().lower(),
-                "utterance": utt_meta.get("text", ""),
-            })
-    return rows
-
-
-def load_emov_jenie() -> list[dict]:
-    d = RAW / "EmoV-DB" / "jenie"
-    if not d.exists():
-        return []
-    rows = []
-    for wav_path in sorted(d.rglob("*.wav")):
-        emotion_dir = wav_path.parent.name.lower()  # Amused / Angry / …
-        if emotion_dir not in {"amused", "angry", "disgusted", "neutral", "sleepy"}:
-            continue
-        rows.append({
-            "id": wav_path.stem,
-            "path": str(wav_path),
-            "label": emotion_dir,
-            "utterance": "",
-        })
-    return rows
-
-
-_RAV_RE = re.compile(r"(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})")
-
-def load_ravdess_heldout() -> list[dict]:
-    """Actors 21-24 (standard RAVDESS speaker-held-out split)."""
-    d = RAW / "RAVDESS"
-    rows = []
-    for actor_n in (21, 22, 23, 24):
-        actor_dir = d / f"Actor_{actor_n:02d}"
-        if not actor_dir.exists():
-            continue
-        for wav_path in sorted(actor_dir.glob("*.wav")):
-            m = _RAV_RE.search(wav_path.stem)
-            if not m:
-                continue
-            emo_idx = int(m.group(3))
-            if not (1 <= emo_idx <= 8):
-                continue
-            rows.append({
-                "id": wav_path.stem,
-                "path": str(wav_path),
-                "label": RAVDESS_EMOTIONS[emo_idx - 1],
-                "utterance": "",
-            })
-    return rows
-
-
 CORPUS_LOADERS = {
     "meld":      (load_meld_test,        MELD_EMOTIONS),
-    "dailytalk": (load_dailytalk_heldout, DAILYTALK_EMOTIONS),
-    "emov":      (load_emov_jenie,       EMOV_EMOTIONS),
-    "ravdess":   (load_ravdess_heldout,  RAVDESS_EMOTIONS),
 }
 
 
