@@ -1,10 +1,25 @@
 """ASR WER on external datasets (OOD overfit check).
 
-Mirrors `eval_librispeech_wer.py` flow but supports multiple HF ASR datasets:
-- MLS (en) — in-distribution (training pool)
-- VoxPopuli (en) — in-distribution
-- GigaSpeech — out-of-distribution (filtered out from training)
-- CommonVoice (en) — out-of-distribution (filtered out)
+Mirrors `eval_librispeech_wer.py` flow but supports multiple HF ASR datasets.
+Tag interpretation depends on which training stage's ckpt is being evaluated:
+
+                       Stage-1 v6 mix         Stage-2 LoRA mix
+  MLS (en)             in-dist                in-dist
+  VoxPopuli (en)       in-dist                in-dist
+  LibriSpeech test     in-dist (LibriTTS-R    in-dist (LibriTTS-R
+                       train.* shares text/   train.* shares text/
+                       speakers but disjoint  speakers but disjoint
+                       splits)                splits)
+  GigaSpeech           in-dist (XL train      in-dist
+                       50% sample, disjoint
+                       test split)
+  CommonVoice          OOD                    in-dist
+
+Stage-1 v6 ASR pool = {MLS, LibriTTS-R train.*, VoxPopuli train, GigaSpeech XL
+50% random subsample (seed=11)}. GigaSpeech sampling shares the train pool with
+the held-out test split, so eval_asr_external --datasets gigaspeech is still a
+valid leak-free WER probe. CommonVoice is pulled in only at Stage-2 (LISTEN/
+external mix), so it remains Stage-1 OOD. See docs/setup/datasets.md §2.
 
 Subsamples to MAX_SAMPLES (default 500) for tractable cross-dataset comparison.
 
@@ -63,22 +78,29 @@ def compute_cer(refs, hyps):
     return jiwer.cer([r for r, _ in pairs], [h for _, h in pairs])
 
 # Dataset registry: tag → (HF repo, config, split, audio_key, text_key, license_note)
+# license_note reads "<Stage-1 v6 status> | <Stage-2 status>"
 DATASETS = {
     "librispeech_clean": (
-        "openslr/librispeech_asr", "clean", "test", "audio", "text", "in-dist (LibriTTS-R/MLS subset)"),
+        "openslr/librispeech_asr", "clean", "test", "audio", "text",
+        "Stage-1 in-dist (LibriTTS-R train.* shares speakers/text, disjoint test split) | Stage-2 in-dist"),
     "librispeech_other": (
-        "openslr/librispeech_asr", "other", "test", "audio", "text", "in-dist"),
+        "openslr/librispeech_asr", "other", "test", "audio", "text",
+        "Stage-1 in-dist (LibriTTS-R train.* shares speakers/text, disjoint test split) | Stage-2 in-dist"),
     "mls": (
-        "parler-tts/mls_eng_10k", None, "test", "audio", "transcript", "in-dist (training pool)"),
+        "parler-tts/mls_eng_10k", None, "test", "audio", "transcript",
+        "Stage-1 in-dist (training pool, train split) | Stage-2 in-dist"),
     "voxpopuli": (
-        "facebook/voxpopuli", "en", "test", "audio", "raw_text", "in-dist (training pool)"),
+        "facebook/voxpopuli", "en", "test", "audio", "raw_text",
+        "Stage-1 in-dist (training pool, train split) | Stage-2 in-dist"),
     "gigaspeech": (
-        "speechcolab/gigaspeech", "test", "test", "audio", "text", "in-dist (Stage-2 mix)"),
+        "speechcolab/gigaspeech", "test", "test", "audio", "text",
+        "Stage-1 in-dist (XL train 50% sample, disjoint test split) | Stage-2 in-dist"),
     "commonvoice": (
-        "mozilla-foundation/common_voice_17_0", "en", "test", "audio", "sentence", "in-dist (Stage-2 mix; HF gate)"),
+        "mozilla-foundation/common_voice_17_0", "en", "test", "audio", "sentence",
+        "Stage-1 OOD (not in v6 ASR pool) | Stage-2 in-dist (HF gate)"),
     "commonvoice_local": (
         "/mnt/ddn/omni_dataset/audio/common_voice/common_voice_test.jsonl", None, None, None, None,
-        "in-dist (local jsonl, bypasses HF gate)"),
+        "Stage-1 OOD (not in v6 ASR pool) | Stage-2 in-dist (local jsonl, bypasses HF gate)"),
 }
 
 
