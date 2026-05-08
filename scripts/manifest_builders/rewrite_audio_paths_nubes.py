@@ -135,12 +135,19 @@ PREFIX_MAPPINGS: dict[
     ),
     # === callable transform (split rename + extension swap 등) ===
     "meld": _meld_transform,
+    # === DailyTalk / AudioCaps (2026-05-08 업로드 완료, § 12.11 / § 12.9) ===
+    "dailytalk": (
+        "/mnt/tmp/datasets/emotion_raw/DailyTalk/dailytalk/data/",
+        "hyperscaleai-audiollm/users/jos/AudioEnc/DailyTalk/data/",
+    ),
+    "audiocaps": (
+        "/mnt/tmp/datasets/laion_extracted/audiocaps/",
+        "hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/audio/",
+    ),
     # === 빌더가 처음부터 nubes_path 박음 (rewrite 불필요) ===
     "laion_audiostock": None,  # build_audiostock.py nubes-direct
     "macs": None,              # build_macs.py nubes-direct
-    # === 미매핑: nubes 부재 또는 업로드 진행 중 (audio_path local fallback) ===
-    "dailytalk": None,         # § 12.11 업로드 진행 중 (utterance wav 새 위치)
-    "audiocaps": None,         # § 12.9 업로드 진행 중
+    # === 미매핑: nubes 부재 (audio_path local fallback) ===
     "laion_freesound": None,   # nubes 매핑 미확인 (§ 5)
 }
 
