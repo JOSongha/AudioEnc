@@ -368,7 +368,15 @@ def create_omni_processor(
             if resp.status_code != 200:
                 print(f"[omni] nubes HTTP {resp.status_code} for {nubes_path}", flush=True)
                 return None
-            waveform, sr = torchaudio.load(io.BytesIO(resp.content))
+            buf = io.BytesIO(resp.content)
+            ext = nubes_path.rsplit(".", 1)[-1].lower() if "." in nubes_path else ""
+            try:
+                waveform, sr = torchaudio.load(buf)
+            except Exception:
+                # libsndfile (default backend) 가 mp3 등 미지원 — ffmpeg backend 로
+                # fallback. MELD audio 가 nubes 에 mp3 로 있어 이 path 가 활성화됨.
+                buf.seek(0)
+                waveform, sr = torchaudio.load(buf, backend="ffmpeg")
             return waveform, sr
         except Exception as e:
             print(f"[omni] nubes download error: {e} ({nubes_path})", flush=True)
