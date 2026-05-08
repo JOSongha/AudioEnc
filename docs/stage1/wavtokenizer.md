@@ -41,14 +41,14 @@
 
 ## 2. 파라미터 수 비교
 
-| 구성 | DACVAE | Whisper-small.en | WavTokenizer-40 | 비고 |
-|------|--------|------------------|-----------------|------|
-| Audio encoder (active) | 27.55M | 88.15M | **8.30M** | codec vs ASR vs hybrid |
-| Tap point | VAE latent `z̃` (post-quant) | `last_hidden_state` | pre-VQ `z_e` (raw, unbottlenecked) |
-| Sample rate | 48kHz | 16kHz | **24kHz** | resampling필요 |
-| Frame rate (fps) | 25 | 50 | **40** | hop_length = sample_rate / fps |
-| 30s sequence length | 750 frames | 1500 frames | **1200 frames** | hop 변화 반영 |
-| **Stage1 학습 파라미터 (projector)** | 18.16M | 18.49M | **18.43M** (512→512) | 거의 동일 |
+| 구성 | DACVAE | Whisper-small.en | WavTokenizer-40 | WavTokenizer-75 | 비고 |
+|------|--------|------------------|-----------------|-----------------|------|
+| Audio encoder (active) | 27.55M | 88.15M | **8.30M** | **8.80M** | 75fps는 ratios 변경으로 소폭 증가 |
+| Tap point | VAE latent `z̃` (post-quant) | `last_hidden_state` | pre-VQ `z_e` | pre-VQ `z_e` | 동일 |
+| Sample rate | 48kHz | 16kHz | **24kHz** | **24kHz** | 동일 |
+| Frame rate (fps) | 25 | 50 | **40** | **75** | hop_length = sample_rate / fps |
+| 30s sequence length | 750 frames | 1500 frames | **1200 frames** | **2250 frames** | 75fps는 Whisper의 1.5배 |
+| **Stage1 학습 파라미터 (projector)** | 18.16M | 18.49M | **18.43M** (512→512) | **18.35M** (512→512) | 거의 동일 |
 
 ---
 
@@ -84,8 +84,8 @@ WavTokenizer 는 다단계 처리:
 
 | 변형 | Frame rate (fps) | Hop (samples @ 24k) | 데이터 도메인 | 비고 |
 |------|------------------|---------------------|--------------|------|
-| large-unify-40token | **40** | **600** | General (150k hours) | **선택됨** |
-| large-speech-75token | 75 | 320 | Speech-only (150k hours) | 향후 ablation |
+| large-unify-40token | **40** | **600** | General (150k hours) | **구현 완료** |
+| large-speech-75token | **75** | **320** | Speech-only (150k hours) | **구현 완료** |
 | small-600-24k-4096 | 40 | 600 | LibriTTS (600h) | 향후 ablation |
 
 **선택 기준**:
@@ -104,7 +104,8 @@ WavTokenizer 는 다단계 처리:
    - 공식 배포됨: [jishengpeng/WavTokenizer](https://github.com/jishengpeng/WavTokenizer)
    - 다운로드 위치: `/mnt/tmp/hf_cache/wavtokenizer/wavtokenizer_large_unify_600_24k.ckpt` (1.7 GB, PyTorch Lightning) — *예시 경로. 본 노드(jos)에는 미존재; 사용 시 직접 download.*
 
-> **상태 (2026-04-30)**: 본 WavTokenizer Stage1 path 는 **미실행 plan** — `convert_to_wavtok.py`, `external/models/Qwen3.5AE-4B-wavtok-*` 모두 본 노드에 없음. DAC-VAE / Whisper-small/tiny 3종 chain 으로 실험 진행했으며 WavTokenizer 는 후속 옵션으로 보류.
+> **상태 (2026-04-26)**: WavTok-40-unify 구현 완료. safetensors 생성, Stage1 학습 중 (100k steps, step ~400+).
+> **상태 (2026-05-08)**: WavTok-75-speech 구현 완료. `novateur/WavTokenizer-large-speech-75token` 다운로드 → `convert_to_wavtok75.py` 실행 → safetensors 생성. yaml/script 준비 완료, 학습 미시작.
 
 ---
 
@@ -112,18 +113,19 @@ WavTokenizer 는 다단계 처리:
 
 ### SEANetEncoder 스펙
 
-| 항목 | 값 |
-|------|-----|
-| Input shape | `[B, 1, S]` (mono waveform) @ 24kHz |
-| Output shape | `[B, 512, T]` where T = S // 600 |
-| Input channels | 1 (mono) |
-| Feature dimension (z_e) | **512** |
-| n_filters (base) | 32 |
-| Downsampling ratios | [6, 5, 5, 4] → total 600× |
-| LSTM layers | 2 |
-| Weight parametrization | `weight_norm` (weight_g + weight_v) |
-| **Active parameters** | **8,301,760 (~8.30M)** |
-| **Encoder keys in ckpt** | 62 keys with `feature_extractor.encodec.encoder.*` prefix |
+| 항목 | WavTok-40-unify | WavTok-75-speech |
+|------|-----------------|------------------|
+| Input shape | `[B, 1, S]` (mono waveform) @ 24kHz | 동일 |
+| Output shape | `[B, 512, T]` where T = S // **600** | `[B, 512, T]` where T = S // **320** |
+| Input channels | 1 (mono) | 동일 |
+| Feature dimension (z_e) | **512** | **512** |
+| n_filters (base) | 32 | 32 |
+| Downsampling ratios | **[6, 5, 5, 4]** → total 600× | **[8, 5, 4, 2]** → total 320× |
+| LSTM layers | 2 | 2 |
+| Weight parametrization | `weight_norm` (weight_g + weight_v) | 동일 |
+| **Active parameters** | **8,301,760 (~8.30M)** | **8,797,568 (~8.80M)** |
+| **Encoder keys in ckpt** | 62 keys | 62 keys |
+| Checkpoint | `wavtokenizer_large_unify_600_24k.ckpt` | `wavtokenizer_large_speech_320_v2.ckpt` |
 
 ### Weight normalization 처리
 
@@ -202,6 +204,8 @@ else:
 
 ## 8. Stage1 yaml 설정
 
+### WavTok-40-unify
+
 ```yaml
 ### model
 model_name_or_path: /path/to/Qwen3.5AE-4B-wavtok-40-unify
@@ -210,30 +214,55 @@ stage: omni  # freezes all except audio_encoder.projector
 ### dataset (WavTok-specific)
 omni_sample_rate: 24000
 omni_hop_length: 600
-omni_max_audio_samples: 1080000  # 45s @ 24kHz
+omni_max_audio_samples: 1080000  # 45s @ 24kHz → 1800 tokens
 
-### train (DAC Stage1 과 동일)
-per_device_train_batch_size: 3
+### train
+per_device_train_batch_size: 4
 learning_rate: 2.0e-4
 max_steps: 100000
 warmup_steps: 1000
+cutoff_len: 3584
 ```
+
+### WavTok-75-speech
+
+```yaml
+### model
+model_name_or_path: /path/to/Qwen3.5AE-4B-wavtok-75-speech
+stage: omni
+
+### dataset (75fps-specific)
+omni_sample_rate: 24000
+omni_hop_length: 320           # 75 fps
+omni_max_audio_samples: 576000 # 24s @ 24kHz → 1800 tokens (75fps × 24s = 40fps × 45s)
+
+### train
+per_device_train_batch_size: 4
+learning_rate: 2.0e-4
+max_steps: 100000
+warmup_steps: 1000
+cutoff_len: 3584
+```
+
+> **Token budget 유지**: 75fps × 24s = 1800 tokens = 40fps × 45s. `omni_max_audio_samples` 를 576000(24s)으로 줄여 LLM sequence length 동일하게 유지.
 
 ---
 
 ## 9. 비교 표: DAC vs Whisper vs WavTok @ 30s
 
-| 항목 | DAC | Whisper-small | WavTok-40-unify | 분석 |
-|------|-----|----------------|-----------------|------|
-| **Encoder** | DACVAE encoder | Whisper encoder (12-layer) | SEANetEncoder | codec, ASR, hybrid |
-| **Encoder params** | 27.55M | 88.15M | **8.30M** ← 가장 가벼움 |
-| **Objective** | Reconstruction (VAE) | Speech recognition | Reconstruction (codec) | codec vs semantic |
-| **Sample rate** | 48kHz | 16kHz | **24kHz** (중간) |
-| **Frame rate** | 25 fps | 50 fps | **40 fps** (중간) |
-| **Tap point** | post-VQ z̃ (128-dim) | last_hidden_state (768-dim) | pre-VQ z_e (512-dim) | unbottlenecked 여부 |
-| **30s → frames** | 750 | 1500 | **1200** |
-| **Projector params** | 18.16M | 18.49M | **18.43M** (512→512) |
-| **Stage1 training** | 기존 | 기존 + yaml 변경 | **기존 + yaml 변경** |
+| 항목 | DAC | Whisper-small | WavTok-40-unify | WavTok-75-speech | 분석 |
+|------|-----|----------------|-----------------|------------------|------|
+| **Encoder** | DACVAE encoder | Whisper encoder (12-layer) | SEANetEncoder | SEANetEncoder | codec, ASR, hybrid |
+| **Encoder params** | 27.55M | 88.15M | **8.30M** | **8.80M** | 75fps는 소폭 증가 |
+| **Objective** | Reconstruction (VAE) | Speech recognition | Reconstruction (codec) | Reconstruction (codec) | codec vs semantic |
+| **Sample rate** | 48kHz | 16kHz | **24kHz** | **24kHz** | 동일 |
+| **Frame rate** | 25 fps | 50 fps | **40 fps** | **75 fps** | 2배 차이 |
+| **Tap point** | post-VQ z̃ (128-dim) | last_hidden_state (768-dim) | pre-VQ z_e (512-dim) | pre-VQ z_e (512-dim) | 동일 |
+| **Downsampling ratios** | — | — | [6,5,5,4] hop=600 | [8,5,4,2] hop=320 | 아키텍처 차이 |
+| **30s → frames** | 750 | 1500 | **1200** | **2250** | 75fps: Whisper의 1.5배 |
+| **Max clip (token budget=1800)** | — | — | 45s | **24s** | 75fps: 짧은 클립 처리 |
+| **Projector params** | 18.16M | 18.49M | **18.43M** (512→512) | **18.35M** (512→512) | 거의 동일 |
+| **Stage1 training** | 기존 | 기존 + yaml 변경 | 학습 중 (~step 400) | **yaml/script 완료, 미시작** | |
 
 ---
 
@@ -308,17 +337,23 @@ WavTokenizer-small-600-24k-4096
 
 **Stage1 실행**: 같은 yaml, model_name_or_path 만 변경.
 
-### 2순위: Large speech-75token variant (다른 frame rate, 같은 데이터)
+### 2순위: Large speech-75token variant (다른 frame rate, 같은 데이터) — **구현 완료**
 
 ```
-WavTokenizer-large-speech-75token
+WavTokenizer-large-speech-75token (novateur/WavTokenizer-large-speech-75token)
 - Frame rate: 75 fps (hop=320 @ 24kHz)
+- Ratios: [8, 5, 4, 2] (WavTok-40의 [6,5,5,4]와 다름)
 - 30s → 2250 frames (vs unify 의 1200)
 - Purpose: Frame rate / LLM sequence length 영향 분석
-- Expected: LLM latency 증가, OOM 위험 상승
+- Token budget 유지: omni_max_audio_samples=576000 (24s) → 75×24=1800 tokens
 ```
 
-**고려사항**: cutoff_len, batch_size 조정 필요.
+**구현 내역**:
+- `Qwen3.5AE-4B-wavtok-75-speech/` 모델 디렉터리 생성
+- `convert_to_wavtok75.py` → safetensors 생성 완료 (encoder 8.80M, projector 18.35M)
+- `configs/ASR/stage1_wavtok_75_speech.yaml` 생성
+- `scripts/ASR/run_stage1_wavtok75.sh` 생성
+- **학습 미시작** (WavTok-40 먼저 진행 중)
 
 ### 3순위: Post-VQ z_q codes (다른 tap point)
 
@@ -352,28 +387,42 @@ MLS + VoxPopuli (16kHz) 를 24kHz 로 resample 해야 함.
 
 ## 13. 작업 체크리스트
 
-### 코드 구현
+### 코드 구현 — WavTok-40-unify
 
 - [x] `wavtokenizer_modules/` 다운로드 + `__init__.py` 수정 (transformer import 제거)
-- [x] `configuration_qwen3_5AE.py` (WavTok fields)
+- [x] `configuration_qwen3_5AE.py` (WavTok fields, fps=40, ratios=[6,5,5,4])
 - [x] `audio_encoder.py` (SEANetEncoder integration)
 - [x] `convert_to_wavtok.py` (weight_norm 병합 포함)
 - [x] `sanity_check.py` (encoder weight 검증)
-- [x] `stage1_wavtok_40_unify.yaml`
+- [x] `configs/ASR/stage1_wavtok_40_unify.yaml`
+- [x] `scripts/ASR/run_stage1_wavtok.sh`
 
-### Verification
+### 코드 구현 — WavTok-75-speech
 
-- [ ] `convert_to_wavtok.py --dry-run` 실행
-- [ ] Convert 후 `sanity_check.py` 실행
-- [ ] Forward shape assertion 통과
+- [x] `Qwen3.5AE-4B-wavtok-75-speech/configuration_qwen3_5AE.py` (fps=75, ratios=[8,5,4,2], hop=320)
+- [x] `Qwen3.5AE-4B-wavtok-75-speech/convert_to_wavtok75.py`
+- [x] safetensors 생성 완료 (encoder 8.80M, projector 18.35M, LM 4.21B)
+- [x] `configs/ASR/stage1_wavtok_75_speech.yaml`
+- [x] `scripts/ASR/run_stage1_wavtok75.sh`
+
+### Verification — WavTok-40-unify
+
+- [x] Convert → safetensors 생성 완료
+- [x] Forward shape 확인 (72000 // 600 = 120 frames → projector (1, 120, 2560))
+- [x] Stage1 학습 진행 중 (~step 400)
+- [ ] Loss curve 수렴 확인 (100k steps)
+
+### Verification — WavTok-75-speech
+
+- [x] `convert_to_wavtok75.py` 실행 성공 (strict=True, 62 encoder keys)
+- [ ] Forward shape assertion (S // 320 = T frames)
 - [ ] Stage1 dry-run (5 steps)
-- [ ] 첫 100 step smoke run → loss non-NaN, grad stable
+- [ ] 본 학습 시작
 
 ### 본 학습 (100k steps)
 
-- [ ] WandB 모니터링
-- [ ] Checkpoint 저장 (1000 step 마다)
-- [ ] Loss curve 수렴 확인
+- [ ] WavTok-40: WandB 모니터링, checkpoint 1000 step 마다, loss 수렴 확인
+- [ ] WavTok-75: 학습 시작 후 동일 모니터링
 
 ---
 
@@ -381,6 +430,9 @@ MLS + VoxPopuli (16kHz) 를 24kHz 로 resample 해야 함.
 
 - **WavTokenizer repo**: https://github.com/jishengpeng/WavTokenizer
 - **Paper**: "WavTokenizer: An Efficient Acoustic Discrete Codec Tokenizer for Audio Language Models"
-- **Checkpoint path**: `/mnt/tmp/hf_cache/wavtokenizer/wavtokenizer_large_unify_600_24k.ckpt`
+- **Checkpoint (40fps)**: `/mnt/tmp/hf_cache/wavtokenizer/wavtokenizer_large_unify_600_24k.ckpt` (1.7 GB, PyTorch Lightning)
+- **Checkpoint (75fps)**: `/mnt/tmp/hf_cache/wavtokenizer/WavTokenizer-large-speech-75token/wavtokenizer_large_speech_320_v2.ckpt` (HF: `novateur/WavTokenizer-large-speech-75token`)
+- **Model dir (40fps)**: `external/models/Qwen3.5AE-4B-wavtok-40-unify/`
+- **Model dir (75fps)**: `external/models/Qwen3.5AE-4B-wavtok-75-speech/`
 - **DAC reference**: Existing `Qwen3.5AE-4B` variant (DAC encoder)
 - **Whisper reference**: Existing `Qwen3.5AE-4B-whisper-tiny/small` variants
