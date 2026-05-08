@@ -82,11 +82,18 @@ WavTokenizer 는 다단계 처리:
 
 **WavTokenizer 는 여러 변형 배포** (frame rate, 데이터 도메인):
 
-| 변형 | Frame rate (fps) | Hop (samples @ 24k) | 데이터 도메인 | 비고 |
-|------|------------------|---------------------|--------------|------|
-| large-unify-40token | **40** | **600** | General (150k hours) | **구현 완료** |
-| large-speech-75token | **75** | **320** | Speech-only (150k hours) | **구현 완료** |
-| small-600-24k-4096 | 40 | 600 | LibriTTS (600h) | 향후 ablation |
+| 변형 | Frame rate (fps) | Hop (samples @ 24k) | 데이터 도메인 | 학습량 | 비고 |
+|------|------------------|---------------------|--------------|--------|------|
+| large-unify-40token | **40** | **600** | Speech + Audio + Music (General) | 150k h | **구현 완료** |
+| large-speech-75token | **75** | **320** | Speech + Audio + Music | **80k h** | **구현 완료** |
+| small-600-24k-4096 | 40 | 600 | LibriTTS (600h) | 600h | 향후 ablation |
+
+> **주의 — HF 이름 오해 소지**: `novateur/WavTokenizer-large-speech-75token` 이름의 "speech"는 speech-only를 의미하지 **않는다**.
+> GitHub README 표(WavTokenizer-large-320-24k-4096 행) 의 Domain 컬럼은 **"Speech, Audio, Music"** 으로 명시되어 있으며,
+> 이는 40fps unify와 동일한 멀티도메인 데이터로 학습된 것. 다만 학습량이 150k h → **80k h 로 적음**.
+> HuggingFace 모델 카드에는 학습 데이터 상세가 없으므로, GitHub README가 권위 있는 출처.
+>
+> **Ablation 설계 시사점**: 40fps vs 75fps 비교에서 domain confound는 없지만, **데이터 규모 차이(150k vs 80k h)** 는 confound로 남음.
 
 **선택 기준**:
 
