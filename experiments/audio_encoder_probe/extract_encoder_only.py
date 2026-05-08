@@ -9,7 +9,8 @@ For each (encoder_type, dataset) pair:
 
 Encoders:
   whisper_small : openai/whisper-small.en encoder (768-d, 50 fps, 16 kHz)
-  dacvae        : Stage1 ckpt's audio_encoder.encoder (DACVAE z_e: 128-d, 25 fps, 48 kHz)
+  dacvae        : Stage1 ckpt's audio_encoder.encoder (DACVAE VAE-sampled z: 128-d, 25 fps, 48 kHz)
+  dacvae_prevq  : same ckpt, raw CNN encoder output before VAE bottleneck (z_e: 1024-d, 25 fps, 48 kHz)
 
 Usage:
   python extract_encoder_only.py --encoder whisper_small --manifest manifests/iemocap_4class.csv \
@@ -72,6 +73,16 @@ ENCODER_CFG = {
         "max_samples": None,
         "base_model_dir": REPO / "external/ckpts/Qwen3.5AE-4B-dacvae_ASR-Stage1",
         "embed_dim": 128,
+    },
+    "dacvae_prevq": {
+        # Raw CNN encoder output before the VAE bottleneck (in_proj / reparameterization).
+        # z_e = DACVAE.encoder(audio) → [B, 1024, T]; no quantization of any kind.
+        "sample_rate": 48000,
+        "hop_length": 1920,
+        "max_frames": None,
+        "max_samples": None,
+        "base_model_dir": REPO / "external/ckpts/Qwen3.5AE-4B-dacvae_ASR-Stage1",
+        "embed_dim": 1024,
     },
     "wavtok_40_unify": {
         "sample_rate": 24000,
@@ -253,7 +264,7 @@ def load_encoder(encoder_type: str, device: str, dtype=torch.bfloat16):
         torch.cuda.empty_cache()
         return encoder
 
-    if encoder_type in ("dacvae", "wavtok_40_unify", "encodec_24k"):
+    if encoder_type in ("dacvae", "dacvae_prevq", "wavtok_40_unify", "encodec_24k"):
         from transformers import AutoModelForCausalLM
         base = str(cfg["base_model_dir"])
         logger.info(f"Loading model for {encoder_type} encoder: {base}")
@@ -306,13 +317,19 @@ def encode_batch(encoder, encoder_type: str, audio_batch: torch.Tensor,
             out = encoder(audio_batch)
         h = out.last_hidden_state  # (B, 1500, d)
     elif encoder_type == "dacvae":
-        # DACVAE.encode expects (B, 1, S); returns z_e: (B, D, T)
+        # DACVAE.encode: (B,1,S) → VAE-sampled z (B, 128, T)
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 z = encoder.encode(audio_batch)
         if isinstance(z, tuple):
             z = z[0]
-        h = z.transpose(1, 2)  # (B, T, D)
+        h = z.transpose(1, 2)  # (B, T, 128)
+    elif encoder_type == "dacvae_prevq":
+        # Raw CNN encoder output before VAE bottleneck: z_e (B, 1024, T)
+        with torch.no_grad():
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                z_e = encoder.encoder(encoder._pad(audio_batch))
+        h = z_e.transpose(1, 2).float()  # (B, T, 1024)
     elif encoder_type in ("wavtok_40_unify", "encodec_24k"):
         # SEANet / EnCodec encoder.forward expects (B, 1, S); returns (B, D, T)
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):

@@ -83,14 +83,15 @@ def load_split(encoder: str, dataset: str):
 
 
 def probe_fold(X_train, y_train, X_test, y_test, C: float, scaler: bool = True,
-               max_iter: int = 5000, seed: int = 42):
+               max_iter: int = 1000, seed: int = 42):
     if scaler:
         sc = StandardScaler()
         X_train = sc.fit_transform(X_train)
         X_test = sc.transform(X_test)
+    # saga: stochastic gradient — much faster for large n or high-d
     clf = LogisticRegression(
-        C=C, penalty="l2", solver="lbfgs",
-        max_iter=max_iter, n_jobs=-1, random_state=seed,
+        C=C, solver="saga",
+        max_iter=max_iter, random_state=seed,
     )
     clf.fit(X_train, y_train)
     pred = clf.predict(X_test)

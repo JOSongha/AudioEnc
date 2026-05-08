@@ -36,10 +36,12 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 LABEL_COL = {"iemocap_4class": "emotion", "ravdess": "emotion",
              "cremad": "emotion", "esc50": "label",
-             "gtzan": "label", "nsynth_train_30k": "label", "nsynth_test": "label"}
+             "gtzan": "label", "nsynth_train_30k": "label", "nsynth_test": "label",
+             "medley_solos": "label"}
 FOLD_COL = {"iemocap_4class": "session", "ravdess": "fold",
             "cremad": "fold", "esc50": "fold",
-            "gtzan": "fold", "nsynth_train_30k": "fold", "nsynth_test": "fold"}
+            "gtzan": "fold", "nsynth_train_30k": "fold", "nsynth_test": "fold",
+            "medley_solos": "fold"}
 
 
 def main():
@@ -80,7 +82,7 @@ def main():
         tr = fold != f; te = fold == f
         sc = StandardScaler()
         Xtr = sc.fit_transform(X[tr]); Xte = sc.transform(X[te])
-        clf = LogisticRegression(C=args.C, max_iter=5000, random_state=42).fit(Xtr, y[tr])
+        clf = LogisticRegression(C=args.C, solver="saga", max_iter=1000, random_state=42).fit(Xtr, y[tr])
         pred_idx[te] = clf.predict(Xte)
         proba = clf.predict_proba(Xte)
         proba_max[te] = proba.max(axis=1)
