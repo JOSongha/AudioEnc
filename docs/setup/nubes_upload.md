@@ -160,6 +160,7 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 | **DailyTalk** | **23,773** utt (= 23,773 wav, 통째로 학습 — leak-fix 폐기) | 23,773 wav | **2,541** wav (모두 0 byte placeholder, **사실상 부재**) | **✓ 23,773 utt** | n/a | ⏳ § 12.11 | nubes `/DailyTalk/audio/` 의 wav 모두 0 byte placeholder. utterance 단위 audio + metadata 신규 업로드 진행 중 (`/users/jos/AudioEnc/DailyTalk/`, ~6.6 GB). v6 룰: canonical split 없음 + leak-fix 폐기 → 23,773 모두 학습 풀, eval held-out 없음 |
 | **IEMOCAP** | 5,882 (Sessions 1-4) | 10,190 (utterance 10,039 + dialog wav 151) | 10,039 utterance wav (session 통합) | **✓ done** | ✓ | ✓ 2026-05-07 § 12.4 | **v6 룰 예외**: 학계 관행 leave-session-out 유지. 옵션 A 결정 (session-aware 1.4 GB) → `/users/jos/AudioEnc/IEMOCAP/` 업로드 완료 (10,039 wav + 151 EmoEval txt + 151 transcripts txt + Sub-dirs Attribute/Categorical/Self-evaluation + README). 2분 24초. 모든 검증 ✓ |
 | Clotho-v2 | 4,881 (dev+val) | 4,881 | dev 3,839 + eval 1,045 + val 1,045 (모두 별도 subdir) | ✓ done | ✓ | ✓ 2026-05-08 § 12.12 | 2026-05-08 업로드 완료. `audio_evaluation/` (1,045 wav, ~2.0 GB) + `audio_validation/` (1,045 wav, ~2.0 GB) 별도 subdir + `clotho_captions_evaluation.csv` (361,995 B) + `clotho_captions_validation.csv` (367,649 B). dev/eval/val 파일명 충돌 4건 (dev∩eval=1, dev∩val=1, eval∩val=2) 회피 위해 split 별 subdir 분리. v6 학습 (dev+val) + Stage-2 eval (evaluation only) 모두 nubes-direct 가능 |
+| **LAION-Freesound** | **460,141** | 460,141 flac (`/mnt/tmp/datasets/laion_extracted/freesound/`) | nubes `/datasets/public/Freesound/audio/` 는 **다른 dump** (검증 완료) | **✗ 매핑 불가** | n/a | — | 2026-05-08 200-sample ID 매칭 검증: 80 hit / 120 miss (60% 부재) + 80 hit 의 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB). 같은 ID 라도 다른 encoding/quality 의 별도 source. LAION-Audio-630k subset 매핑 불가. **선택지**: (a) audio_path local fallback 그대로 유지 (현재 학습 정상), (b) LAION 본 (~607 GB) 별도 업로드. Stage-1 학습 영향 없음 (a) |
 
 ### 9.4 누락 / 거의 비어 있음 (✗)
 
@@ -230,8 +231,9 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 
 - ✓ 정확 일치 (5): MLS, VoxPopuli, ESC-50, LAION-Epidemic, FSD50K(dev)
 - ✓ Nubes broader (5): MELD, LAION-Audiostock, AudioSet, MACS, LibriSpeech (eval-only, 모든 split)
-- ✓ 업로드 완료 (9): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12)
-- ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder)
+- ✓ 업로드 완료 (10): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14)
+- ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder — § 12.11 utterance wav 신규 업로드 완료, 갱신 검토 필요)
+- ✗ 매핑 불가 (1): LAION-Freesound (nubes `/Freesound/` 는 다른 dump — 200-sample 검증 시 60% miss + size 불일치, § 9.3). audio_path local fallback 정상
 - ✓ Sampling 검증 (2): LibriTTS-R train-clean-360 (904 spk 표준 매칭), train-other-500 (1,160 spk 표준 매칭) — § 9.5
 - ✓ 우회 검증 (1): GigaSpeech XL train (v6 manifest 4.13M row build 통과 + sample HEAD 200) — § 9.6
 - ⚠ Speaker / 부족 (1): LibriTTS-R train-clean-100 (200 spk vs 표준 247)
@@ -256,6 +258,8 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 - 2026-05-08 (Clotho-v2 eval+val 업로드): § 12.12 신규 + § 9.3 Clotho-v2 행 갱신 + § 9.6 leak 표 ✓ 안전 + § 9.8 종합 결론 업로드 완료 8 → 9, "Speaker / 부족 (2)" → "(1)" (Clotho-v2 제거), "즉시 보완" 5번 완료 마킹. `clotho_captions_evaluation.csv` (361,995 B) + `clotho_captions_validation.csv` (367,649 B) + `audio_evaluation/` 1,045 wav (~2.0 GB) + `audio_validation/` 1,045 wav (~2.0 GB) 4 파일/디렉토리 업로드, dev/eval/val 파일명 충돌 4건 회피 위해 split 별 subdir (`audio_evaluation/`, `audio_validation/`) 분리. nubes listing 검증 완료. § 2 sound captioning 표의 Clotho 행도 신규 dir / csv 반영 갱신.
 - 2026-05-08 (LibriTTS-R 360/500 sampling 검증): § 9.5 train-clean-360 / train-other-500 의 timeout 행 검증 완료. 20-speaker random sample 추출 → 360: 904 spk (LibriTTS-R 표준 정확), avg 132 utt/spk → extrapolated 119,328 (target 116,454, +2.5% sampling noise). 500: 1,160 spk (표준 정확), avg 189.1 utt/spk → extrapolated 219,298 (target 205,035, +7% sampling noise). speaker 표준 매칭 + utt ±10% 내 → nubes broader. 추가 업로드 불필요. § 9.5 / § 9.8 / § 즉시 보완 필요 갱신.
 - 2026-05-08 (MACS yaml nubes backup, 옵션 C): MACS audio 는 nubes `/datasets/public/MACS/audio/` (TAU2019 source `a` 14,400) 의 3,930 사용 — audio 중복 업로드 안 함. 대신 `MACS.yaml` (2.7 MB, 3,930 entry caption metadata) 만 `/users/jos/AudioEnc/MACS/MACS.yaml` 에 backup 업로드 (§ 12.8). [`build_macs.py`](../../scripts/manifest_builders/build_macs.py) 갱신: `_fetch_yaml()` 가 nubes URL 우선 fetch + `MACS_YAML_LOCAL` env var fallback (ddn 도 사용 가능). 완전 nubes-only 동작 가능. smoke test 통과 (3,930 entry / captions). § 9.2 MACS 행 / § 3 MACS 행 / § 9.8 종합 결론 의 "✓ 업로드 완료" 카테고리 (3 → 8) / "즉시 보완 필요" 항목 갱신 (EmoV-DB / RAVDESS / IEMOCAP / AudioSet 모두 완료 표기 + AudioCaps + eval 4종 만 미완으로 정정). § 9.8 v6 grand total 변동 없음 (yaml 만 추가, audio 는 표준 영역 그대로 인용).
+- 2026-05-08 (MELD audio wav 사용자 영역 업로드, § 12.14): § 12.10 의 nubes public mp3 (`/MELD.Raw/<split>/*.mp3`) 가 multi-worker dataloader 환경에서 libsndfile 디코드 inconsistent (Format not recognised) — v6 stage1 학습 시 11k MELD row 모두 skip. wav 본을 `/users/jos/AudioEnc/MELD/audio/{train,dev,test}/` 에 직접 업로드 (13,847 wav, ~1.4 GB, 17분). build_emotion_meld.py / rewrite_audio_paths_nubes.py / eval_source_emotion.py 갱신해서 nubes_path 가 wav 가리킴. omni_dataset.py / audio_io.py 의 ffmpeg fallback 코드 revert (mp3 안 쓰니 불필요). § 9.8 종합 결론 "✓ 업로드 완료" 9 → 10. v6_nubes 재빌드 후 학습 정상 (MELD 11k row 모두 wav nubes-direct).
+- 2026-05-08 (LAION-Freesound § 9 누락 보완 + 매핑 검증): § 9 의 어느 카테고리에도 없던 LAION-Freesound (460,141 row) 를 § 9.3 행에 추가. **200-sample ID 매칭 검증 결과 매핑 불가 확인**: 80 hit / 120 miss (60% 부재), 80 hit 도 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB) — nubes `/datasets/public/Freesound/audio/` 는 다른 encoding/quality 의 별도 dump. § 9.8 종합 결론 에 "✗ 매핑 불가 (1): LAION-Freesound" 카테고리 추가. Stage-1 학습은 audio_path local fallback 으로 정상 동작. LAION 본 (607 GB) 별도 업로드는 보류.
 
 ## 11. Nubes Guide
 
@@ -1602,4 +1606,44 @@ nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/MELD/audio/test/ \
 **검증**: 업로드 완료 후 추가 (count + 샘플 wav HEAD).
 
 **Side effect on § 12.13 #6 (mp3 디코드 인프라)**: 더 이상 필요 없음 — § 12.13 의 fallback chain 설명 obsolete. 현재 v6 stage1 / Stage-2 eval 모두 wav 만 사용. § 12.13 #6 은 "이전 시도 (deprecated)" 로 마크 하거나 삭제.
+
+### 12.15 LAION-Freesound (audio + meta csv) — 진행 중 2026-05-08
+
+**상태**: 진행 중 (2026-05-08 08:04 시작). csv + README 완료, audio 460k flac 업로드 중 (~60min ETA).
+
+**대상**: LAION-Freesound 460,141 flac + metadata.
+- `audio/` 460,141 flac (~607 GB, `/mnt/tmp/datasets/laion_extracted/freesound/`)
+- `freesound_meta.csv` (105 MB)
+- `freesound_no_overlap_meta.csv` (94 MB)
+- `README.md`
+
+**동기 (§ 9.3 매핑 검증 결과)**: nubes 의 `/datasets/public/Freesound/audio/` 가 LAION subset 인 줄 알았으나 200-sample ID 매칭 검증 결과 다른 dump 임 확인 (60% miss + 80 hit 중 size 0건 일치). Stage-1 학습은 audio_path local fallback 으로 정상 동작했으나 nubes-direct 화 위해 LAION 본을 사용자 영역에 직접 업로드.
+
+**명령**:
+```bash
+nubescli upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/freesound_meta.csv \
+    /mnt/tmp/datasets/laion_freesound/freesound_meta.csv
+nubescli upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/freesound_no_overlap_meta.csv \
+    /mnt/tmp/datasets/laion_freesound/freesound_no_overlap_meta.csv
+nubescli upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/README.md \
+    /mnt/tmp/datasets/laion_freesound/README.md
+nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/ \
+    /mnt/tmp/datasets/laion_extracted/freesound/ -j 16
+```
+
+**예상 후속 (audio 업로드 완료 후)**:
+1. [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py) `PREFIX_MAPPINGS` 에 매핑 추가:
+   ```python
+   "laion_freesound": (
+       "/mnt/tmp/datasets/laion_extracted/freesound/",
+       "hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/",
+   ),
+   ```
+2. v6_nubes 재빌드 → laion_freesound 460k row 가 nubes_path 박힘 (현재 100% local → 100% nubes-mapped)
+3. 학습은 다음 launch 시 자동 적용 (현재 학습 영향 X, 진행 중 학습은 local fallback 으로 정상)
+4. § 9.3 LAION-Freesound 행 갱신: ⚠ 매핑 불가 → ✓ done
+5. § 9.8 종합 결론: "✗ 매핑 불가 (1)" 카테고리 제거, "✓ 업로드 완료 (10 → 11)" 추가
+6. § 12.15 검증 표 추가 (count, sample HEAD)
+
+**검증**: 업로드 완료 후 작성 (count + sample HEAD).
 
