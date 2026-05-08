@@ -160,7 +160,7 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 | **DailyTalk** | **23,773** utt (= 23,773 wav, 통째로 학습 — leak-fix 폐기) | 23,773 wav | **2,541** wav (모두 0 byte placeholder, **사실상 부재**) | **✓ 23,773 utt** | n/a | ⏳ § 12.11 | nubes `/DailyTalk/audio/` 의 wav 모두 0 byte placeholder. utterance 단위 audio + metadata 신규 업로드 진행 중 (`/users/jos/AudioEnc/DailyTalk/`, ~6.6 GB). v6 룰: canonical split 없음 + leak-fix 폐기 → 23,773 모두 학습 풀, eval held-out 없음 |
 | **IEMOCAP** | 5,882 (Sessions 1-4) | 10,190 (utterance 10,039 + dialog wav 151) | 10,039 utterance wav (session 통합) | **✓ done** | ✓ | ✓ 2026-05-07 § 12.4 | **v6 룰 예외**: 학계 관행 leave-session-out 유지. 옵션 A 결정 (session-aware 1.4 GB) → `/users/jos/AudioEnc/IEMOCAP/` 업로드 완료 (10,039 wav + 151 EmoEval txt + 151 transcripts txt + Sub-dirs Attribute/Categorical/Self-evaluation + README). 2분 24초. 모든 검증 ✓ |
 | Clotho-v2 | 4,881 (dev+val) | 4,881 | dev 3,839 + eval 1,045 + val 1,045 (모두 별도 subdir) | ✓ done | ✓ | ✓ 2026-05-08 § 12.12 | 2026-05-08 업로드 완료. `audio_evaluation/` (1,045 wav, ~2.0 GB) + `audio_validation/` (1,045 wav, ~2.0 GB) 별도 subdir + `clotho_captions_evaluation.csv` (361,995 B) + `clotho_captions_validation.csv` (367,649 B). dev/eval/val 파일명 충돌 4건 (dev∩eval=1, dev∩val=1, eval∩val=2) 회피 위해 split 별 subdir 분리. v6 학습 (dev+val) + Stage-2 eval (evaluation only) 모두 nubes-direct 가능 |
-| **LAION-Freesound** | **460,141** | 460,141 flac (`/mnt/tmp/datasets/laion_extracted/freesound/`) | nubes `/datasets/public/Freesound/audio/` 는 **다른 dump** (검증 완료) | **✗ 매핑 불가** | n/a | — | 2026-05-08 200-sample ID 매칭 검증: 80 hit / 120 miss (60% 부재) + 80 hit 의 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB). 같은 ID 라도 다른 encoding/quality 의 별도 source. LAION-Audio-630k subset 매핑 불가. **선택지**: (a) audio_path local fallback 그대로 유지 (현재 학습 정상), (b) LAION 본 (~607 GB) 별도 업로드. Stage-1 학습 영향 없음 (a) |
+| **LAION-Freesound** | **460,141** | 460,141 flac (`/users/jos/AudioEnc/LAION-Freesound/audio/`) | ✓ 사용자 영역 신규 업로드 (nubes `/datasets/public/Freesound/audio/` 는 다른 dump 라 매핑 불가) | ✓ done | n/a | ✓ 2026-05-08 § 12.15 | 200-sample ID 매칭 검증 (60% miss + size 0건 일치) 후 LAION 본 (~607 GB) 사용자 영역 직접 업로드. PREFIX_MAPPINGS 매핑 추가, v6_nubes_full (별도 dir) 100% nubes-mapped 검증. live v6_nubes swap 은 audio 업로드 진행 중 (~7-8h) 완료 후 |
 
 ### 9.4 누락 / 거의 비어 있음 (✗)
 
@@ -231,9 +231,8 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 
 - ✓ 정확 일치 (5): MLS, VoxPopuli, ESC-50, LAION-Epidemic, FSD50K(dev)
 - ✓ Nubes broader (5): MELD, LAION-Audiostock, AudioSet, MACS, LibriSpeech (eval-only, 모든 split)
-- ✓ 업로드 완료 (10): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14)
+- ✓ 업로드 완료 (11): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14), LAION-Freesound (§ 12.15, audio dir-upload ~7-8h 진행 중 — code/manifest 측 완료)
 - ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder — § 12.11 utterance wav 신규 업로드 완료, 갱신 검토 필요)
-- ✗ 매핑 불가 (1): LAION-Freesound (nubes `/Freesound/` 는 다른 dump — 200-sample 검증 시 60% miss + size 불일치, § 9.3). audio_path local fallback 정상
 - ✓ Sampling 검증 (2): LibriTTS-R train-clean-360 (904 spk 표준 매칭), train-other-500 (1,160 spk 표준 매칭) — § 9.5
 - ✓ 우회 검증 (1): GigaSpeech XL train (v6 manifest 4.13M row build 통과 + sample HEAD 200) — § 9.6
 - ⚠ Speaker / 부족 (1): LibriTTS-R train-clean-100 (200 spk vs 표준 247)

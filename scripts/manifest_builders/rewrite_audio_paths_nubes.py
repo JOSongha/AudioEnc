@@ -116,12 +116,14 @@ PREFIX_MAPPINGS: dict[
         "/mnt/tmp/datasets/laion_extracted/audiocaps/",
         "hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/audio/",
     ),
+    "laion_freesound": (
+        "/mnt/tmp/datasets/laion_extracted/freesound/",
+        "hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/",
+    ),
     # === 빌더가 처음부터 nubes_path 박음 (rewrite 불필요) ===
     "laion_audiostock": None,  # build_audiostock.py nubes-direct
     "macs": None,              # build_macs.py nubes-direct
     "meld": None,              # build_emotion_meld.py nubes-direct (wav)
-    # === 미매핑: nubes 부재 (audio_path local fallback) ===
-    "laion_freesound": None,   # nubes 매핑 미확인 (§ 5)
 }
 
 
