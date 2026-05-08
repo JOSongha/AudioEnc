@@ -22,6 +22,15 @@ mkdir -p "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH" "$HF_HOME" "$WANDB_DIR" "$TMPDIR
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=1800
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# whisper-tiny.en/processor_config.json doesn't exist on HF Hub. Anonymous
+# tier returns 401 (rate-limit) and even with HF_TOKEN the workers' subprocess
+# env still hits the network and crashes. Force offline mode — the v5 cache at
+# /mnt/tmp/cache/huggingface/hub/models--openai--whisper-tiny.en/ has the
+# files we actually need (model + feature_extractor) and the .no_exist
+# sentinel for the missing processor_config.json. v5 ran 12.6k steps from
+# this same cache before crashing on a transient online 401.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
 # CUDA libs from env site-packages
 NVIDIA_LIBS=$ENV_PREFIX/lib/python*/site-packages/nvidia

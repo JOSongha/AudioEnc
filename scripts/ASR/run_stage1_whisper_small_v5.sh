@@ -22,6 +22,10 @@ mkdir -p "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH" "$HF_HOME" "$WANDB_DIR" "$TMPDIR
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=1800
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# whisper processor_config.json 부재 → anonymous tier 401 → dataloader worker
+# crash. token 으로도 안 풀림. cache 만 사용 강제.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
 # CUDA libs from env site-packages
 NVIDIA_LIBS=$ENV_PREFIX/lib/python*/site-packages/nvidia
