@@ -51,32 +51,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Callable, Optional
 
-# MELD: local /MELD/audio/{train,dev,test}/<stem>.wav → nubes /MELD.Raw/<split>_*/<stem>.mp3
-# split rename + extension swap so 단순 prefix swap 으로 표현 불가 → callable transform.
-_MELD_LOCAL_PREFIX = "/mnt/tmp/datasets/emotion_raw/MELD/audio/"
-_MELD_NUBES_PREFIX = "hyperscaleai-audiollm/datasets/public/MELD.Raw"
-_MELD_SPLIT_MAP = {
-    "train": "train_splits",
-    "dev": "dev_splits_complete",
-    "test": "output_repeated_splits_test",
-}
-
-
-def _meld_transform(audio_path: str) -> Optional[str]:
-    if not audio_path.startswith(_MELD_LOCAL_PREFIX):
-        return None
-    rest = audio_path[len(_MELD_LOCAL_PREFIX):]
-    parts = rest.split("/", 1)
-    if len(parts) != 2:
-        return None
-    split, fname = parts
-    nubes_split = _MELD_SPLIT_MAP.get(split)
-    if not nubes_split:
-        return None
-    stem = fname[:-4] if fname.endswith(".wav") else fname
-    return f"{_MELD_NUBES_PREFIX}/{nubes_split}/{stem}.mp3"
-
-
 # Mapping types:
 #   None                  → skip-unmapped
 #   (local, nubes)        → single prefix swap (legacy)
@@ -133,8 +107,6 @@ PREFIX_MAPPINGS: dict[
         "/mnt/tmp/datasets/laion_extracted/epidemic/",
         "hyperscaleai-audiollm/datasets/public/LAION-Audio-630k/epidemic_sound_effects/audio/",
     ),
-    # === callable transform (split rename + extension swap 등) ===
-    "meld": _meld_transform,
     # === DailyTalk / AudioCaps (2026-05-08 업로드 완료, § 12.11 / § 12.9) ===
     "dailytalk": (
         "/mnt/tmp/datasets/emotion_raw/DailyTalk/dailytalk/data/",
@@ -147,6 +119,7 @@ PREFIX_MAPPINGS: dict[
     # === 빌더가 처음부터 nubes_path 박음 (rewrite 불필요) ===
     "laion_audiostock": None,  # build_audiostock.py nubes-direct
     "macs": None,              # build_macs.py nubes-direct
+    "meld": None,              # build_emotion_meld.py nubes-direct (wav)
     # === 미매핑: nubes 부재 (audio_path local fallback) ===
     "laion_freesound": None,   # nubes 매핑 미확인 (§ 5)
 }

@@ -76,18 +76,61 @@ MAX_NEW_TOKENS = 96  # letter + optional rationale (training target may include 
 
 
 def load_meld_test() -> list[dict]:
-    csvp = RAW / "MELD" / "MELD.Raw" / "test_sent_emo.csv"
-    audio_dir = RAW / "MELD" / "audio" / "test"
-    df = pd.read_csv(csvp)
+    """Load MELD test split (nubes-direct, v6 룰).
+
+    csv: nubes /users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv
+    audio: nubes /users/jos/AudioEnc/MELD/audio/test/dia<N>_utt<M>.wav
+
+    Returns rows with `path` set to the nubes_path (not a local file path).
+    The eval harness should be nubes-aware (download via gateway) when running
+    on this loader. Set env `MELD_LOCAL_FALLBACK=1` to use the legacy ddn paths
+    for backward compat (if `/mnt/tmp/datasets/emotion_raw/MELD/` is still on
+    disk).
+    """
+    import io
+    import os as _os
+    import urllib.request
+
+    if _os.environ.get("MELD_LOCAL_FALLBACK"):
+        # Legacy ddn path (v5 까지 동작) — `/mnt/tmp/datasets/emotion_raw/MELD/...`.
+        csvp = RAW / "MELD" / "MELD.Raw" / "test_sent_emo.csv"
+        audio_dir = RAW / "MELD" / "audio" / "test"
+        df = pd.read_csv(csvp)
+        rows = []
+        for _, r in df.iterrows():
+            stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
+            ap = audio_dir / f"{stem}.wav"
+            if not ap.exists():
+                continue
+            rows.append({
+                "id": stem,
+                "path": str(ap),
+                "label": str(r["Emotion"]).strip().lower(),
+                "utterance": str(r["Utterance"]),
+            })
+        return rows
+
+    # nubes-direct (v6).
+    NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
+    BUCKET = "hyperscaleai-audiollm"
+    CSV_PATH = "users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv"
+    AUDIO_PREFIX = f"{BUCKET}/users/jos/AudioEnc/MELD/audio/test"
+
+    url = f"{NUBES_GATEWAY}/{BUCKET}/{CSV_PATH}"
+    with urllib.request.urlopen(url, timeout=60) as r:
+        csv_text = r.read().decode("utf-8")
+    df = pd.read_csv(io.StringIO(csv_text))
+
     rows = []
     for _, r in df.iterrows():
-        stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
-        ap = audio_dir / f"{stem}.wav"
-        if not ap.exists():
+        try:
+            stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
+        except (KeyError, ValueError):
             continue
+        nubes_path = f"{AUDIO_PREFIX}/{stem}.wav"
         rows.append({
             "id": stem,
-            "path": str(ap),
+            "path": nubes_path,
             "label": str(r["Emotion"]).strip().lower(),
             "utterance": str(r["Utterance"]),
         })
@@ -131,8 +174,84 @@ def parse_letter(text: str, n_choices: int) -> str | None:
     return None
 
 
+_NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
+
+
+def _torchaudio_load(path_or_buf, file_ext: str | None = None):
+    """torchaudio.load wrapper with mp3-aware backend fallback.
+
+    soundfile (libsndfile) 가 mp3 미지원이라 mp3 는 별도 fallback chain:
+      1. torchaudio ffmpeg backend (built-in 이면 가장 빠름)
+      2. pyav (av) — 이미 설치된 env 면 우선
+      3. ffmpeg subprocess — 시스템 ffmpeg 있으면 마지막 fallback
+    """
+    if file_ext != "mp3":
+        return torchaudio.load(path_or_buf)
+
+    # 1. torchaudio ffmpeg backend
+    try:
+        if "ffmpeg" in torchaudio.list_audio_backends():
+            return torchaudio.load(path_or_buf, backend="ffmpeg")
+    except Exception:
+        pass
+
+    # 2. pyav fallback
+    import io as _io
+    if isinstance(path_or_buf, str):
+        with open(path_or_buf, "rb") as f:
+            buf = _io.BytesIO(f.read())
+    else:
+        buf = path_or_buf
+        buf.seek(0)
+    try:
+        import av
+        import numpy as np
+        with av.open(buf) as container:
+            stream = container.streams.audio[0]
+            sr = stream.rate
+            frames = []
+            for frame in container.decode(stream):
+                frames.append(frame.to_ndarray())
+            arr = np.concatenate(frames, axis=-1)
+        if arr.dtype.kind == "i":
+            wav_t = torch.from_numpy(arr).float() / float(2 ** (arr.dtype.itemsize * 8 - 1))
+        else:
+            wav_t = torch.from_numpy(arr).float()
+        if wav_t.dim() == 1:
+            wav_t = wav_t.unsqueeze(0)
+        return wav_t, sr
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 3. ffmpeg subprocess fallback
+    import subprocess
+    if isinstance(path_or_buf, str):
+        cmd = ["ffmpeg", "-i", path_or_buf, "-f", "wav", "-ac", "1", "pipe:1"]
+        proc = subprocess.run(cmd, capture_output=True, check=True)
+    else:
+        path_or_buf.seek(0)
+        cmd = ["ffmpeg", "-i", "pipe:0", "-f", "wav", "-ac", "1", "pipe:1"]
+        proc = subprocess.run(cmd, input=path_or_buf.read(), capture_output=True, check=True)
+    return torchaudio.load(_io.BytesIO(proc.stdout))
+
+
 def decode_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    wav, sr = torchaudio.load(path)
+    """Decode audio. Path may be a local file or a nubes_path
+    (`<bucket>/<key>`) — auto-routed via gateway HTTP fetch when prefix
+    matches `hyperscaleai-audiollm/`. mp3 detection by extension.
+    """
+    file_ext = path.rsplit(".", 1)[-1].lower() if "." in path else None
+    if path.startswith("hyperscaleai-audiollm/"):
+        import io
+        import urllib.request
+        url = f"{_NUBES_GATEWAY}/{path}"
+        with urllib.request.urlopen(url, timeout=30) as r:
+            buf = io.BytesIO(r.read())
+        wav, sr = _torchaudio_load(buf, file_ext=file_ext)
+    else:
+        wav, sr = _torchaudio_load(path, file_ext=file_ext)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

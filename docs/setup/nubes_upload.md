@@ -1568,3 +1568,38 @@ MELD audio 가 nubes 에 mp3 (transcoded) 인데 기본 torchaudio backend (libs
 /mnt/ddn/users/jos/miniforge3/bin/conda install -y -n <env> -c conda-forge ffmpeg
 ```
 
+### 12.14 MELD audio (wav, 사용자 영역) — 완료 2026-05-08
+
+**상태**: 진행 중 (2026-05-08 07:25 시작).
+
+**대상**: MELD 의 모든 audio split 을 wav 본으로 사용자 영역에 업로드. 학습 + Stage-2 eval 모두 wav 사용.
+- `audio/train/` 9,988 wav (~982 MB)
+- `audio/dev/` 1,112 wav (~109 MB)
+- `audio/test/` 2,747 wav (~284 MB)
+- 합계 ~1.4 GB / 13,847 wav
+
+**동기 (mp3 → wav 전환)**: § 12.10 에서 csv 만 사용자 영역에 업로드하고 audio 는 nubes public dir 의 mp3 (`/datasets/public/MELD.Raw/{train_splits, dev_splits_complete, output_repeated_splits_test}/*.mp3`) 를 가리켰음. 그러나 v6 학습 launch 시 torchaudio default backend (libsndfile) 가 mp3 디코드 실패 (`Format not recognised`) — multi-worker dataloader 환경에서 inconsistent. ffmpeg backend 도 audio_lmf env 에 미등록 (`list_audio_backends() == ['soundfile']`). 결과적으로 MELD 11k row 가 모두 학습에서 skip.
+
+대신 **wav 본을 사용자 영역에 직접 업로드** + builder / eval 의 nubes_path 를 wav 가리키게 변경. 코드 단순화 (mp3 fallback 코드 제거, audio_io.py / omni_dataset.py 의 ffmpeg backend 호출 revert).
+
+**명령**:
+```bash
+nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/MELD/audio/train/ \
+    /mnt/tmp/datasets/emotion_raw/MELD/audio/train/ -j 16
+nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/MELD/audio/dev/ \
+    /mnt/tmp/datasets/emotion_raw/MELD/audio/dev/ -j 16
+nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/MELD/audio/test/ \
+    /mnt/tmp/datasets/emotion_raw/MELD/audio/test/ -j 16
+```
+
+**관련 코드 변경**:
+- [`scripts/manifest_builders/build_emotion_meld.py`](../../scripts/manifest_builders/build_emotion_meld.py): `AUDIO_DIR_PATHS` 와 `NUBES_PREFIX` 가 `/users/jos/AudioEnc/MELD/audio/{train,dev}/` 를 가리키게, 확장자 `.mp3` → `.wav`. `list_audio_set()` 가 `.wav` 필터.
+- [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py): `_meld_transform` callable 제거, MELD 매핑을 `None` 으로 (builder 가 처음부터 nubes_path 박으니 rewrite 불필요).
+- [`evaluation/stage2/eval_source_emotion.py`](../../evaluation/stage2/eval_source_emotion.py): `load_meld_test()` 의 `AUDIO_PREFIX` `/datasets/public/MELD.Raw/output_repeated_splits_test` → `/users/jos/AudioEnc/MELD/audio/test`, 확장자 `.mp3` → `.wav`.
+- [`src/llamafactory/data/audio_io.py`](../../src/llamafactory/data/audio_io.py): `_ta_load` ffmpeg fallback 추가했던 것 revert (mp3 안 쓰니 fallback 불필요).
+- [`src/llamafactory/data/omni_dataset.py`](../../src/llamafactory/data/omni_dataset.py): `_download_from_nubes` 의 ext 분기 + ffmpeg fallback revert.
+
+**검증**: 업로드 완료 후 추가 (count + 샘플 wav HEAD).
+
+**Side effect on § 12.13 #6 (mp3 디코드 인프라)**: 더 이상 필요 없음 — § 12.13 의 fallback chain 설명 obsolete. 현재 v6 stage1 / Stage-2 eval 모두 wav 만 사용. § 12.13 #6 은 "이전 시도 (deprecated)" 로 마크 하거나 삭제.
+
