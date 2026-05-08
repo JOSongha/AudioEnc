@@ -49,8 +49,43 @@ import shutil
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Callable, Optional
 
-PREFIX_MAPPINGS: dict[str, tuple[str, str] | None] = {
+# MELD: local /MELD/audio/{train,dev,test}/<stem>.wav → nubes /MELD.Raw/<split>_*/<stem>.mp3
+# split rename + extension swap so 단순 prefix swap 으로 표현 불가 → callable transform.
+_MELD_LOCAL_PREFIX = "/mnt/tmp/datasets/emotion_raw/MELD/audio/"
+_MELD_NUBES_PREFIX = "hyperscaleai-audiollm/datasets/public/MELD.Raw"
+_MELD_SPLIT_MAP = {
+    "train": "train_splits",
+    "dev": "dev_splits_complete",
+    "test": "output_repeated_splits_test",
+}
+
+
+def _meld_transform(audio_path: str) -> Optional[str]:
+    if not audio_path.startswith(_MELD_LOCAL_PREFIX):
+        return None
+    rest = audio_path[len(_MELD_LOCAL_PREFIX):]
+    parts = rest.split("/", 1)
+    if len(parts) != 2:
+        return None
+    split, fname = parts
+    nubes_split = _MELD_SPLIT_MAP.get(split)
+    if not nubes_split:
+        return None
+    stem = fname[:-4] if fname.endswith(".wav") else fname
+    return f"{_MELD_NUBES_PREFIX}/{nubes_split}/{stem}.mp3"
+
+
+# Mapping types:
+#   None                  → skip-unmapped
+#   (local, nubes)        → single prefix swap (legacy)
+#   list[(local, nubes)]  → try each in order (e.g. clotho dev/val)
+#   callable(audio_path)  → arbitrary transform returning nubes_path or None
+PREFIX_MAPPINGS: dict[
+    str,
+    Optional[tuple[str, str] | list[tuple[str, str]] | Callable[[str], Optional[str]]],
+] = {
     # === 사용자 영역 (현재 세션 업로드) ===
     "audioset": (
         "/mnt/tmp/datasets/env_sound/AudioSet/audio/",
@@ -82,21 +117,31 @@ PREFIX_MAPPINGS: dict[str, tuple[str, str] | None] = {
         "/mnt/tmp/datasets/env_sound/FSD50K/FSD50K.dev_audio/",
         "hyperscaleai-audiollm/datasets/public/FSD50K/audio/",
     ),
-    "clotho": (
-        "/mnt/tmp/datasets/env_sound/Clotho/development/",
-        "hyperscaleai-audiollm/datasets/public/Clotho-v2/audio/",
-    ),
+    "clotho": [
+        # dev/val 별도 nubes subdir (2026-05-08 § 12.12 업로드, 파일명 충돌 회피).
+        # 첫 매치 prefix 가 적용됨.
+        (
+            "/mnt/tmp/datasets/env_sound/Clotho/development/",
+            "hyperscaleai-audiollm/datasets/public/Clotho-v2/audio/",
+        ),
+        (
+            "/mnt/tmp/datasets/env_sound/Clotho/validation/",
+            "hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_validation/",
+        ),
+    ],
     "laion_epidemic": (
         "/mnt/tmp/datasets/laion_extracted/epidemic/",
         "hyperscaleai-audiollm/datasets/public/LAION-Audio-630k/epidemic_sound_effects/audio/",
     ),
-    # === 미매핑 (skip) ===
-    "dailytalk": None,
-    "audiocaps": None,
-    "laion_freesound": None,
-    "laion_audiostock": None,
-    "macs": None,
-    "meld": None,
+    # === callable transform (split rename + extension swap 등) ===
+    "meld": _meld_transform,
+    # === 빌더가 처음부터 nubes_path 박음 (rewrite 불필요) ===
+    "laion_audiostock": None,  # build_audiostock.py nubes-direct
+    "macs": None,              # build_macs.py nubes-direct
+    # === 미매핑: nubes 부재 또는 업로드 진행 중 (audio_path local fallback) ===
+    "dailytalk": None,         # § 12.11 업로드 진행 중 (utterance wav 새 위치)
+    "audiocaps": None,         # § 12.9 업로드 진행 중
+    "laion_freesound": None,   # nubes 매핑 미확인 (§ 5)
 }
 
 
@@ -108,17 +153,28 @@ def rewrite_row(row: dict) -> tuple[dict, str]:
     src = row.get("source")
     if not src:
         return row, "skip-no-source"
-    mapping = PREFIX_MAPPINGS.get(src)
+    mapping = PREFIX_MAPPINGS.get(src) if src in PREFIX_MAPPINGS else None
+    if src not in PREFIX_MAPPINGS:
+        return row, "skip-unmapped"
     if mapping is None:
         return row, "skip-unmapped"
-    local_prefix, nubes_prefix = mapping
     audio_path = row.get("audio_path", "")
-    if not audio_path.startswith(local_prefix):
-        return row, "skip-no-prefix"
-    suffix = audio_path[len(local_prefix):]
-    new_row = dict(row)
-    new_row["nubes_path"] = nubes_prefix + suffix
-    return new_row, "mapped"
+    # mapping 은 callable(audio_path) → nubes 또는 단일/list 의 (local, nubes).
+    if callable(mapping):
+        nubes = mapping(audio_path)
+        if nubes is None:
+            return row, "skip-no-prefix"
+        new_row = dict(row)
+        new_row["nubes_path"] = nubes
+        return new_row, "mapped"
+    candidates = mapping if isinstance(mapping, list) else [mapping]
+    for local_prefix, nubes_prefix in candidates:
+        if audio_path.startswith(local_prefix):
+            suffix = audio_path[len(local_prefix):]
+            new_row = dict(row)
+            new_row["nubes_path"] = nubes_prefix + suffix
+            return new_row, "mapped"
+    return row, "skip-no-prefix"
 
 
 def process_shard(in_path: Path, out_path: Path | None, dry_run: bool) -> Counter:
