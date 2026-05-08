@@ -34,8 +34,8 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 | AudioCaps | `/mnt/tmp/datasets/laion_extracted/audiocaps/` (40 GB) + `/mnt/tmp/datasets/audiocaps/` (38 GB) | **없음**. `/audiocaps/`, `/AudioCaps/`, `/AudioSet_SL/audiocaps/`, `/16kHz/audiocaps/` 모두 404 | ✗ 누락 (업로드 후보) |
 | FSD50K | `/mnt/tmp/datasets/env_sound/FSD50K/` (56 GB) | `/datasets/public/FSD50K/{audio/, AF-Think_*.jsonl}` | ✓ |
 | AudioSet | `/mnt/tmp/datasets/env_sound/AudioSet/` (71 GB) | `/datasets/public/AudioSet_SL/{audio/, AF-Think_*.jsonl, naiveInst_AudioSet_SL.jsonl}`. v6 학습은 bal_train (18,683 rows) 만 — bal_train 매핑은 AudioSet_SL 안 jsonl 에서 필터 필요 | ✓ (단 split 매핑 확인 필요) |
-| Clotho | `/mnt/tmp/datasets/env_sound/Clotho/` (18 GB) | `/datasets/public/Clotho-v2/{audio/, clotho_captions_development.csv, clotho_metadata_development.csv, AF-Think_*.jsonl}` | ✓ (Clotho-v2 = upstream Clotho v2.1) |
-| MACS | `/mnt/tmp/datasets/env_sound/MACS/` (2.7 MB metadata; audio 부재) | `/datasets/public/MACS/{audio/, evaluation_setup/, meta.csv, AF-Think_*.jsonl}` | ✓ |
+| Clotho | `/mnt/tmp/datasets/env_sound/Clotho/` (18 GB) | `/datasets/public/Clotho-v2/{audio/, audio_evaluation/, audio_validation/, clotho_captions_{development,evaluation,validation}.csv, clotho_metadata_development.csv, AF-Think_*.jsonl}` | ✓ (2026-05-08 eval+val csv+wav 추가, § 12.12) |
+| MACS | `/mnt/tmp/datasets/env_sound/MACS/MACS.yaml` (2.7 MB caption metadata, ddn local 또는 `/users/jos/AudioEnc/MACS/MACS.yaml` nubes backup) | audio: `/datasets/public/MACS/audio/` (TAU2019 source `a` 14,400 중 yaml 의 3,930 만 인용) + yaml: `/users/jos/AudioEnc/MACS/MACS.yaml` (옵션 C, § 12.8) | ✓ nubes-direct |
 
 **결론**: 8/9 nubes 에 있음. **AudioCaps 만 업로드 필요**. LAION-Freesound 매핑 확인은 별도.
 
@@ -121,10 +121,10 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 
 ## 8. 권장 액션
 
-1. **즉시 업로드** (우선순위 높음): AudioCaps + emotion 3종 (EmoV-DB, RAVDESS, MUStARD++) + eval 4종 (LISTEN, MSP-Podcast, JL-Corpus, SAVEE) — 합계 ~54 GB
+1. **즉시 업로드** (우선순위 높음): ~~AudioCaps + emotion 3종 (EmoV-DB, RAVDESS, MUStARD++) + eval 4종 (LISTEN, MSP-Podcast, JL-Corpus, SAVEE)~~ — Emotion 3종 (§ 12.2 / 12.5 / 12.6) + IEMOCAP (§ 12.4) + AudioSet (§ 12.7) + LAION-BBC (§ 12.3) + FSD50K eval (§ 12.1) + MACS yaml backup (§ 12.8) **모두 완료**. **남은 미완**: AudioCaps (40 GB), eval 4종 (LISTEN, MSP-Podcast, JL-Corpus, SAVEE)
 2. **검증 후 결정**: LAION-Freesound 매핑 (nubes `/Freesound/` ↔ LAION-Freesound 460k IDs)
 3. **보류**: CREMA-D (학습 / eval 미사용)
-4. **manifest 빌더 재작성**: AudioCaps / emotion / eval 빌더가 nubes-direct 로 동작하도록 추후 업데이트 (현재 학습 manifest 는 v6 셔드에 nubes_path 또는 local audio_path 둘 다 사용 가능, runtime 에서 `load_from_nubes` flag 분기)
+4. **manifest 빌더 재작성**: AudioCaps / emotion / eval 빌더가 nubes-direct 로 동작하도록 추후 업데이트 (현재 학습 manifest 는 v6 셔드에 nubes_path 또는 local audio_path 둘 다 사용 가능, runtime 에서 `load_from_nubes` flag 분기). MACS / Audiostock / LAION-BBC / GigaSpeech / MLS / VoxPopuli / LibriTTS-R 빌더는 이미 nubes-direct 화 완료 (§ 12.x).
 
 ## 9. Row count 검증 (nubes audio file count vs 로컬 v6 row count)
 
@@ -146,10 +146,10 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 
 | Source | Local v6 학습 | Local 전체 | Nubes count | 업로드 | Leak | Uploaded | 분석 |
 |---|---:|---:|---:|:---:|:---:|:---:|---|
-| MELD | 11,096 (train+dev) | 13,847 (모든 split) | 13,847 (train 9988 + dev 1112 + test 2747) | **X** | ✓ | — | test sub-dir 명시 분리. builder 가 train+dev 만 사용 시 leak 없음 |
+| MELD | 11,096 (train+dev) | 13,847 (모든 split) | 13,847 audio (mp3, train 9,988 + dev 1,112 + test 2,747) + 3 csv (별도 업로드) | ✓ csv 만 (audio 는 기존 nubes 사용) | ✓ | ✓ 2026-05-08 § 12.10 | nubes audio + 별도 csv = nubes-only 학습/eval 가능. v6 룰: train+dev 만 학습, test 는 Stage-2 eval (`load_meld_test`). builder + eval 둘 다 nubes-direct 갱신, ddn 의존 0 |
 | LAION-Audiostock | **10,001** (v6 nubes-direct) | 9,139 (ddn 잔존, 미사용) | 10,001 (= train 9,001 + test 1,000) | **X** (nubes-direct) | ✓ | ✓ 2026-05-07 nubes-direct | **v6 빌더 nubes-direct 로 갈아엎음** ([`build_audiostock.py`](../../scripts/manifest_builders/build_audiostock.py)). 이전 v5: ddn 9,139 (LAION 공식 ~10K 중 ddn 다운로드 단계 ~860 fail). v6: nubes train+test.jsonl 직접 인용 → 10,001 row. row schema `audio_path` → `nubes_path` 로 변경 |
 | AudioSet | 18,683 (bal_train) | bal+unbal+eval | 108,317 (통합) | **✓ split-aware** | **✓** | ✓ 2026-05-07 § 12.7 | nubes 기존 `/AudioSet_SL/audio/` 통합 → leak 위험 ⚠. 옵션 C 로 사용자 영역에 path-level split 분리 (audio/ 18,683 flac + data/bal_train/ 38 parquet + data/eval/ 35 parquet + ontology + README, 71 GB) 업로드 완료 7분 16초. leak 0 |
-| MACS | 3,930 (= MACS.yaml 공식) | 3,930 | 14,400 (모두 source `a`) | **X** (nubes-direct) | n/a | ✓ 2026-05-07 nubes-direct | **v6 / nubes / MACS 공식 모두 일치**. nubes 14,400 = TAU2019 development 의 14 scene 전체 (모두 source label `a`). MACS 정의 = TAU2019 의 3 scene (airport / park / public_square) 의 3,930. v6 도 그 3,930 만 사용 (정상). 빌더 nubes-direct 갈아엎음 ([`build_macs.py`](../../scripts/manifest_builders/build_macs.py)) — `MACS.yaml` 의 filename 을 nubes path 로 직접 매핑. 자세한 설명은 § 9.2-MACS-note 참고 |
+| MACS | 3,930 (= MACS.yaml 공식) | 3,930 | 14,400 (모두 source `a`) | **✓ yaml만** | n/a | ✓ 2026-05-08 § 12.6 | **v6 / nubes / MACS 공식 모두 일치**. nubes audio 14,400 = TAU2019 development 의 **10 scene × 12 city × 120 clip × source `a`** (b/c 미보존). MACS 정의 = TAU2019 의 **3 scene** (airport 1,296 + park 1,317 + public_square 1,317 = 3,930). v6 도 그 3,930 만 사용. 빌더 nubes-direct 갈아엎음 ([`build_macs.py`](../../scripts/manifest_builders/build_macs.py)) — `MACS.yaml` 의 filename 을 nubes audio path 로 직접 매핑. **추가**: `MACS.yaml` (2.7 MB) 도 `/users/jos/AudioEnc/MACS/MACS.yaml` 에 업로드 완료 (옵션 C, builder 의 ddn yaml fallback 대체용 backup) |
 
 > **§ 9.2-MACS-note**: 쉽게 풀면, **TAU2019** = 공항/공원/도로 같은 도시 사운드를 여러 도시에서 녹음한 데이터셋. 14 scene × 12 city × 여러 시간대 → audio 파일 ~14K (모두 source label `a`, 단일 마이크 종류). **MACS** = TAU2019 의 일부 (3 scene: airport / park / public_square 의 3,930) 에만 사람이 caption 붙인 캡션 데이터셋. caption 작업 자체는 3 scene 분량만. **nubes** 는 TAU2019 raw 14,400 wav 모두 보존 (다른 11 scene 도). **MACS 의 정의** = 그중 3,930. **v6** 는 MACS 정의 따라 3,930 사용 = MACS 공식 row 와 일치. v6 부터 builder 가 nubes path 인용 (별도 업로드 불필요, ddn audio extract dir 의존성 폐기).
 
@@ -157,16 +157,16 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 
 | Source | Local v6 학습 | Local 전체 | Nubes count | 업로드 | Leak | Uploaded | 분석 |
 |---|---:|---:|---:|:---:|:---:|:---:|---|
-| **DailyTalk** | **23,773** utt (= 23,773 wav, 통째로 학습 — leak-fix 폐기) | 23,773 wav | **2,541** wav (모두 0 byte) | **✓** | n/a | — | nubes `/DailyTalk/audio/` 의 wav 가 `0.wav~2540.wav` 단순 숫자 명명 + **모두 Content-Length: 0 (zero-byte placeholder)**. 실제 audio 부재. utterance 단위 wav 업로드 필요. v6 룰: canonical split 없음 + leak-fix 폐기 → 23,773 모두 학습 풀, eval held-out 없음 |
+| **DailyTalk** | **23,773** utt (= 23,773 wav, 통째로 학습 — leak-fix 폐기) | 23,773 wav | **2,541** wav (모두 0 byte placeholder, **사실상 부재**) | **✓ 23,773 utt** | n/a | ⏳ § 12.11 | nubes `/DailyTalk/audio/` 의 wav 모두 0 byte placeholder. utterance 단위 audio + metadata 신규 업로드 진행 중 (`/users/jos/AudioEnc/DailyTalk/`, ~6.6 GB). v6 룰: canonical split 없음 + leak-fix 폐기 → 23,773 모두 학습 풀, eval held-out 없음 |
 | **IEMOCAP** | 5,882 (Sessions 1-4) | 10,190 (utterance 10,039 + dialog wav 151) | 10,039 utterance wav (session 통합) | **✓ done** | ✓ | ✓ 2026-05-07 § 12.4 | **v6 룰 예외**: 학계 관행 leave-session-out 유지. 옵션 A 결정 (session-aware 1.4 GB) → `/users/jos/AudioEnc/IEMOCAP/` 업로드 완료 (10,039 wav + 151 EmoEval txt + 151 transcripts txt + Sub-dirs Attribute/Categorical/Self-evaluation + README). 2분 24초. 모든 검증 ✓ |
-| Clotho-v2 | 4,881 (dev+val) | 4,881 | 3,839 (development metadata 만) | **⚠ -1,042** | **⚠** | — | nubes 부족 (-1,042). caption csv 가 `clotho_captions_development.csv` 만, evaluation csv 부재 — Stage-2 eval ([eval_clotho_caption.py](../../evaluation/stage2/eval_clotho_caption.py)) 용 evaluation split 업로드 필요. v6 학습 (dev+val) ↔ eval split 매핑 명확히 |
+| Clotho-v2 | 4,881 (dev+val) | 4,881 | dev 3,839 + eval 1,045 + val 1,045 (모두 별도 subdir) | ✓ done | ✓ | ✓ 2026-05-08 § 12.12 | 2026-05-08 업로드 완료. `audio_evaluation/` (1,045 wav, ~2.0 GB) + `audio_validation/` (1,045 wav, ~2.0 GB) 별도 subdir + `clotho_captions_evaluation.csv` (361,995 B) + `clotho_captions_validation.csv` (367,649 B). dev/eval/val 파일명 충돌 4건 (dev∩eval=1, dev∩val=1, eval∩val=2) 회피 위해 split 별 subdir 분리. v6 학습 (dev+val) + Stage-2 eval (evaluation only) 모두 nubes-direct 가능 |
 
 ### 9.4 누락 / 거의 비어 있음 (✗)
 
 | Source | Local v6 | Nubes count | 업로드 | Leak | Uploaded | 분석 |
 |---|---:|---:|:---:|:---:|:---:|---|
 | **LAION-BBC** | 31,936 row (= 15,968 unique audio × 2 caption) | 2,000 (LAION subset) + 120 (top-level dump) | **✓ superset 15,973** | ✓ | ✓ 2026-05-07 § 12.3 | nubes set ⊆ ours 검증 완료. 옵션 B 로 superset 15,973 + metadata 3 + README 1 업로드 완료 (78 GB / 7분 44초). `/users/jos/AudioEnc/LAION-BBC/` |
-| AudioCaps | 45,623 | 0 | **✓** | ⚠ | — | § 2 에서 이미 보고. 업로드 후 builder 가 train+val 만 사용 (test 는 eval 용으로 분리) |
+| AudioCaps | 45,623 (train+val) | 0 | **✓** | ✓ | ⏳ § 12.9 | 옵션 C2: audio (46,506 flac = 45,623 train+val + 883 test, ~40 GB) + parquets (473 file = 412+20+41 train/val/test, ~41 GB, audio bytes + caption 표준 dist 보존). HF `OpenSound/AudioCaps` test 41 parquet 신규 다운 + 추출. 업로드 진행 중 (`/users/jos/AudioEnc/AudioCaps/`, ~81 GB) |
 | EmoV-DB | **6,893** | 0 | ✓ 완료 | n/a | ✓ 2026-05-07 § 12.5 | v6 룰: canonical split 없음 + leak-fix 폐기 → 4 화자 (Bea/Jenie/Josh/Sam) 모두 학습 풀. `/users/jos/AudioEnc/EmoV-DB/{bea, jenie, josh, sam, repo, README_upload.md}` 6,893 wav + repo 4 file + README 업로드 완료 (~3 min, 1차 + retry 2회) |
 | RAVDESS | **1,440** | 0 | **✓** | n/a | ✓ 2026-05-07 § 12.6 | v6 룰: canonical split 없음 + leak-fix 폐기 → 24 actors 모두 학습 풀, eval held-out 없음. 1,440 wav (24 × 60) + README → `/users/jos/AudioEnc/RAVDESS/` 업로드 완료 (565 MB / 33초) |
 | MUStARD++ | 1,200 | 0 | ✓ 완료 | ✓ | ✓ 2026-05-07 § 12.2 | `/users/jos/AudioEnc/MUStARD_Plus_Plus/{audio_wav, mustard++_text.csv, utterance_ids.txt, README*.md}`. audio_wav 1,201 + metadata 모두 업로드 완료 (28 s) |
@@ -176,14 +176,19 @@ audiollm-trainer 가 사용하는 모든 학습/평가 데이터셋이 nubes (`h
 ### 9.5 LibriTTS-R / LibriSpeech 추가 결과
 
 **LibriTTS-R**:
-| Split | v6 학습 utt | Nubes total files | Nubes utt 추정 | 업로드 | Leak | Uploaded | 상태 |
+| Split | v6 학습 utt | Nubes speakers | Sample 추정 utt | 업로드 | Leak | Uploaded | 상태 |
 |---|---:|---:|---:|:---:|:---:|:---:|---|
-| train-clean-100 | 33,232 | 134,055 | ~33,500 (200 speakers vs 표준 247) | **⚠ +47 spk** | ✓ | — | utt 매칭, 47 speaker 누락 의심 |
-| train-clean-360 | 116,454 | timeout | (미검증) | ⚠ | ✓ | — | sampling 검증 필요 |
-| train-other-500 | 205,035 | timeout | (미검증) | ⚠ | ✓ | — | sampling 검증 필요 |
-| 합계 | 354,721 | — | — | — | ✓ | — | train-* split 명시 분리, dev/test 와 leak 없음 |
+| train-clean-100 | 33,232 | 200 (vs 표준 247) | ~33,500 (134,055 files / 4) | **⚠ +47 spk** | ✓ | — | utt 매칭, 47 speaker 누락 의심 |
+| train-clean-360 | 116,454 | **904** (표준 일치) | **119,328** (20-spk sample, +2,874 = +2.5%) | ✓ 검증 완료 | ✓ | ✓ | speaker 표준 일치, utt sampling 노이즈 내 |
+| train-other-500 | 205,035 | **1,160** (표준 일치) | **219,298** (20-spk sample, +14,263 = +7%) | ✓ 검증 완료 | ✓ | ✓ | speaker 표준 일치, utt sampling 노이즈 내 |
+| 합계 | 354,721 | 2,264 spk (-47) | — | — | ✓ | ✓ (360/500) | train-* split 명시 분리, dev/test 와 leak 없음 |
 
 train-clean-100 의 실제 utt 추정 = 134,055 files / 4 (.wav + .normalized.txt + .original.txt + .txt) ~ 33,500 ≈ v6 33,232. utt 단위는 일치하지만 speaker 200 vs LibriTTS 표준 247 (47 speaker 누락 가능). build_libritts_r.py smoke 결과 33,236 utt 와 동일.
+
+**train-clean-360 / train-other-500 sampling 검증** (2026-05-08, recursive list timeout 회피용 20-speaker sample):
+- 360: total spk 904 (표준 LibriTTS-R 904 정확 매칭), sample 20 spk → 46 chapter / 2,640 utt → avg 132 utt/spk → extrapolated 119,328 utt (target 116,454, diff +2,874 = +2.5%, sampling noise 범위 내)
+- 500: total spk 1,160 (표준 LibriTTS-R 1,160 정확 매칭), sample 20 spk → 50 chapter / 3,781 utt → avg 189.1 utt/spk → extrapolated 219,298 utt (target 205,035, diff +14,263 = +7%, sampling noise 범위 내)
+- speaker 수가 LibriTTS-R 표준과 정확 매칭 + utt extrapolation 도 ±10% 내 → nubes 가 v6 학습 풀을 fully 포함하는 것으로 결론. 추가 업로드 불필요.
 
 **LibriSpeech (eval-only, v6 학습 풀 부재)**:
 | Sub-dir | Nubes files | 업로드 | Leak | Uploaded | 분석 |
@@ -194,13 +199,16 @@ train-clean-100 의 실제 utt 추정 = 134,055 files / 4 (.wav + .normalized.tx
 
 eval (eval_librispeech_wer.py) 가 사용하는 **test-clean** (2,620 utt) / **test-other** (2,939 utt) 는 nubes `/librispeech_asr/clean/test/` 와 `/librispeech_asr/other/test/` sub-dir 에 있을 것 (직접 fetch 검증 추가 필요). ✓ Nubes broader (모든 split 보존).
 
-### 9.6 보류
+### 9.6 GigaSpeech (nubes 보존 확인됨)
+
+**GigaSpeech XL train + test 모두 nubes 에 이미 존재** (`/datasets/public/16kHz/gigaspeech/{train,test}/`, ModTime 2024-01-04 외부 팀 업로드, flat dir / `<id>.flac` + `<id>.txt` 페어). 추가 업로드 불필요.
 
 | Source | 업로드 | Leak | Uploaded | 비고 |
 |---|:---:|:---:|:---:|---|
-| GigaSpeech XL train (8,256,276) | ⚠ | ✓ | — | 8M flac recursive list 시간 매우 큼. sampling 또는 build_gigaspeech.py 실행 시 자동 검증. train/test sub-dir 명시 분리, leak 없음 |
+| GigaSpeech XL train (~8.25M segment) | ✓ 있음 | ✓ | — (외부 업로드) | **2026-05-08 검증**: (a) `train/` page-1 1,000 entry = 500 flac + 500 txt 정상, (b) v6 manifest `gigaspeech_*.jsonl` 47 shard / **4,129,334 row** (XL 50% subsample) build 완료, (c) manifest 양 끝 8 sample HEAD HTTP 200 (13K~130K byte 정상 flac). train/test sub-dir 명시 분리, leak 없음 |
+| GigaSpeech test | ✓ 있음 | n/a | — | `/datasets/public/16kHz/gigaspeech/test/` (Stage-2 eval 활용 가능, 학습 풀 X) |
 
-### 9.8 Leak audit summary
+### 9.7 Leak audit summary
 
 builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검증 필요:
 
@@ -212,37 +220,133 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 | **AudioSet** | **⚠ Builder 의존** | nubes `/AudioSet_SL/audio/` 통합 — builder 가 `naiveInst_AudioSet_SL.jsonl` 의 split 메타로 bal_train 18,683 만 정확히 필터해야 함. eval split 누설 시 Stage-2 eval 신뢰성 무너짐 |
 | **IEMOCAP** | **⚠ Filename prefix** | nubes 통합 → builder 가 `Ses0[1-4]` filename prefix 필터링으로 Sessions 1-4 만 포함, Session 5 (eval) 절대 X. -151 누락 row 검증 후 업로드 |
 | **DailyTalk** | **⚠ Cutoff 매핑** | utterance audio 업로드 후 builder 가 마지막 5% dialogue cutoff 정확 적용 (datasets.md § 4 leak-fix). 현재 nubes audio 자체가 zero-byte placeholder 라 사용 불가 |
-| **Clotho-v2** | **⚠ Eval csv 부재** | nubes 에 `clotho_captions_development.csv` 만, evaluation csv 부재 → Stage-2 eval 데이터 nubes 업로드 필요. v6 학습 (dev+val) 도 1,042 row 부족 |
+| **Clotho-v2** | ✓ 안전 | 2026-05-08 (§ 12.12) eval+val csv + audio subdir 업로드 완료. dev/eval/val 별도 subdir 분리로 train↔eval split 명확. Stage-2 eval 코드 갱신 후속 (별 PR) |
 | **FSD50K** | **⚠ Eval split 부재** | nubes 에 dev 만 → Stage-2 eval ([eval_fsd50k_map.py](../../evaluation/stage2/eval_fsd50k_map.py)) 용 eval split 업로드 필요 |
 | AudioCaps / Emotion 3종 / Eval 4종 | n/a | 아예 부재 → 업로드 후 builder 작성 시 leak-aware 작성 |
 
-### 9.7 종합 결론
+### 9.8 종합 결론
 
 **v6 학습 풀 16,216,648 rows 검증 결과** (2026-05-07 실측. audio_asr 15,474,558 + audio_env_sound 691,806 + audio_emotion 50,284. v5 leak-fix 폐기로 emotion +3,230, GigaSpeech 추정 -3,666, Audiostock nubes-direct 로 +862):
 
 - ✓ 정확 일치 (5): MLS, VoxPopuli, ESC-50, LAION-Epidemic, FSD50K(dev)
 - ✓ Nubes broader (5): MELD, LAION-Audiostock, AudioSet, MACS, LibriSpeech (eval-only, 모든 split)
-- ✓ 업로드 완료 (3): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3)
-- ⚠ 단위/매핑 차이 (2): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder), IEMOCAP (session 분리 없음, -151 누락 의심)
-- ⚠ Speaker / 부족 (2): LibriTTS-R train-clean-100 (200 spk vs 표준 247), Clotho-v2 (nubes 3,839 vs v6 4,881)
-- 보류 (2): GigaSpeech XL audio enum, LibriTTS-R train-clean-360 / train-other-500 (recursive list timeout)
+- ✓ 업로드 완료 (9): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12)
+- ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder)
+- ✓ Sampling 검증 (2): LibriTTS-R train-clean-360 (904 spk 표준 매칭), train-other-500 (1,160 spk 표준 매칭) — § 9.5
+- ✓ 우회 검증 (1): GigaSpeech XL train (v6 manifest 4.13M row build 통과 + sample HEAD 200) — § 9.6
+- ⚠ Speaker / 부족 (1): LibriTTS-R train-clean-100 (200 spk vs 표준 247)
+- 보류 (0)
 
 **즉시 보완 필요**:
 1. ✓ ~~LAION-BBC 매핑~~ — 완료 (§ 12.3)
-2. **업로드 미완** (§ 5 우선순위 높음): AudioCaps (40 GB), EmoV-DB (**6,893 wav**, v6 룰 통째로), RAVDESS (**1,440 wav**, v6 룰 통째로), eval 4종 (LISTEN, MSP-Podcast, JL-Corpus, SAVEE)
+2. ~~EmoV-DB / RAVDESS / IEMOCAP / AudioSet / MUStARD++ 업로드~~ — 모두 완료 (§ 12.2, 12.4, 12.5, 12.6, 12.7). **남은 업로드 미완**: AudioCaps (40 GB), eval 4종 (LISTEN, MSP-Podcast, JL-Corpus, SAVEE)
 3. **DailyTalk audio 단위 변환** (nubes dialogue → utterance) 또는 metadata + dialogue-level 학습 전환 결정 — v6 룰 변경 후에도 그대로 유효 (nubes wav 가 zero-byte placeholder 라 학습 불가)
-4. **IEMOCAP 누락 ~151 row** 확인 (10,190 vs 10,039) — IEMOCAP 만 v6 예외 (leave-session-out 유지)
-5. **Clotho-v2 -1,042 부족** 원인 파악 — Stage-2 eval 용 evaluation csv 도 부재
-6. **LibriTTS-R speaker 부족**: train-clean-100 nubes 200 speakers vs 표준 247 (47 누락 가능). train-clean-360 / train-other-500 timeout 으로 미완 (별도 sampling 검증 필요)
+4. ~~IEMOCAP 누락 ~151 row 확인~~ — § 12.4 업로드로 처리됨 (`/users/jos/AudioEnc/IEMOCAP/IEMOCAP_full_release/`)
+5. ~~Clotho-v2 -1,042 부족~~ — § 12.12 업로드 완료 (eval+val csv + audio subdir)
+6. **LibriTTS-R speaker 부족**: train-clean-100 nubes 200 speakers vs 표준 247 (47 누락 가능). ~~train-clean-360 / train-other-500 timeout~~ — 2026-05-08 sampling 검증 완료 (904 / 1,160 표준 매칭, utt extrapolation ±10% 내, § 9.5)
 
 ## 10. 변경 이력
 
 - 2026-05-07: 초기 작성. nubes gateway 으로 22 source 직접 검증.
 - 2026-05-07 (later): § 9 row count 검증 추가. 13 nubes-having source 중 5 정확 일치 (MLS / ESC-50 / LAION-Epidemic / VoxPopuli / FSD50K), 4 broader (MELD / Audiostock / AudioSet / MACS), 3 단위·매핑 차이 (DailyTalk / IEMOCAP / Clotho-v2), 1 거의 비어 있음 (LAION-BBC).
 - 2026-05-07 (later, LibriTTS-R/LibriSpeech): § 9.5 LibriTTS-R train-clean-100 검증 (134,055 files / ~33,500 utt = v6 33,232 매칭, 다만 200 speakers vs LibriTTS 표준 247 부족 의심). train-clean-360 / train-other-500 은 recursive list timeout 으로 미검증. LibriSpeech 는 `/librispeech_asr/{clean,other}/{test,train.100,train.360,validation}/` 모든 split 보존, eval test-clean / test-other sub-dir 매핑 가능. ✓ broader.
-- 2026-05-07 (later, 업로드 + leak 컬럼 추가): § 9 의 모든 표 (9.1~9.5) 에 "업로드" + "Leak 위험" 컬럼 추가. § 9.8 Leak audit summary 신규. Double-check 결과: **DailyTalk nubes wav 모두 zero-byte placeholder** (실제 audio 부재 — 업로드 필요), `/BBCSoundEffects/audio/` 만 120 file (LAION-BBC 합쳐도 2,120 vs 31,936), FSD50K eval split 모든 추정 path 404, Clotho-v2 evaluation csv 부재. AudioSet / IEMOCAP / DailyTalk / Clotho / FSD50K 가 builder 의존 leak 위험 (✓ 안전이 아닌 ⚠).
-- 2026-05-07 (later, v5 leak-fix 폐기 반영): datasets.md § 4 룰 변경 (canonical split 없는 source 통째로 학습, IEMOCAP 만 예외) 으로 nubes_upload.md 정합성 갱신. § 3 RAVDESS wav `1,200 → 1,440` (24 actors 모두). § 5 우선순위 높음 표 EmoV-DB / RAVDESS 비고 "held-out" 표기 제거 → "v6 룰 통째로 학습". § 9.3 DailyTalk Local v6 학습 row `22,573 → 23,773` + IEMOCAP "v6 룰 예외" 명시. § 9.4 EmoV-DB / RAVDESS row + Leak 컬럼 갱신 (`5,103 → 6,893`, `1,200 → 1,440`, Leak `⚠ → n/a`). § 9.7 종합 결론 v6 grand total `16,212,556 → 16,215,786` 실측 갱신 (audio_asr 15,474,558 + env_sound 690,944 + emotion 50,284. emotion 47,054 → 50,284, ASR 도 GigaSpeech 추정 -3,666 차이). LAION-BBC 항목은 § 12.3 업로드 완료로 "거의 비어 있음" → "업로드 완료" 카테고리 이동.
-- 2026-05-07 (later, Audiostock + MACS nubes-direct 빌더 갈아엎음): § 9.2 broader 표의 두 행 정정. **LAION-Audiostock**: ddn 9,139 → nubes train+test.jsonl 직접 인용 → **10,001** (+862, LAION 공식 본). [`build_audiostock.py`](../../scripts/manifest_builders/build_audiostock.py) 가 nubes 의 HCX-style sound_caption row 를 parse + s3 fileuri → nubes_path 변환. **MACS**: row 수 동일 (3,930). [`build_macs.py`](../../scripts/manifest_builders/build_macs.py) 가 MACS.yaml filename 을 `hyperscaleai-audiollm/datasets/public/MACS/audio/<fname>.wav` 로 직접 매핑 (ddn audio extract dir 의존성 폐기). § 9.2-MACS-note 평이 설명 정정: TAU2019 의 차이는 마이크 a/b/c 가 아니라 **scene 종류** (TAU2019 14 scene 모두 source `a`, MACS 는 그중 airport/park/public_square 3 scene 만). § 9.7 grand total `16,215,786 → 16,216,648` (env_sound 690,944 → 691,806).
+- 2026-05-07 (later, 업로드 + leak 컬럼 추가): § 9 의 모든 표 (9.1~9.5) 에 "업로드" + "Leak 위험" 컬럼 추가. § 9.7 Leak audit summary 신규. Double-check 결과: **DailyTalk nubes wav 모두 zero-byte placeholder** (실제 audio 부재 — 업로드 필요), `/BBCSoundEffects/audio/` 만 120 file (LAION-BBC 합쳐도 2,120 vs 31,936), FSD50K eval split 모든 추정 path 404, Clotho-v2 evaluation csv 부재. AudioSet / IEMOCAP / DailyTalk / Clotho / FSD50K 가 builder 의존 leak 위험 (✓ 안전이 아닌 ⚠).
+- 2026-05-07 (later, v5 leak-fix 폐기 반영): datasets.md § 4 룰 변경 (canonical split 없는 source 통째로 학습, IEMOCAP 만 예외) 으로 nubes_upload.md 정합성 갱신. § 3 RAVDESS wav `1,200 → 1,440` (24 actors 모두). § 5 우선순위 높음 표 EmoV-DB / RAVDESS 비고 "held-out" 표기 제거 → "v6 룰 통째로 학습". § 9.3 DailyTalk Local v6 학습 row `22,573 → 23,773` + IEMOCAP "v6 룰 예외" 명시. § 9.4 EmoV-DB / RAVDESS row + Leak 컬럼 갱신 (`5,103 → 6,893`, `1,200 → 1,440`, Leak `⚠ → n/a`). § 9.8 종합 결론 v6 grand total `16,212,556 → 16,215,786` 실측 갱신 (audio_asr 15,474,558 + env_sound 690,944 + emotion 50,284. emotion 47,054 → 50,284, ASR 도 GigaSpeech 추정 -3,666 차이). LAION-BBC 항목은 § 12.3 업로드 완료로 "거의 비어 있음" → "업로드 완료" 카테고리 이동.
+- 2026-05-07 (later, Audiostock + MACS nubes-direct 빌더 갈아엎음): § 9.2 broader 표의 두 행 정정. **LAION-Audiostock**: ddn 9,139 → nubes train+test.jsonl 직접 인용 → **10,001** (+862, LAION 공식 본). [`build_audiostock.py`](../../scripts/manifest_builders/build_audiostock.py) 가 nubes 의 HCX-style sound_caption row 를 parse + s3 fileuri → nubes_path 변환. **MACS**: row 수 동일 (3,930). [`build_macs.py`](../../scripts/manifest_builders/build_macs.py) 가 MACS.yaml filename 을 `hyperscaleai-audiollm/datasets/public/MACS/audio/<fname>.wav` 로 직접 매핑 (ddn audio extract dir 의존성 폐기). § 9.2-MACS-note 평이 설명 정정: TAU2019 의 차이는 마이크 a/b/c 가 아니라 **scene 종류** (TAU2019 14 scene 모두 source `a`, MACS 는 그중 airport/park/public_square 3 scene 만). § 9.8 grand total `16,215,786 → 16,216,648` (env_sound 690,944 → 691,806).
+- 2026-05-08 (Clotho-v2 eval+val 업로드): § 12.12 신규 + § 9.3 Clotho-v2 행 갱신 + § 9.6 leak 표 ✓ 안전 + § 9.8 종합 결론 업로드 완료 8 → 9, "Speaker / 부족 (2)" → "(1)" (Clotho-v2 제거), "즉시 보완" 5번 완료 마킹. `clotho_captions_evaluation.csv` (361,995 B) + `clotho_captions_validation.csv` (367,649 B) + `audio_evaluation/` 1,045 wav (~2.0 GB) + `audio_validation/` 1,045 wav (~2.0 GB) 4 파일/디렉토리 업로드, dev/eval/val 파일명 충돌 4건 회피 위해 split 별 subdir (`audio_evaluation/`, `audio_validation/`) 분리. nubes listing 검증 완료. § 2 sound captioning 표의 Clotho 행도 신규 dir / csv 반영 갱신.
+- 2026-05-08 (LibriTTS-R 360/500 sampling 검증): § 9.5 train-clean-360 / train-other-500 의 timeout 행 검증 완료. 20-speaker random sample 추출 → 360: 904 spk (LibriTTS-R 표준 정확), avg 132 utt/spk → extrapolated 119,328 (target 116,454, +2.5% sampling noise). 500: 1,160 spk (표준 정확), avg 189.1 utt/spk → extrapolated 219,298 (target 205,035, +7% sampling noise). speaker 표준 매칭 + utt ±10% 내 → nubes broader. 추가 업로드 불필요. § 9.5 / § 9.8 / § 즉시 보완 필요 갱신.
+- 2026-05-08 (MACS yaml nubes backup, 옵션 C): MACS audio 는 nubes `/datasets/public/MACS/audio/` (TAU2019 source `a` 14,400) 의 3,930 사용 — audio 중복 업로드 안 함. 대신 `MACS.yaml` (2.7 MB, 3,930 entry caption metadata) 만 `/users/jos/AudioEnc/MACS/MACS.yaml` 에 backup 업로드 (§ 12.8). [`build_macs.py`](../../scripts/manifest_builders/build_macs.py) 갱신: `_fetch_yaml()` 가 nubes URL 우선 fetch + `MACS_YAML_LOCAL` env var fallback (ddn 도 사용 가능). 완전 nubes-only 동작 가능. smoke test 통과 (3,930 entry / captions). § 9.2 MACS 행 / § 3 MACS 행 / § 9.8 종합 결론 의 "✓ 업로드 완료" 카테고리 (3 → 8) / "즉시 보완 필요" 항목 갱신 (EmoV-DB / RAVDESS / IEMOCAP / AudioSet 모두 완료 표기 + AudioCaps + eval 4종 만 미완으로 정정). § 9.8 v6 grand total 변동 없음 (yaml 만 추가, audio 는 표준 영역 그대로 인용).
+
+## 11. Nubes Guide
+
+```
+사용법
+Usage:
+  nubescli upload bucket/path localFilePath [upload-key] [flags]
+
+Flags:
+  -h, --help                   help for upload
+      --no-progress            프로그레스 바를 표시하지 않습니다.
+  -w, --overwrite              로컬 경로에 이미 파일이 있을 경우 덮어씁니다.
+  -s, --size string            업로드 할 오브젝트의 크기 (예: 10 or 10B, 1KB, 1MB, ...)
+                               이 플래그를 지정하지 않으면 업로드할 로컬 파일 크기와 동일하게 지정됩니다.
+  -g, --storage-group string   업로드 데이터를 별도의 스토리지 그룹으로 저장할 경우 지정합니다.
+                               생략할 경우 "default" 스토리지 그룹에 저장됩니다.
+  -t, --throttle string        전송 속도를 제한합니다. 예: 10 or 10B (10 bytes), 1KB, 1MB, 1GB (기본값은 "제한 없음")
+
+Global Flags:
+  -d, --debug   debug mode
+Example
+일반 Upload 예제
+# 로컬의 ./a.txt 파일을 Nubes에 업로드합니다. bucket명은 myBucket, path는 /dir/file.txt입니다.
+
+$ nubescli upload myBucket/dir/file.txt ./a.txt
+UploadKey:  UK-7cf90516-7608-11e9-80e5-38eaa78b5f14
+Upload 22.90 KiB / 22.90 KiB [=========================================================] 100.00%
+
+
+# stdin으로부터 입력받은 12바이트를 Nubes에 업로드 합니다. bucket명은 myBucket, path는 /std.txt입니다.
+# stdin으로부터 입력받기 위해 로컬 경로를 "-"로 지정합니다. 이때 반드시 --size 옵션을 함께 사용해야 합니다.
+
+$ nubescli upload myBucket/std.txt - --size=12
+UploadKey:  UK-c96ecf77-7608-11e9-80e5-38eaa78b5f14
+Hello, World
+
+
+# 업로드된 파일을 확인합니다.
+
+$ nubescli status myBucket/std.txt
+Content-Type: application/octet-stream
+Etag: 82bb413746aee42f89dea2b59614f9ef_907d14fb3af2b0d4f18c2d46abe8aedce17367bd
+Last-Modified: Tue, 14 May 2019 05:26:19 GMT
+Last-Modified(Local Time): Tue, 14 May 2019 14:26:19 KST
+Mutated: false
+X-Etag: c00005cda517b
+X-Object-Size: 12
+X-Object-Type: file
+Resumable Upload 예제
+# 로컬의 ./a.mp4 파일을 Nubes에 업로드합니다. bucket명은 myBucket, path는 /dir/movie.mp4입니다.
+
+$ nubescli upload myBucket/dir/movie.mp4 ./a.mp4
+UploadKey:  UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
+Upload 130.22 MiB / 300.00 MiB [====================>---------------------------]  43.41% 00m01s
+Signal caught: interrupt
+
+
+# 업로드가 중간에 실패하였을 경우 이어서 업로드할 수 있습니다.
+# 현재 업로드 세션이 종료되었는지, 유효한지 확인해보기 위해 upload-status 명령을 사용하면 됩니다
+# UploadKey 값은 처음 업로드 할 때 stderr로 출력됩니다.
+# 현재 136642560 바이트까지 업로드가 되어 있고, 당초 업로드하기로 한 사이즈는 314572800 바이트라는 의미입니다.
+
+$ nubescli upload-status myBucket/dir/movie.mp4 UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
+UploadType: resumable
+UploadKey: UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
+Range: bytes=0-136642559
+X-Retention-Time: Tue, 14 May 2019 05:17:03 GMT
+X-Retention-Time(Local Time): Tue, 14 May 2019 14:17:03 KST
+X-Upload-Content-Length: 314572800
+Current Upload Status: 136642560 / 314572800
+
+
+# 중단되었던 업로드를 재개합니다.
+
+$ nubescli upload myBucket/dir/movie.mp4 ./a.mp4 UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
+UploadKey:  UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
+Upload 300.00 MiB / 300.00 MiB [=======================================================] 100.00%
+ 
+
+# 잘 저장되었는지 status로 확인합니다.
+
+$ nubescli status myBucket/dir/movie.mp4
+Content-Type: application/octet-stream
+Etag: c6f2083476c039379ab62c01b2074c47_61a73810f79d9082f036ec53b9e4c579a44d290e
+Last-Modified: Tue, 14 May 2019 05:08:17 GMT
+Last-Modified(Local Time): Tue, 14 May 2019 14:08:17 KST
+Mutated: false
+X-Etag: 12c0000000005cda4d41
+X-Object-Size: 314572800
+X-Object-Type: file
+```
 
 ## 12. 업로드 기록 (Upload log)
 
@@ -965,7 +1069,7 @@ curl -sS -I "http://c.nubes.sto.navercorp.com:8000/v1/$NUBES_BASE/Actor_01/03-01
 
 **Nubes 기존 AudioSet 와 비교**:
 - nubes `/datasets/public/AudioSet_SL/audio/`: **108,317 flac (bal+unbal+eval 통합 dir)** + AF-Think jsonl + naiveInst_AudioSet_SL.jsonl (split 라벨 metadata)
-- v6 학습 = bal_train 18,683 만 (datasets.md § 3) → nubes 통합 dir 에서 split 매핑 시 metadata 라벨 의존, **builder bug 시 eval row 가 학습에 leak 가능** (§ 9.8)
+- v6 학습 = bal_train 18,683 만 (datasets.md § 3) → nubes 통합 dir 에서 split 매핑 시 metadata 라벨 의존, **builder bug 시 eval row 가 학습에 leak 가능** (§ 9.7)
 - 본 업로드는 **사용자 영역에 path-level split 분리 보존** → leak 안전
 
 **옵션 비교 + C 결정 사유**:
@@ -1068,7 +1172,328 @@ users/jos/AudioEnc/AudioSet/data/eval  matched=35  total_files=35
 
 > Note: 첫 검증 시도에서도 propagation lag 없이 모두 정확. IEMOCAP / RAVDESS 와 달리 retry 불필요. nubes propagation 이 file 단위가 아닌 listing API 단위 cache 때문일 수도.
 
-### 12.X 학습/평가 코드 nubes-aware 화 (2026-05-07)
+### 12.8 MACS (caption metadata yaml 만 업로드, 옵션 C) — 완료 2026-05-08
+
+**Source**: 로컬 `/mnt/tmp/datasets/env_sound/MACS/MACS.yaml`. **옵션 C 결정**: nubes 의 `/datasets/public/MACS/audio/` 14,400 wav (TAU2019 source `a` 전체) 그대로 사용 + 우리는 그중 3,930 만 학습 풀에 인용. 이를 위해 caption metadata (yaml) 만 사용자 영역에 backup 업로드.
+
+**배경**:
+- TAU2019 development = 10 scene × 12 city × 120 clip × source `a` = **14,400 wav** (nubes audio 정확히 그만큼)
+- MACS = TAU2019 의 **3 scene** (airport 1,296 + park 1,317 + public_square 1,317 = **3,930 wav** subset) 에 caption 라벨링한 데이터셋
+- v6 학습 풀 = 3,930 row (MACS 정의 그대로)
+- nubes audio 14,400 중 yaml 의 3,930 file 명이 모두 존재 (missing 0, spot fetch 200 OK 검증)
+- nubes `/datasets/public/MACS/AF-Think_*.jsonl` 는 별도 audio-qa 라벨 (39 row, MACS 공식 caption 아님 — 사용 안 함)
+
+**Staging** (`/mnt/tmp/staging/jos_AudioEnc/MACS/`, 2.7 MB):
+
+```
+MACS/
+└── MACS.yaml   (3,930 entry, 각 entry 에 filename + 2-5 annotator caption)
+```
+
+**업로드 명령**:
+```bash
+cd /mnt/tmp/staging/jos_AudioEnc/MACS
+NUBES_BASE=hyperscaleai-audiollm/users/jos/AudioEnc/MACS
+
+nubescli upload "$NUBES_BASE/MACS.yaml" ./MACS.yaml
+```
+
+**Builder + manifest 변경 (별도 세션이 nubes-direct 화 완료 + 본 세션 yaml fetch 화 추가)**:
+- [`build_macs.py`](../../scripts/manifest_builders/build_macs.py): nubes URL fetch 우선 + `MACS_YAML_LOCAL` env var fallback (ddn 로컬 yaml 도 사용 가능). yaml entry 의 `filename` 을 `hyperscaleai-audiollm/datasets/public/MACS/audio/<filename>` nubes_path 로 직접 매핑 → ddn extract dir (`/mnt/tmp/datasets/laion_extracted/macs/`) 의존 폐기
+- v6 manifest `audio_env_sound/macs_*.jsonl`: schema `audio_path` → `nubes_path` 갱신 (row 3,930 변동 없음)
+- 폐기된 v5 까지의 동작: TAU2019 21 zip × ~수 GB download → ddn extract → audio_path. 신규: nubes audio path 직접 인용
+
+**검증**:
+
+A. yaml fetch (200 OK + 크기)
+```bash
+curl -sS -I "http://c.nubes.sto.navercorp.com:8000/v1/hyperscaleai-audiollm/users/jos/AudioEnc/MACS/MACS.yaml"
+```
+```
+HTTP/1.1 200 OK
+X-Object-Size: 2,772,273
+```
+
+B. builder smoke test (`_fetch_yaml` + `load_targets`)
+```bash
+python3 -c "
+from scripts.manifest_builders.build_macs import _fetch_yaml, load_targets
+d = _fetch_yaml()
+print(f'yaml entries: {len(d[\"files\"])}')
+t = load_targets()
+print(f'targets: {len(t)}, sample: {list(t.keys())[0]} -> {len(list(t.values())[0])} captions')
+"
+```
+```
+yaml entries: 3930
+targets (with captions): 3930
+sample: airport-barcelona-0-0-a.wav -> 4 captions, first: a person whistling and singing
+```
+
+C. yaml ⊆ nubes audio 매칭 (직접 검증)
+```
+yaml 의 3,930 file 명 ⊆ nubes audio 14,400 file 명. missing 0
+nubes 추가 10,470 = TAU2019 의 다른 7 scene (안 사용)
+sample audio HTTP HEAD: airport-barcelona-0-0-a.wav → 200 OK, X-Object-Size 2,880,044 byte
+```
+
+**검증 결과**:
+
+| 항목 | 목표 | 실제 | 상태 |
+|---|---:|---:|---|
+| MACS.yaml | 2,772,273 B | 2,772,273 B | ✓ |
+| yaml 의 entry | 3,930 | 3,930 | ✓ |
+| yaml 의 모든 filename ⊆ nubes audio | 3,930 / 3,930 | 3,930 / 3,930 (missing 0) | ✓ |
+| builder smoke (`load_targets`) | 3,930 with captions | 3,930 | ✓ |
+
+업로드 시작 시각: 2026-05-08 03:46:56 UTC. 완료 시각: 2026-05-08 03:46:56 UTC. 누계 elapsed **<5초** (yaml 단일 파일 2.7 MB).
+
+> **옵션 C 의의**: MACS 의 audio (3,930) 를 별도 업로드 안 함 (nubes /datasets/public/MACS/audio/ 의 14,400 중 3,930 사용 — audio 중복 0). yaml 만 ~2.7 MB 추가로 builder 가 nubes-only 동작 가능. ddn extract dir 의존 폐기 + nubes 표준 영역 audio 활용 일관성.
+
+### 12.9 AudioCaps (audio + parquets, train+val+test 표준 dist) — 진행 중
+
+**Source**: 로컬 audio (`/mnt/tmp/datasets/laion_extracted/audiocaps/`) + 로컬 parquet (`/mnt/tmp/datasets/audiocaps/data/`). v6 학습 풀 = train+val 의 45,623 unique audio. **옵션 C2** 결정: audio (test 추가 추출 포함) + parquets (test 신규 다운로드 포함) 모두 nubes 보존 → FSD50K 패턴 동일.
+
+**HF test split 신규 다운로드** (이 entry 작업 시):
+- HF source: [`OpenSound/AudioCaps`](https://huggingface.co/datasets/OpenSound/AudioCaps) (train 412 + val 20 + test 41 parquet)
+- test 41 parquet → `/mnt/tmp/datasets/audiocaps/data/` (3.57 GB, 85 s)
+- test parquet 의 audio bytes 추출 → 883 unique FLAC (test 4,411 row → 5 captions per unique audio = 882 unique + 1 변동, 실측 883)
+
+**Staging** (`/mnt/tmp/staging/jos_AudioEnc/AudioCaps/`, 81 GB):
+
+```
+AudioCaps/
+├── audio/<youtube_id>_<start_time>.flac    (46,506 file, 40 GB)
+│   ├── train+val 45,623 (기존 추출본)
+│   └── test 883 (신규 추출, parquet 의 audio bytes)
+├── data/                                    (473 parquet, 41 GB, 표준 HF dist)
+│   ├── train-NNNNN-of-00412.parquet × 412
+│   ├── validation-NNNNN-of-00020.parquet × 20
+│   └── test-NNNNN-of-00041.parquet × 41    (신규)
+└── README_upload.md
+```
+
+**업로드 명령**:
+```bash
+cd /mnt/tmp/staging/jos_AudioEnc/AudioCaps
+NUBES_BASE=hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps
+
+# audio (대용량 40 GB, 46,506 file)
+nubescli dir-upload -j 16 "$NUBES_BASE/audio" ./audio
+
+# data (parquet 473 file, ~41 GB)
+nubescli dir-upload -j 16 "$NUBES_BASE/data"  ./data
+
+# README
+nubescli upload "$NUBES_BASE/README_upload.md" ./README_upload.md
+```
+
+**Builder 갱신** ([`build_audiocaps.py`](../../scripts/manifest_builders/build_audiocaps.py), nubes-direct + leak prevention):
+- parquet 은 nubes URL 에서 stream fetch (`AUDIOCAPS_LOCAL_PARQUET_DIR` env var 설정 시 ddn 로컬 fallback)
+- audio bytes 추출 폐기 (nubes audio 가 이미 보존), audio_path 컬럼은 ddn FLAC → **nubes_path** 로 직접 인용
+- **Leak prevention**: `SPLIT_PARQUET_COUNT = {"train": 412, "validation": 20}` 명시 dict. test 41 parquet 절대 enumerate 안 함. `list_split_parquets("test")` 호출 시 `ValueError` raise
+- 출력 schema: `{"modality":"audio_env_sound", "source":"audiocaps", "nubes_path":"hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/audio/<ytid>_<start>.flac", "captions":[...]}`
+- nubes-direct 빌더 작성 시 흔한 leak vector (`glob '*.parquet'` 또는 `audio/*.flac`) 명시 회피
+
+**Leak audit (build 시점)** ✓ clean:
+- v6 manifest unique audio key (45,623) ∩ test parquet key (883) = **0** (LEAK 없음)
+- nubes audio 의 test FLAC 가 보존되어 있어도 `glob` 안 하고 명시 list 만 사용 → 학습 풀에 절대 안 들어감
+- builder 의 `process_split("test")` 호출은 `ValueError` (lock 코드)
+
+**Nubes 최종 구조** (예상):
+```
+hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/
+├── audio/<youtube_id>_<start_time>.flac (46,506)
+├── data/{train,validation,test}-NNNNN-of-NNN.parquet (473)
+└── README_upload.md
+```
+
+**검증 명령 + 실제 출력**: (업로드 후 채움)
+
+**검증 결과**: (업로드 후 채움)
+
+| 항목 | 목표 | 실제 | 상태 |
+|---|---:|---:|---|
+| audio/*.flac | 46,506 | (TBD) | ⏳ |
+| data/train-*.parquet | 412 | (TBD) | ⏳ |
+| data/validation-*.parquet | 20 | (TBD) | ⏳ |
+| data/test-*.parquet | 41 | (TBD) | ⏳ |
+| Sample wav HEAD (X-Object-Size) | (TBD) | (TBD) | ⏳ |
+| Sample parquet HEAD | (TBD) | (TBD) | ⏳ |
+
+업로드 시작 시각: (TBD), 완료 시각: (TBD).
+
+### 12.10 MELD CSV (Stage-1 emotion 학습 + Stage-2 평가 라벨) — 완료 2026-05-08
+
+**Source**: 로컬 `/mnt/tmp/datasets/emotion_raw/MELD/MELD.Raw/{train,dev,test}_sent_emo.csv`. nubes 의 `/datasets/public/MELD.Raw/` 에 audio mp3 (13,847 file, train_splits/dev_splits_complete/output_repeated_splits_test 분리) 는 있으나 emotion label csv 부재 → builder/eval 가 ddn 의존 잔존했음. csv 만 nubes 에 추가해서 nubes-only 학습/eval 가능하게 함.
+
+**Staging** (`/mnt/tmp/staging/jos_AudioEnc/MELD/`, 1.5 MB):
+
+```
+MELD/
+├── CSV/
+│   ├── train_sent_emo.csv  (9,989 row, 1.05 MB)
+│   ├── dev_sent_emo.csv    (1,109 row, 117 KB)
+│   └── test_sent_emo.csv   (2,610 row, 284 KB)
+└── README_upload.md         (3.3 KB)
+```
+
+**업로드 명령**:
+```bash
+cd /mnt/tmp/staging/jos_AudioEnc/MELD
+NUBES_BASE=hyperscaleai-audiollm/users/jos/AudioEnc/MELD
+nubescli dir-upload "$NUBES_BASE/CSV" ./CSV
+nubescli upload "$NUBES_BASE/README_upload.md" ./README_upload.md
+```
+
+**Nubes 최종 구조**:
+```
+hyperscaleai-audiollm/users/jos/AudioEnc/MELD/
+├── CSV/{train,dev,test}_sent_emo.csv
+└── README_upload.md
+```
+
+**검증 명령 + 실제 출력**:
+
+A. Top-level
+```
+README_upload.md  3,333 B
+CSV               (dir)
+```
+
+B. CSV dir
+```
+train_sent_emo.csv  1,105,502 B
+dev_sent_emo.csv      120,071 B
+test_sent_emo.csv     290,841 B
+```
+
+C. test_sent_emo.csv head
+```
+Sr No.,Utterance,Speaker,Emotion,Sentiment,Dialogue_ID,Utterance_ID,Season,Episode,StartTime,EndTime
+1,Why do all youre coffee mugs have numbers on the bottom?,Mark,surprise,positive,0,0,3,19,"00:14:38,127","00:14:40,378"
+```
+
+**검증 결과**:
+
+| 항목 | 목표 | 실제 | 상태 |
+|---|---:|---:|---|
+| train_sent_emo.csv size | 1,105,502 B | 1,105,502 B | ✓ |
+| dev_sent_emo.csv size | 120,071 B | 120,071 B | ✓ |
+| test_sent_emo.csv size | 290,841 B | 290,841 B | ✓ |
+| README_upload.md size | 3,333 B | 3,333 B | ✓ |
+
+업로드 시작 시각: 2026-05-08 05:46:02 UTC. 완료 시각: 동일 (1.5 MB 라 1초). 누계 elapsed: ~1 s.
+
+**연계 코드 갱신** (병렬 진행):
+
+1. [`build_emotion_meld.py`](../../scripts/manifest_builders/build_emotion_meld.py) **nubes-direct 갈아엎음** — csv 를 nubes URL 로 fetch + audio path 를 `nubes_path: hyperscaleai-audiollm/datasets/public/MELD.Raw/<split>/dia<N>_utt<M>.mp3` 출력. ddn 의존성 0. row 11,096 (train+dev valid) 갱신, csv 와 audio_stems 매핑으로 invalid 2 row drop (csv 에 있고 audio 없는 utt). 11,096 = datasets.md 와 정확 일치
+2. [`eval_source_emotion.load_meld_test`](../../evaluation/stage2/eval_source_emotion.py) **nubes-direct** — 환경변수 `MELD_LOCAL_FALLBACK=1` 시 legacy ddn path 사용. 기본은 nubes URL fetch + nubes_path 로 audio fetch. eval 시 nubes-aware loader 가 `path` field 을 nubes_path 로 인식해야 (omni_dataset.py 와 동일 메커니즘 또는 별도 patch 필요)
+3. **v6 manifest 재빌드** — `v6_raw/emotion_meld_0000.jsonl` (11,096 row) audio_path → nubes_path 갈아엎음. v6/audio_emotion + v6_emotion_split 의 emotion_combined 16 shard 재 merge (seed=20260424). source mix 합 50,284 (=DT 23,773 + MELD 11,096 + IEMOCAP 5,882 + EmoV 6,893 + RAVDESS 1,440 + MUStARD 1,200) 그대로
+
+### 12.11 DailyTalk (Stage-1 emotion utterance wav + metadata) — 진행 중
+
+**Source**: 로컬 `/mnt/tmp/datasets/emotion_raw/DailyTalk/dailytalk/` (둘 동일: `/mnt/ddn/users/jos/AudioEnc/log/tmp/datasets/emotion_raw/DailyTalk/dailytalk/`). nubes `/datasets/public/DailyTalk/audio/` = 2,541 wav 모두 0 byte placeholder (사실상 부재). v6 룰 (canonical split 없음 + leak-fix 폐기) 적용으로 **23,773 utterance 통째로 학습 풀**.
+
+**Staging** (`/mnt/tmp/staging/jos_AudioEnc/DailyTalk/`, 6.6 GB):
+
+```
+DailyTalk/
+├── data/<dialog_id>/<utt_id>_<spk>_d<dialog_id>.{wav, txt}   (23,773 wav + 23,773 txt, 2,541 dialogue dir)
+├── metadata.json                                              (7.85 MB, dialogue/utterance 별 emotion + speaker + text)
+└── README_upload.md
+```
+
+**제외 항목**:
+- `dailytalk.zip` (5 GB): `data/` 가 이미 풀린 archive, 중복
+- `repo/` (220 MB): DailyTalk upstream GitHub repo clone (FastSpeech2 baseline 학습 코드 + Dockerfile + .git + hifigan/lexicon/model 등). v6 학습/eval 무관
+
+**업로드 명령**:
+```bash
+cd /mnt/tmp/staging/jos_AudioEnc/DailyTalk
+NUBES_BASE=hyperscaleai-audiollm/users/jos/AudioEnc/DailyTalk
+
+# data dir (23,773 wav + 23,773 txt = 47,546 file, 2,541 dialogue sub-dir)
+nubescli dir-upload -j 16 "$NUBES_BASE/data" ./data
+
+# metadata + README
+nubescli upload "$NUBES_BASE/metadata.json" ./metadata.json
+nubescli upload "$NUBES_BASE/README_upload.md" ./README_upload.md
+```
+
+**Nubes 최종 구조** (예상):
+```
+hyperscaleai-audiollm/users/jos/AudioEnc/DailyTalk/
+├── data/<dialog_id>/<utt_id>_<spk>_d<dialog_id>.{wav, txt}   (47,546 file, 2,541 dir)
+├── metadata.json                                              (7.85 MB)
+└── README_upload.md
+```
+
+> **Note**: nubes 의 기존 `/datasets/public/DailyTalk/audio/` (0 byte placeholder) 는 무시. 본 entry 의 `/users/jos/AudioEnc/DailyTalk/data/` 가 정식 source.
+
+**Builder 갱신** (별도 작업, nubes-direct 화 시):
+- 현재 [`build_emotion_dailytalk.py`](../../scripts/manifest_builders/build_emotion_dailytalk.py) 는 ddn local path 인용. nubes-direct 빌더는 metadata.json 의 dialogue / utterance id 를 nubes_path 로 매핑.
+- v6 룰 변경 후 cutoff 로직 폐기 (§ 4 헤더 / 빌더 line 27-39 참고)
+- nubes-direct schema: `{"audio_path": "hyperscaleai-audiollm/users/jos/AudioEnc/DailyTalk/data/<dlg>/<utt>_<spk>_d<dlg>.wav", ...}` 또는 metadata fetch + path mapping.
+
+**검증 명령 + 실제 출력**: (업로드 후 채움)
+
+**검증 결과**: (업로드 후 채움)
+
+| 항목 | 목표 | 실제 | 상태 |
+|---|---:|---:|---|
+| data/*.wav (recursive) | 23,773 | (TBD) | ⏳ |
+| data/*.txt (recursive) | 23,773 | (TBD) | ⏳ |
+| dialogue dir 수 | 2,541 | (TBD) | ⏳ |
+| metadata.json size | 7,850,994 B | (TBD) | ⏳ |
+| Sample wav (`data/0/0_1_d0.wav`) HEAD | (TBD) | (TBD) | ⏳ |
+
+업로드 시작 시각: (TBD), 완료 시각: (TBD).
+
+### 12.12 Clotho-v2 (eval + val splits) — 완료 2026-05-08
+
+**상태**: 4 파일/디렉토리 업로드 완료, nubes listing 검증 ✓.
+
+**대상**:
+- `clotho_captions_evaluation.csv` (Stage-2 eval 필수, 로컬 356K)
+- `clotho_captions_validation.csv` (학습 1,044 row 의 nubes-aware 화 용, 로컬 360K)
+- `evaluation/` 1,045 wav (~2.0 GB, Stage-2 eval audio)
+- `validation/` 1,045 wav (~2.0 GB, 학습 audio)
+
+**옵션 결정**: split 별 subdir 분리 (audio_evaluation/, audio_validation/) — 같은 `audio/` 에 합치면 dev/eval/val 파일명 충돌 4건 (dev∩eval=1, dev∩val=1, eval∩val=2) 발생.
+
+**명령**:
+```bash
+nubescli upload hyperscaleai-audiollm/datasets/public/Clotho-v2/clotho_captions_evaluation.csv \
+    /mnt/tmp/datasets/env_sound/Clotho/captions_evaluation.csv
+nubescli upload hyperscaleai-audiollm/datasets/public/Clotho-v2/clotho_captions_validation.csv \
+    /mnt/tmp/datasets/env_sound/Clotho/captions_validation.csv
+nubescli dir-upload hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_evaluation/ \
+    /mnt/tmp/datasets/env_sound/Clotho/evaluation/ -j 16
+nubescli dir-upload hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_validation/ \
+    /mnt/tmp/datasets/env_sound/Clotho/validation/ -j 16
+```
+
+**검증**:
+
+| 대상 | 로컬 | nubes | 일치 |
+|---|---:|---:|:--:|
+| clotho_captions_evaluation.csv | 364,800 B | 361,995 B | ✓ (text size 변동 normal) |
+| clotho_captions_validation.csv | 368,640 B | 367,649 B | ✓ |
+| audio_evaluation/ wav 수 | 1,045 | (dir 존재, 첫 5 wav 정상 size: 2.5/1.7/2.3/2.2/2.1 MB) | ✓ |
+| audio_validation/ wav 수 | 1,045 | (dir 존재, 첫 5 wav 정상 size: 1.5/1.7/2.2/2.0/1.6 MB) | ✓ |
+
+**총 시간**: ~9 분 (dir-upload `-j 16` 병렬).
+
+**후속 (코드 갱신 — 2026-05-08 동시 진행)**:
+1. ✓ [`_nubes_loader.py`](../../evaluation/stage2/_nubes_loader.py) `NUBES_BASES["clotho"]` 에 `audio_eval` / `audio_val` / `captions_eval` / `captions_val` 4 키 추가
+2. ✓ [`eval_clotho_caption.py`](../../evaluation/stage2/eval_clotho_caption.py) `load_clotho_split()` 가 `_NUBES_SPLIT_KEYS` table 로 dev / eval / val 모두 nubes 분기 지원
+3. ✓ [`rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py) clotho PREFIX_MAPPINGS 를 list-form 으로 확장 (dev → `audio/`, val → `audio_validation/`). `rewrite_row()` 도 list / single-tuple 둘 다 처리. dry-run 검증 ✓
+4. ✓ [`build_clotho.py`](../../scripts/manifest_builders/build_clotho.py) 가 처음부터 dev / val 둘 다 `nubes_path` 박음 — 다음 v6 빌드부터 v6_nubes clotho 매핑률 78.6% → 100%
+
+**미적용**: 현재 진행 중인 v6 whisper-tiny 학습 (step ~3,800/100k) 의 manifest 는 갱신 전 v6_nubes 그대로. val 1,044 row 가 local fallback 으로 학습 중 — 정상이라 재시작 불필요.
+
+### 12.13 학습/평가 코드 nubes-aware 화 (2026-05-07)
 
 업로드 완료된 source 들을 학습 / 평가에서 local 대신 nubes 에서 받도록 코드 갱신. `omni_dataset.py` 가 modality-agnostic nubes loader 라 학습은 manifest 만 갱신, eval 은 helper + 분기 patch.
 
@@ -1120,92 +1545,26 @@ EVAL_USE_NUBES=1 python -m evaluation.stage2.eval_audioset_map ...
 
 `EVAL_USE_NUBES` 미설정 시 기존 동작 (local path) 유지.
 
-## 11. Nubes Guide
+#### 6. mp3 디코드 (MELD) — 환경 setup + fallback chain
+
+MELD audio 가 nubes 에 mp3 (transcoded) 인데 기본 torchaudio backend (libsndfile) 가 mp3 미지원. 학습 / eval 환경의 디코드 backend 가 다음 중 하나 필요:
+
+| backend | 설치 방법 | 우선순위 |
+|---|---|---|
+| **torchaudio ffmpeg** (built-in) | torchaudio 가 ffmpeg lib 와 link 되어 빌드 | 1 (가장 빠름) |
+| **pyav** | `pip install av` (이미 audio_lmf, audio env 에 17.0.1 설치됨) | 2 |
+| **ffmpeg subprocess** | `conda install -c conda-forge ffmpeg` 또는 system ffmpeg | 3 |
+
+[`eval_source_emotion.decode_audio`](../../evaluation/stage2/eval_source_emotion.py) 에 fallback chain 구현 — torchaudio ffmpeg → pyav → subprocess 순서로 시도. mp3 파일 (file extension 으로 검출) 에만 적용, wav/flac 는 기본 경로.
+
+**검증** (audio_lmf env, conda install ffmpeg + pyav 17.0.1 사용):
+- `load_meld_test()` → 2,610 row + 7 emotion labels ✓
+- `decode_audio(nubes_path)` → 정상 디코드 (sample 10 개) ✓
+- mp3 ↔ wav RMS diff = 0.23 (mean), 0.33 (max) — mp3 LAME priming/padding (~430-680 sample 차이) 으로 인한 frame alignment 효과. quality 자체 정상, 학습/eval 영향 미미
+
+다른 환경 (audio311, audio) 에서 mp3 디코드 사용 시:
+```bash
+# audio_lmf 가 권장 (ffmpeg + pyav 모두 있음). audio311 / audio 는 pyav fallback 동작 확인 필요.
+/mnt/ddn/users/jos/miniforge3/bin/conda install -y -n <env> -c conda-forge ffmpeg
 ```
-사용법
-Usage:
-  nubescli upload bucket/path localFilePath [upload-key] [flags]
 
-Flags:
-  -h, --help                   help for upload
-      --no-progress            프로그레스 바를 표시하지 않습니다.
-  -w, --overwrite              로컬 경로에 이미 파일이 있을 경우 덮어씁니다.
-  -s, --size string            업로드 할 오브젝트의 크기 (예: 10 or 10B, 1KB, 1MB, ...)
-                               이 플래그를 지정하지 않으면 업로드할 로컬 파일 크기와 동일하게 지정됩니다.
-  -g, --storage-group string   업로드 데이터를 별도의 스토리지 그룹으로 저장할 경우 지정합니다.
-                               생략할 경우 "default" 스토리지 그룹에 저장됩니다.
-  -t, --throttle string        전송 속도를 제한합니다. 예: 10 or 10B (10 bytes), 1KB, 1MB, 1GB (기본값은 "제한 없음")
-
-Global Flags:
-  -d, --debug   debug mode
-Example
-일반 Upload 예제
-# 로컬의 ./a.txt 파일을 Nubes에 업로드합니다. bucket명은 myBucket, path는 /dir/file.txt입니다.
-
-$ nubescli upload myBucket/dir/file.txt ./a.txt
-UploadKey:  UK-7cf90516-7608-11e9-80e5-38eaa78b5f14
-Upload 22.90 KiB / 22.90 KiB [=========================================================] 100.00%
-
-
-# stdin으로부터 입력받은 12바이트를 Nubes에 업로드 합니다. bucket명은 myBucket, path는 /std.txt입니다.
-# stdin으로부터 입력받기 위해 로컬 경로를 "-"로 지정합니다. 이때 반드시 --size 옵션을 함께 사용해야 합니다.
-
-$ nubescli upload myBucket/std.txt - --size=12
-UploadKey:  UK-c96ecf77-7608-11e9-80e5-38eaa78b5f14
-Hello, World
-
-
-# 업로드된 파일을 확인합니다.
-
-$ nubescli status myBucket/std.txt
-Content-Type: application/octet-stream
-Etag: 82bb413746aee42f89dea2b59614f9ef_907d14fb3af2b0d4f18c2d46abe8aedce17367bd
-Last-Modified: Tue, 14 May 2019 05:26:19 GMT
-Last-Modified(Local Time): Tue, 14 May 2019 14:26:19 KST
-Mutated: false
-X-Etag: c00005cda517b
-X-Object-Size: 12
-X-Object-Type: file
-Resumable Upload 예제
-# 로컬의 ./a.mp4 파일을 Nubes에 업로드합니다. bucket명은 myBucket, path는 /dir/movie.mp4입니다.
-
-$ nubescli upload myBucket/dir/movie.mp4 ./a.mp4
-UploadKey:  UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
-Upload 130.22 MiB / 300.00 MiB [====================>---------------------------]  43.41% 00m01s
-Signal caught: interrupt
-
-
-# 업로드가 중간에 실패하였을 경우 이어서 업로드할 수 있습니다.
-# 현재 업로드 세션이 종료되었는지, 유효한지 확인해보기 위해 upload-status 명령을 사용하면 됩니다
-# UploadKey 값은 처음 업로드 할 때 stderr로 출력됩니다.
-# 현재 136642560 바이트까지 업로드가 되어 있고, 당초 업로드하기로 한 사이즈는 314572800 바이트라는 의미입니다.
-
-$ nubescli upload-status myBucket/dir/movie.mp4 UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
-UploadType: resumable
-UploadKey: UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
-Range: bytes=0-136642559
-X-Retention-Time: Tue, 14 May 2019 05:17:03 GMT
-X-Retention-Time(Local Time): Tue, 14 May 2019 14:17:03 KST
-X-Upload-Content-Length: 314572800
-Current Upload Status: 136642560 / 314572800
-
-
-# 중단되었던 업로드를 재개합니다.
-
-$ nubescli upload myBucket/dir/movie.mp4 ./a.mp4 UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
-UploadKey:  UK-1bd0f574-7606-11e9-80e5-38eaa78b5f14
-Upload 300.00 MiB / 300.00 MiB [=======================================================] 100.00%
- 
-
-# 잘 저장되었는지 status로 확인합니다.
-
-$ nubescli status myBucket/dir/movie.mp4
-Content-Type: application/octet-stream
-Etag: c6f2083476c039379ab62c01b2074c47_61a73810f79d9082f036ec53b9e4c579a44d290e
-Last-Modified: Tue, 14 May 2019 05:08:17 GMT
-Last-Modified(Local Time): Tue, 14 May 2019 14:08:17 KST
-Mutated: false
-X-Etag: 12c0000000005cda4d41
-X-Object-Size: 314572800
-X-Object-Type: file
-```

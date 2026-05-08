@@ -174,7 +174,7 @@ EOF
 
 [`omni_dataset.py`](../../src/llamafactory/data/omni_dataset.py) 의 nubes loader 가 modality-agnostic 이라 manifest 만 갱신하면 학습 nubes-direct 동작. nubes fetch 실패 시 `audio_path` fallback (자동).
 
-생성: [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py). source-별 PREFIX_MAPPINGS 9개 적용 (audioset, laion_bbc, laion_epidemic, fsd50k, clotho, iemocap, ravdess, emovdb, mustardpp). 미매핑 source (dailytalk, audiocaps, laion_freesound, laion_audiostock, macs, meld) 는 audio_path 만 유지 → local fallback.
+생성: [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py). source-별 PREFIX_MAPPINGS 9 source 적용 (audioset, laion_bbc, laion_epidemic, fsd50k, clotho, iemocap, ravdess, emovdb, mustardpp). clotho 는 2026-05-08 § 12.12 업로드 후 list-form 으로 dev / val 두 prefix 매핑 (audio/, audio_validation/). audiostock + macs 는 빌더가 처음부터 nubes-direct 라 rewrite 안 거침 (실질 nubes-mapped source 11개). 미매핑 source 4개 (dailytalk, audiocaps, laion_freesound, meld) 는 audio_path 만 유지 → local fallback.
 
 총 mapped row: 186,482 (audio_env_sound + audio_emotion 의 ~25 %). 나머지 540,633 은 nubes 미업로드 source.
 
