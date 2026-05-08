@@ -74,9 +74,15 @@ NUBES_BASES: dict[str, dict[str, str]] = {
         "test_other": "datasets/public/librispeech_asr/other/test/",
     },
     "clotho": {
-        # nubes 기존 public — dev (학습) 만. evaluation split 부재 (업로드 보류)
-        "audio": "datasets/public/Clotho-v2/audio/",
-        "captions_dev": "datasets/public/Clotho-v2/clotho_captions_development.csv",
+        # nubes public — dev (학습), val (학습), eval (Stage-2). 2026-05-08 § 12.12
+        # 업로드로 eval+val csv + audio subdir 추가. dev/eval/val 파일명 충돌 4건
+        # 회피 위해 split 별 audio_{evaluation,validation}/ 분리.
+        "audio":          "datasets/public/Clotho-v2/audio/",            # dev
+        "audio_eval":     "datasets/public/Clotho-v2/audio_evaluation/",
+        "audio_val":      "datasets/public/Clotho-v2/audio_validation/",
+        "captions_dev":   "datasets/public/Clotho-v2/clotho_captions_development.csv",
+        "captions_eval":  "datasets/public/Clotho-v2/clotho_captions_evaluation.csv",
+        "captions_val":   "datasets/public/Clotho-v2/clotho_captions_validation.csv",
     },
 }
 

@@ -5,10 +5,20 @@ Source captions:
     /mnt/tmp/datasets/env_sound/Clotho/captions_validation.csv   (1045 rows)
 Source audio:
     /mnt/tmp/datasets/env_sound/Clotho/{development,validation}/<file_name>
+Nubes (2026-05-08 업로드 후):
+    hyperscaleai-audiollm/datasets/public/Clotho-v2/audio/<fname>             (dev, 기존)
+    hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_validation/<fname>  (val, 신규)
+
+dev/eval/val 파일명 충돌 4건 회피 위해 split 별 nubes subdir 분리. Stage-2 eval
+용 evaluation split 은 학습 풀 미포함 (별도 `audio_evaluation/` 업로드, 본 빌더
+스코프 밖, § nubes_upload.md 12.12 참고).
 
 CSV columns: file_name, caption_1..5.
 
 Skip rows with missing audio or any empty caption (kept = all 5 non-empty).
+
+Each row carries both `audio_path` (local) and `nubes_path` (gateway) — loader
+가 `load_from_nubes=True` 로 nubes 시도하고 실패 시 local fallback.
 """
 import csv
 import json
@@ -18,12 +28,20 @@ ROOT = Path("/mnt/tmp/datasets/env_sound/Clotho")
 MANIFEST_OUT = Path("/mnt/tmp/datasets/manifests/v3")
 SHARD_ROWS = 15000
 
+# Nubes prefix per split (audio subdir naming, 2026-05-08 § 12.12 업로드와 일치)
+NUBES_BUCKET = "hyperscaleai-audiollm"
+NUBES_AUDIO_PREFIX = {
+    "development": f"{NUBES_BUCKET}/datasets/public/Clotho-v2/audio/",
+    "validation":  f"{NUBES_BUCKET}/datasets/public/Clotho-v2/audio_validation/",
+}
+
 MANIFEST_OUT.mkdir(parents=True, exist_ok=True)
 
 
 def process_split(csv_name: str, audio_dir_name: str, manifest_prefix: str) -> tuple[int, int]:
     csv_path = ROOT / csv_name
     audio_dir = ROOT / audio_dir_name
+    nubes_prefix = NUBES_AUDIO_PREFIX[audio_dir_name]
 
     rows: list[dict] = []
     n_seen = 0
@@ -53,6 +71,7 @@ def process_split(csv_name: str, audio_dir_name: str, manifest_prefix: str) -> t
                 "modality": "audio_env_sound",
                 "source": "clotho",
                 "audio_path": str(audio_path),
+                "nubes_path": nubes_prefix + fname,
                 "captions": caps,
             })
 

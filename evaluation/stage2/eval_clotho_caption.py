@@ -125,18 +125,29 @@ def corpus_bleu(list_of_refs: list[list[list[str]]], hyps: list[list[str]],
 # ---------------------------------------------------------------------------
 
 
+_NUBES_SPLIT_KEYS = {
+    # split → (csv key in NUBES_BASES["clotho"], audio prefix key)
+    "development": ("captions_dev",  "audio"),
+    "evaluation":  ("captions_eval", "audio_eval"),
+    "validation":  ("captions_val",  "audio_val"),
+}
+
+
 def load_clotho_split(split: str) -> list[dict]:
     """Return list of {file_path, captions[5]}.
 
-    USE_NUBES=1 + split == 'development' 만 nubes 지원 (eval / val 은 nubes 부재).
+    USE_NUBES=1 면 development / evaluation / validation 모두 nubes 지원
+    (2026-05-08 § 12.12 업로드 후). split 별 audio subdir 분리됐고 각 captions
+    csv 도 따로 있음 — `_NUBES_SPLIT_KEYS` 매핑 참고.
     """
     from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
     import io as _io
     rows = []
-    if USE_NUBES and split == "development":
-        csv_text = fetch_nubes_text(NUBES_BASES["clotho"]["captions_dev"])
+    if USE_NUBES and split in _NUBES_SPLIT_KEYS:
+        cap_key, audio_key = _NUBES_SPLIT_KEYS[split]
+        csv_text = fetch_nubes_text(NUBES_BASES["clotho"][cap_key])
         f = _io.StringIO(csv_text)
-        audio_base = NUBES_BASES["clotho"]["audio"]
+        audio_base = NUBES_BASES["clotho"][audio_key]
         reader = csv.DictReader(f)
         for r in reader:
             fn = r["file_name"]
