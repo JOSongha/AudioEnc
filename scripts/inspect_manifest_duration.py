@@ -26,9 +26,13 @@ from pathlib import Path
 NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
 
 SOURCE_KEYWORDS = {
+    # NOTE: keys are matched left-to-right; longer/more-specific keys must
+    # come first so e.g. "libritts" wins over the generic "libri".
     "mls": "mls",
-    "libri": "libriTTS",
+    "gigaspeech": "gigaspeech",
     "voxpopuli": "voxpopuli",
+    "libritts": "libriTTS",
+    "libri": "libriTTS",
 }
 
 

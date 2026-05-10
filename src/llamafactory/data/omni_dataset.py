@@ -520,12 +520,9 @@ def create_omni_processor(
                     if waveform.shape[0] > 1:
                         waveform = waveform.mean(dim=0, keepdim=True)
                     if max_audio_samples is not None and waveform.shape[-1] > max_audio_samples:
-                        continue
-                    # SEANet encoder (WavTok) has stride=7 conv layers; clips
-                    # shorter than ~4 tokens (100ms @ 24kHz) crash with "kernel
-                    # > padded input". Harmless for non-SEANet encoders.
-                    if waveform.shape[-1] < 4 * hop_length:
-                        continue
+                        # head-truncate: match Whisper variant behavior so long clips
+                        # (LAION-BBC, Freesound, etc.) stay in the training pool.
+                        waveform = waveform[..., :max_audio_samples]
 
                 # ---- (B) token counts -------------------------------------------
                 active_stage = "token_counts"

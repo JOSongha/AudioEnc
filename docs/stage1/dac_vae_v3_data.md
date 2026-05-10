@@ -131,24 +131,24 @@ python scripts/laion_audio_630k/extract_epidemic.py     # ~10 min
 # Audiostock은 추출 불필요 (이미 mp3 개별 파일)
 
 # 2) Manifest builders (sound captioning + classification → caption)
-python scripts/v3_manifest/build_audioset.py            # ontology→cap, AudioSet bal_train
-python scripts/v3_manifest/build_fsd50k.py              # ontology→cap, FSD50K dev
-python scripts/v3_manifest/build_audiocaps.py           # parquet 추출 + caption
-python scripts/v3_manifest/build_clotho.py              # dev+val 5 cap/clip
-python scripts/v3_manifest/build_audiostock.py          # meta.csv → 1 cap
-python scripts/v3_manifest/build_macs.py                # TAU2019 zip 추출 (오래 걸림)
+python scripts/manifest_builders/build_audioset.py            # ontology→cap, AudioSet bal_train
+python scripts/manifest_builders/build_fsd50k.py              # ontology→cap, FSD50K dev
+python scripts/manifest_builders/build_audiocaps.py           # parquet 추출 + caption
+python scripts/manifest_builders/build_clotho.py              # dev+val 5 cap/clip
+python scripts/manifest_builders/build_audiostock.py          # meta.csv → 1 cap
+python scripts/manifest_builders/build_macs.py                # TAU2019 zip 추출 (오래 걸림)
 
 # 3) Emotion MCQA (Set B: per-dataset native classes)
-python scripts/v3_manifest/build_emotion_iemocap.py
-python scripts/v3_manifest/build_emotion_meld.py
-python scripts/v3_manifest/build_emotion_cremad.py
-python scripts/v3_manifest/build_emotion_dailytalk.py
-python scripts/v3_manifest/build_emotion_emovdb.py
-python scripts/v3_manifest/build_emotion_ravdess.py
-python scripts/v3_manifest/build_emotion_mustardpp.py
+python scripts/manifest_builders/build_emotion_iemocap.py
+python scripts/manifest_builders/build_emotion_meld.py
+python scripts/manifest_builders/build_emotion_cremad.py
+python scripts/manifest_builders/build_emotion_dailytalk.py
+python scripts/manifest_builders/build_emotion_emovdb.py
+python scripts/manifest_builders/build_emotion_ravdess.py
+python scripts/manifest_builders/build_emotion_mustardpp.py
 
 # 4) ASR conversion (sehyun nubes shard → v3 modality 필드 prepend)
-python scripts/v3_manifest/convert_libri_mls_vox.py     # 128 shards 1:1 변환
+python scripts/manifest_builders/convert_libri_mls_vox.py     # 128 shards 1:1 변환
 
 # 5) 학습 시작
 bash scripts/ASR/run_stage1_dac_vae_v3.sh

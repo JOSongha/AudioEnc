@@ -55,25 +55,43 @@ MAX_NEW_TOKENS = 32
 
 
 def load_meta() -> list[dict]:
+    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    import io as _io
     rows = []
     classes: set[str] = set()
-    with open(META_CSV) as f:
-        for r in csv.DictReader(f):
+    if USE_NUBES:
+        csv_text = fetch_nubes_text(NUBES_BASES["esc50"]["csv"])
+        f = _io.StringIO(csv_text)
+        audio_base = NUBES_BASES["esc50"]["audio"]
+    else:
+        f = open(META_CSV)
+        audio_base = None
+    for r in csv.DictReader(f):
+        if USE_NUBES:
+            ap = audio_base + r["filename"]
+        else:
             ap = AUDIO_DIR / r["filename"]
             if not ap.exists():
                 continue
-            rows.append({
-                "filename": r["filename"],
-                "path": str(ap),
-                "fold": int(r["fold"]),
-                "label": r["category"],  # e.g. "chainsaw", "rooster"
-            })
-            classes.add(r["category"])
+            ap = str(ap)
+        rows.append({
+            "filename": r["filename"],
+            "path": ap,
+            "fold": int(r["fold"]),
+            "label": r["category"],
+        })
+        classes.add(r["category"])
+    if not USE_NUBES:
+        f.close()
     return rows, sorted(classes)
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    wav, sr = torchaudio.load(path)
+    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    if USE_NUBES and not str(path).startswith("/"):
+        wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
+    else:
+        wav, sr = torchaudio.load(path)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

@@ -197,3 +197,14 @@ external/models/**/__pycache__/
 
 # large analysis artifacts (>100 MB GitHub limit)
 docs/**/*.npz
+
+# Crash dumps from training failures
+core.*
+
+# Stage-1 v5 projL model dirs: only config.json is owned; the rest are
+# symlinks to the base dir's weights/code, recreated by
+# scripts/setup_v5_projL_models.sh.
+external/models/Qwen3.5AE-4B-*-projL/*
+!external/models/Qwen3.5AE-4B-*-projL/config.json
+external/models/Qwen3.5AE-4B-projL/*
+!external/models/Qwen3.5AE-4B-projL/config.json

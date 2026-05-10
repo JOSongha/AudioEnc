@@ -1,13 +1,22 @@
-"""Source-corpus emotion eval for Qwen3.5AE Stage-2 checkpoints.
+"""Source-corpus emotion eval for Qwen3.5AE Stage-1 v6 / Stage-2 checkpoints.
 
-Evaluates on the PER-CORPUS held-out splits that Stage-2 training explicitly
-reserved (see [`eval_plan.md §7.1`](../docs/stage2/eval_plan.md) and
-[`build_training_manifest.py`](../scripts/emo/build_training_manifest.py)):
+Evaluates on the official MELD test split. v6 룰 ("canonical split 없는 source
+는 통째로 학습") 적용 후 DailyTalk / EmoV-DB / RAVDESS 의 self-held-out
+(v5 leak-fix) 가 폐기됐고, 이 corpus 들은 학습 풀에 통째로 들어감 — eval 도
+함께 폐기. 외부 cross-corpus eval (LISTEN / SAVEE / JL-Corpus / MSP-Podcast)
+는 별도 스크립트 (`eval_listen_*`, `eval_savee.py`, `eval_jl_corpus.py`,
+`eval_msp_podcast.py`) 사용.
 
     MELD        : official test split          (2 747 wavs, 7-class)
-    DailyTalk   : last 5% of dialogues         (~1 168 dialogs, 7-class)
-    EmoV-DB     : Jenie speaker                (1 790 wavs, 5-class)
-    RAVDESS     : Actors 21-24                 (240 wavs, 8-class)
+
+⚠ **Stage-2 LISTEN-mix contamination caveat**: For Stage-1 v6 ckpts the MELD
+test split is clean (v6 manifest does not include LISTEN). However the
+Stage-2 LISTEN composite training pool *pulls in MELD-test and MOSEI-test
+rows* (see project memory `project_listen_contamination`). When this script
+is run on a Stage-2 LoRA ckpt with `--base-model ...` whose Stage-2 training
+included LISTEN, the MELD reading here is no longer a clean held-out — at
+minimum the MELD-test rows that bleed into LISTEN-train have been seen by
+the model.
 
 Prompt format mirrors training's emotion MCQA rows (lettered choices, same
 `"Answer with the letter."` suffix) so the training distribution covers the
@@ -19,7 +28,7 @@ Usage:
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_source_emotion \
         --base-model /mnt/tmp/s2_init_42k \
-        --ckpts 1000,2000 --corpora meld dailytalk emov ravdess --batch-size 4
+        --ckpts 1000,2000 --corpora meld --batch-size 4
 """
 
 from __future__ import annotations
@@ -54,13 +63,8 @@ RAW = Path("/mnt/tmp/datasets/emotion_raw")
 # training. Pinned here to avoid cross-module import dep.
 QUESTION = "What emotion does the speaker convey?"
 
-# Per-corpus taxonomies: identical to scripts/emo/prepare_emotion_mcqa_manifest.py
+# MELD taxonomy (other corpus held-outs 폐기 — v6 룰 참조).
 MELD_EMOTIONS = ["anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise"]
-DAILYTALK_EMOTIONS = ["no emotion", "happiness", "sadness", "anger", "surprise",
-                     "fear", "disgust"]
-EMOV_EMOTIONS = ["amused", "angry", "disgusted", "neutral", "sleepy"]
-RAVDESS_EMOTIONS = ["neutral", "calm", "happy", "sad", "angry", "fearful",
-                    "disgust", "surprised"]
 
 LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 MAX_NEW_TOKENS = 96  # letter + optional rationale (training target may include one)
@@ -72,110 +76,69 @@ MAX_NEW_TOKENS = 96  # letter + optional rationale (training target may include 
 
 
 def load_meld_test() -> list[dict]:
-    csvp = RAW / "MELD" / "MELD.Raw" / "test_sent_emo.csv"
-    audio_dir = RAW / "MELD" / "audio" / "test"
-    df = pd.read_csv(csvp)
+    """Load MELD test split (nubes-direct, v6 룰).
+
+    csv: nubes /users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv
+    audio: nubes /users/jos/AudioEnc/MELD/audio/test/dia<N>_utt<M>.wav
+
+    Returns rows with `path` set to the nubes_path (not a local file path).
+    The eval harness should be nubes-aware (download via gateway) when running
+    on this loader. Set env `MELD_LOCAL_FALLBACK=1` to use the legacy ddn paths
+    for backward compat (if `/mnt/tmp/datasets/emotion_raw/MELD/` is still on
+    disk).
+    """
+    import io
+    import os as _os
+    import urllib.request
+
+    if _os.environ.get("MELD_LOCAL_FALLBACK"):
+        # Legacy ddn path (v5 까지 동작) — `/mnt/tmp/datasets/emotion_raw/MELD/...`.
+        csvp = RAW / "MELD" / "MELD.Raw" / "test_sent_emo.csv"
+        audio_dir = RAW / "MELD" / "audio" / "test"
+        df = pd.read_csv(csvp)
+        rows = []
+        for _, r in df.iterrows():
+            stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
+            ap = audio_dir / f"{stem}.wav"
+            if not ap.exists():
+                continue
+            rows.append({
+                "id": stem,
+                "path": str(ap),
+                "label": str(r["Emotion"]).strip().lower(),
+                "utterance": str(r["Utterance"]),
+            })
+        return rows
+
+    # nubes-direct (v6).
+    NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
+    BUCKET = "hyperscaleai-audiollm"
+    CSV_PATH = "users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv"
+    AUDIO_PREFIX = f"{BUCKET}/users/jos/AudioEnc/MELD/audio/test"
+
+    url = f"{NUBES_GATEWAY}/{BUCKET}/{CSV_PATH}"
+    with urllib.request.urlopen(url, timeout=60) as r:
+        csv_text = r.read().decode("utf-8")
+    df = pd.read_csv(io.StringIO(csv_text))
+
     rows = []
     for _, r in df.iterrows():
-        stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
-        ap = audio_dir / f"{stem}.wav"
-        if not ap.exists():
+        try:
+            stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
+        except (KeyError, ValueError):
             continue
+        nubes_path = f"{AUDIO_PREFIX}/{stem}.wav"
         rows.append({
             "id": stem,
-            "path": str(ap),
+            "path": nubes_path,
             "label": str(r["Emotion"]).strip().lower(),
             "utterance": str(r["Utterance"]),
         })
     return rows
 
 
-def load_dailytalk_heldout() -> list[dict]:
-    """Last 5% of dialogues (matches build_training_manifest.py:136-148)."""
-    meta = json.loads((RAW / "DailyTalk" / "dailytalk" / "metadata.json").read_text())
-    d_root = RAW / "DailyTalk" / "dailytalk" / "data"
-    ids_sorted = sorted(int(k) for k in meta.keys())
-    if not ids_sorted:
-        return []
-    cutoff = ids_sorted[int(len(ids_sorted) * 0.95)]
-    held = [i for i in ids_sorted if i >= cutoff]
-
-    rows = []
-    for did in held:
-        dlg_dir = d_root / str(did)
-        if not dlg_dir.exists():
-            continue
-        for wav_path in sorted(dlg_dir.glob("*.wav")):
-            stem = wav_path.stem
-            # filename "{utt_id}_{speaker}_d{dialog_id}.wav"
-            m = re.match(r"(\d+)_(\d+)_d(\d+)", stem)
-            if not m:
-                continue
-            utt_id, _, dlg_id = m.group(1), m.group(2), m.group(3)
-            dlg_meta = meta.get(dlg_id)
-            if dlg_meta is None:
-                continue
-            utt_meta = dlg_meta.get(utt_id)
-            if utt_meta is None:
-                continue
-            rows.append({
-                "id": stem,
-                "path": str(wav_path),
-                "label": str(utt_meta.get("emotion", "no emotion")).strip().lower(),
-                "utterance": utt_meta.get("text", ""),
-            })
-    return rows
-
-
-def load_emov_jenie() -> list[dict]:
-    d = RAW / "EmoV-DB" / "jenie"
-    if not d.exists():
-        return []
-    rows = []
-    for wav_path in sorted(d.rglob("*.wav")):
-        emotion_dir = wav_path.parent.name.lower()  # Amused / Angry / …
-        if emotion_dir not in {"amused", "angry", "disgusted", "neutral", "sleepy"}:
-            continue
-        rows.append({
-            "id": wav_path.stem,
-            "path": str(wav_path),
-            "label": emotion_dir,
-            "utterance": "",
-        })
-    return rows
-
-
-_RAV_RE = re.compile(r"(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})")
-
-def load_ravdess_heldout() -> list[dict]:
-    """Actors 21-24 (standard RAVDESS speaker-held-out split)."""
-    d = RAW / "RAVDESS"
-    rows = []
-    for actor_n in (21, 22, 23, 24):
-        actor_dir = d / f"Actor_{actor_n:02d}"
-        if not actor_dir.exists():
-            continue
-        for wav_path in sorted(actor_dir.glob("*.wav")):
-            m = _RAV_RE.search(wav_path.stem)
-            if not m:
-                continue
-            emo_idx = int(m.group(3))
-            if not (1 <= emo_idx <= 8):
-                continue
-            rows.append({
-                "id": wav_path.stem,
-                "path": str(wav_path),
-                "label": RAVDESS_EMOTIONS[emo_idx - 1],
-                "utterance": "",
-            })
-    return rows
-
-
 CORPUS_LOADERS = {
     "meld":      (load_meld_test,        MELD_EMOTIONS),
-    "dailytalk": (load_dailytalk_heldout, DAILYTALK_EMOTIONS),
-    "emov":      (load_emov_jenie,       EMOV_EMOTIONS),
-    "ravdess":   (load_ravdess_heldout,  RAVDESS_EMOTIONS),
 }
 
 
@@ -211,8 +174,84 @@ def parse_letter(text: str, n_choices: int) -> str | None:
     return None
 
 
+_NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
+
+
+def _torchaudio_load(path_or_buf, file_ext: str | None = None):
+    """torchaudio.load wrapper with mp3-aware backend fallback.
+
+    soundfile (libsndfile) 가 mp3 미지원이라 mp3 는 별도 fallback chain:
+      1. torchaudio ffmpeg backend (built-in 이면 가장 빠름)
+      2. pyav (av) — 이미 설치된 env 면 우선
+      3. ffmpeg subprocess — 시스템 ffmpeg 있으면 마지막 fallback
+    """
+    if file_ext != "mp3":
+        return torchaudio.load(path_or_buf)
+
+    # 1. torchaudio ffmpeg backend
+    try:
+        if "ffmpeg" in torchaudio.list_audio_backends():
+            return torchaudio.load(path_or_buf, backend="ffmpeg")
+    except Exception:
+        pass
+
+    # 2. pyav fallback
+    import io as _io
+    if isinstance(path_or_buf, str):
+        with open(path_or_buf, "rb") as f:
+            buf = _io.BytesIO(f.read())
+    else:
+        buf = path_or_buf
+        buf.seek(0)
+    try:
+        import av
+        import numpy as np
+        with av.open(buf) as container:
+            stream = container.streams.audio[0]
+            sr = stream.rate
+            frames = []
+            for frame in container.decode(stream):
+                frames.append(frame.to_ndarray())
+            arr = np.concatenate(frames, axis=-1)
+        if arr.dtype.kind == "i":
+            wav_t = torch.from_numpy(arr).float() / float(2 ** (arr.dtype.itemsize * 8 - 1))
+        else:
+            wav_t = torch.from_numpy(arr).float()
+        if wav_t.dim() == 1:
+            wav_t = wav_t.unsqueeze(0)
+        return wav_t, sr
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 3. ffmpeg subprocess fallback
+    import subprocess
+    if isinstance(path_or_buf, str):
+        cmd = ["ffmpeg", "-i", path_or_buf, "-f", "wav", "-ac", "1", "pipe:1"]
+        proc = subprocess.run(cmd, capture_output=True, check=True)
+    else:
+        path_or_buf.seek(0)
+        cmd = ["ffmpeg", "-i", "pipe:0", "-f", "wav", "-ac", "1", "pipe:1"]
+        proc = subprocess.run(cmd, input=path_or_buf.read(), capture_output=True, check=True)
+    return torchaudio.load(_io.BytesIO(proc.stdout))
+
+
 def decode_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    wav, sr = torchaudio.load(path)
+    """Decode audio. Path may be a local file or a nubes_path
+    (`<bucket>/<key>`) — auto-routed via gateway HTTP fetch when prefix
+    matches `hyperscaleai-audiollm/`. mp3 detection by extension.
+    """
+    file_ext = path.rsplit(".", 1)[-1].lower() if "." in path else None
+    if path.startswith("hyperscaleai-audiollm/"):
+        import io
+        import urllib.request
+        url = f"{_NUBES_GATEWAY}/{path}"
+        with urllib.request.urlopen(url, timeout=30) as r:
+            buf = io.BytesIO(r.read())
+        wav, sr = _torchaudio_load(buf, file_ext=file_ext)
+    else:
+        wav, sr = _torchaudio_load(path, file_ext=file_ext)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

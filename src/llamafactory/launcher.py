@@ -12,7 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from llamafactory.data.fault_tolerant import patch_default_pg_timeout
 from llamafactory.train.tuner import run_exp  # use absolute import
+
+# Bump torch.distributed default process-group timeout BEFORE any
+# torch.distributed init happens (deepspeed / accelerate both lazy-init shortly
+# after import). The default is 600 s, which is shorter than the time a
+# per-rank DataLoader rebuild can take after a worker SIGKILL. With
+# FaultTolerantDataLoader the rank that lost a worker rebuilds in seconds; we
+# just need peer ranks to wait long enough at the next collective for the
+# rebuilt rank to catch up.
+patch_default_pg_timeout(seconds=3600)
 
 
 def launch():

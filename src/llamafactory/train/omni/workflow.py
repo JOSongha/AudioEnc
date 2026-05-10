@@ -128,6 +128,15 @@ def run_omni(
 
     # Training
     if training_args.do_train:
+        # Sanitize NaN/Inf gradients before any DeepSpeed/NCCL collective sees
+        # them. Without this, a NaN grad on one rank wedges that rank's NCCL
+        # reduce-scatter; the others trip the 600 s collective timeout. See
+        # llamafactory/data/fault_tolerant.py::install_grad_nan_guard.
+        from ...data.fault_tolerant import install_grad_nan_guard
+
+        n_guards = install_grad_nan_guard(trainer.model)
+        logger.info_rank0(f"[grad-nan-guard] installed {n_guards} post-accumulate hooks")
+
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
         trainer.save_model()
         if finetuning_args.include_effective_tokens_per_second:

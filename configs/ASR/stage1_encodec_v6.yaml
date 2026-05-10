@@ -1,0 +1,86 @@
+### model
+# EnCodec 24k v6: aligned with DAC-VAE / Whisper-tiny v6 — projL projector
+# (H=1024 I=4096 heads=16, ~3× larger than the original encodec_24k yaml's
+# default projector) and per-modality v6 manifest interleave (asr 0.65,
+# env_sound 0.25, emotion 0.10), replacing the v5-era single libri_mls_vox
+# manifest. EnCodec emits 75 fps at 24k (320-sample hop).
+#
+# TODO: external/models/Qwen3.5AE-4B-encodec-projL must be created first.
+# Suggested setup: copy Qwen3.5AE-4B-projL/config.json, swap audio_config to
+# the EnCodec block from the existing sehyun base
+# (sehyun .../external/models/Qwen3.5AE-4B-encodec-24k/config.json), keep
+# adapter_hidden_size=1024 / intermediate_size=4096 / num_attention_heads=16
+# from projL, then symlink weights/code from a working encodec base.
+model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-encodec-projL
+flash_attn: fa2
+enable_liger_kernel: true
+disable_gradient_checkpointing: true
+trust_remote_code: true
+
+### method
+stage: omni
+do_train: true
+do_eval: false
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z2_config.json
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: speechx_v9  # unused when omni_per_modality_manifests is set
+omni_per_modality_manifests:
+  audio_asr:        /mnt/tmp/datasets/manifests/v6_nubes/audio_asr
+  audio_env_sound:  /mnt/tmp/datasets/manifests/v6_nubes/audio_env_sound
+  audio_emotion:    /mnt/tmp/datasets/manifests/v6_nubes/audio_emotion
+omni_per_modality_probs:
+  audio_asr:        0.65
+  audio_env_sound:  0.25
+  audio_emotion:    0.10
+omni_per_modality_stopping: all_exhausted
+load_from_nubes: true
+omni_packing_bucket_size: 128
+omni_sample_rate: 24000
+omni_hop_length: 320              # 24000 / 75 fps
+omni_shuffle_buffer_size: 10000
+omni_max_audio_samples: 720000    # 30s @ 24k (was 45s in v5-era yaml)
+template: omni
+cutoff_len: 4096                  # 75 fps × 30 s = 2250 audio frames + text headroom
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 16
+dataloader_prefetch_factor: 8
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5AE-ASR-Stage1-encodec-v6
+output_dir: /mnt/tmp/Qwen3.5_encodec_v6_Stage1_jos
+logging_dir: /mnt/tmp/Qwen3.5_encodec_v6_Stage1_jos
+logging_steps: 50
+save_steps: 1000
+save_total_limit: 8
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 2
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_steps: 100000
+lr_scheduler_type: warmup_stable_decay
+warmup_steps: 1000
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_dataset: speechx_v9  # unused

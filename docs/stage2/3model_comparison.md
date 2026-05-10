@@ -211,7 +211,7 @@ Best-of-best per task (each model's per-task peak across its evaluated ckpts):
 |---|---:|---:|---|---|
 | **DAC-VAE v2** | **ckpt-15000** | 0.643 | 15k > 17k (0.635) > 21k (0.624) | 5 그룹 균등 — Sound/Emotion 모두 0.7+, ASR/LISTEN 0.5–0.7. |
 | **Whisper-tiny** | **ckpt-20000** | 0.626 | 20k > 6k (0.617) > 18k (0.603) | LISTEN 최고 (0.922) + Emotion 0.637 + Knowledge 0.667 균형. 6k 도 거의 동급, choice 가능 (단 6k 는 Knowledge 0.167 약함). |
-| **Whisper-small** | **ckpt-15000** (by-inspection) | — | 15k ≈ 13–17k 구간 | §3 의 per-benchmark best 표 + L146–147 narrative 기준 ckpt-13–17k 가 balanced 영역 (ASR ≤ 2.7 %, ESC-50 ≥ 99 %, EmoV ≥ 0.91, text retention ≥ 0.91). 35 ckpt × 모든 metric per-cell 데이터가 §1/§2 와 달리 본 doc 에 들어 있지 않아 method-C composite 계산 보류 — by-inspection 으로 15k 권장. |
+| **Whisper-small** | **ckpt-5000** | 0.722 | 5k > 7k (0.631) > 6k (0.621) | 5 그룹 중 4 그룹 (ASR/Sound/Emotion/LISTEN) 모두 ckpt-5000이 best. Knowledge만 34k. Sound/Emotion 0.768, ASR 0.963, LISTEN 0.993. raw: WER-clean 2.52 / WER-other 6.14 / MELD acc 0.51 / EmoV acc 0.93 / RAV acc 0.625 / LISTEN-MCQA acc 0.31. |
 
 ### 각 encoder per-group best (single-criterion picks)
 
@@ -219,13 +219,14 @@ Best-of-best per task (each model's per-task peak across its evaluated ckpts):
 |---|---:|---:|---:|---:|---:|
 | DAC-VAE v2 | 6k (0.983) | 15k (0.728) | 15k (0.746) | 17k (0.800) | 27k (1.000) |
 | Whisper-tiny | 3k (1.000) | 8k (0.842) | 6k (0.704) | 20k (0.922) | 31k (1.000) |
-| Whisper-small | 8k | 33k | 3k | 5k ✱ | 34k |
+| Whisper-small | 5k (0.963) | 5k (0.768) | 5k (0.768) | 5k ✱ (0.993) | 34k (1.000) |
 
 ✱ Whisper-small LISTEN best 는 contamination 영향 ([`leakage_audit.md`](leakage_audit.md)) — held-out 해석 X.
 
 ### 변경 이력
 
 - 2026-04-30: WT 평가 sparse → full coverage 확장. **Whisper-tiny balanced default 6k → 20k 변경** (그룹별 best 도 일부 이동: emov 6k→20k, ravdess 6k→27k 등). v2 / WS 권장은 변동 없음.
+- 2026-05-06: Whisper-small에 method-C composite 계산. 기존 by-inspection 15k → **ckpt-5000으로 변경** (composite 0.722, top-3 5k > 7k > 6k). 35 ckpts × 25 metrics 모두 fully-covered. ckpt-5000은 5 그룹 중 4 그룹 (ASR/Sound/Emotion/LISTEN)에서 best, Knowledge만 34k. 5k 산출 스크립트: `analysis/composite_method_c.csv` + canonical `analysis/{results,trajectories.pdf}`.
 
 ---
 

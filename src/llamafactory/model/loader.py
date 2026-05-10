@@ -191,7 +191,10 @@ def load_model(
                     config, trust_remote_code=model_args.trust_remote_code
                 )
             else:
-                model = load_class.from_pretrained(**init_kwargs)
+                # ignore_mismatched_sizes=True so projector-resize variants (e.g. v5 with
+                # H=1024 instead of 512) can load LM weights from the v4 base safetensors
+                # while the projector itself is reinitialised from scratch.
+                model = load_class.from_pretrained(**init_kwargs, ignore_mismatched_sizes=True)
                 if getattr(model.config, "model_type", None) in ["qwen2_5_omni", "qwen3_omni_moe"]:
                     model = getattr(model, "thinker")
 
