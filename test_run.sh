@@ -1,4 +1,5 @@
-# ── Conda env setup ───────────────────────────────────────────────────────────
+# ── Repo + conda env setup ────────────────────────────────────────────────────
+REPO=$(cd "$(dirname "$0")" && pwd)
 source /mnt/tmp/miniconda3/etc/profile.d/conda.sh
 
 if ! conda env list | grep -q '^audiollm '; then
@@ -19,8 +20,8 @@ conda activate audiollm
 
 # pip install flash-attn==2.8.3 --no-build-isolation -q
 
-# pip install -e /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer -q
-# pip install -e /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae -q
+# pip install -e "$REPO" -q
+# pip install -e "$REPO/../AudioEnc/dacvae" -q
 
 # # ── glibc_stub.so (flash_attn GLIBC_2.32 workaround) ─────────────────────────
 # if [ ! -f "$CONDA_PREFIX/lib/glibc_stub.so" ]; then
@@ -59,10 +60,10 @@ conda activate audiollm
 # fi
 
 # # ── Expand vocab (add <|audio_correspond|> if not already done) ───────────────
-# EXPAND_MODEL=/mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3AE-4B_expand
+# EXPAND_MODEL="$REPO/external/models/Qwen3AE-4B_expand"
 # if [ ! -d "$EXPAND_MODEL" ]; then
-#     python /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/expand_vocab.py \
-#         --model_path /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3AE-4B \
+#     python "$REPO/expand_vocab.py" \
+#         --model_path "$REPO/external/models/Qwen3AE-4B" \
 #         --special_tokens "<|audio_correspond|>" \
 #         --num_units 0 \
 #         --std inherit \
@@ -85,4 +86,4 @@ export CUDAHOSTCXX=/usr/bin/g++
 
 # ── Training ──────────────────────────────────────────────────────────────────
 FORCE_TORCHRUN=1 NNODES=$NSML_WORLD_SIZE NODE_RANK=$NSML_RANK MASTER_ADDR=$NSML_HOST_RANK0 MASTER_PORT=21267 \
-    llamafactory-cli train /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/configs/test.yaml
+    llamafactory-cli train "$REPO/external/configs/test.yaml"
