@@ -231,7 +231,7 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 
 - ✓ 정확 일치 (5): MLS, VoxPopuli, ESC-50, LAION-Epidemic, FSD50K(dev)
 - ✓ Nubes broader (5): MELD, LAION-Audiostock, AudioSet, MACS, LibriSpeech (eval-only, 모든 split)
-- ✓ 업로드 완료 (11): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14), LAION-Freesound (§ 12.15, audio dir-upload ~7-8h 진행 중 — code/manifest 측 완료)
+- ✓ 업로드 완료 (12): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14), LAION-Freesound (§ 12.15), v6_nubes manifest archive (§ 12.16)
 - ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder — § 12.11 utterance wav 신규 업로드 완료, 갱신 검토 필요)
 - ✓ Sampling 검증 (2): LibriTTS-R train-clean-360 (904 spk 표준 매칭), train-other-500 (1,160 spk 표준 매칭) — § 9.5
 - ✓ 우회 검증 (1): GigaSpeech XL train (v6 manifest 4.13M row build 통과 + sample HEAD 200) — § 9.6
@@ -260,6 +260,7 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 - 2026-05-08 (MELD audio wav 사용자 영역 업로드, § 12.14): § 12.10 의 nubes public mp3 (`/MELD.Raw/<split>/*.mp3`) 가 multi-worker dataloader 환경에서 libsndfile 디코드 inconsistent (Format not recognised) — v6 stage1 학습 시 11k MELD row 모두 skip. wav 본을 `/users/jos/AudioEnc/MELD/audio/{train,dev,test}/` 에 직접 업로드 (13,847 wav, ~1.4 GB, 17분). build_emotion_meld.py / rewrite_audio_paths_nubes.py / eval_source_emotion.py 갱신해서 nubes_path 가 wav 가리킴. omni_dataset.py / audio_io.py 의 ffmpeg fallback 코드 revert (mp3 안 쓰니 불필요). § 9.8 종합 결론 "✓ 업로드 완료" 9 → 10. v6_nubes 재빌드 후 학습 정상 (MELD 11k row 모두 wav nubes-direct).
 - 2026-05-08 (LAION-Freesound § 9 누락 보완 + 매핑 검증): § 9 의 어느 카테고리에도 없던 LAION-Freesound (460,141 row) 를 § 9.3 행에 추가. **200-sample ID 매칭 검증 결과 매핑 불가 확인**: 80 hit / 120 miss (60% 부재), 80 hit 도 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB) — nubes `/datasets/public/Freesound/audio/` 는 다른 encoding/quality 의 별도 dump. § 9.8 종합 결론 에 "✗ 매핑 불가 (1): LAION-Freesound" 카테고리 추가. Stage-1 학습은 audio_path local fallback 으로 정상 동작. LAION 본 (607 GB) 별도 업로드는 보류.
 - 2026-05-11 (LAION-Freesound § 12.15 audio + manifest + swap 완료): § 12.15 audio dir-upload (`/users/jos/AudioEnc/LAION-Freesound/audio/`) 완료 — nubescli recursive list 결과 460,142 obj (local 460,141 flac + 1 dir entry) 일치. `rewrite_audio_paths_nubes.py` 의 `PREFIX_MAPPINGS` 에 `laion_freesound` 추가. `v6_nubes_full` 별도 dir 빌드 (모든 source 100% nubes_path). 학습 open fd 0개 확인 후 atomic rename swap (`mv v6_nubes v6_nubes_old && mv v6_nubes_full v6_nubes`) — 진행 중 학습 (whisper-tiny v6, 138 procs) 무중단 적용. `v6_nubes_old` 는 rollback safety 로 일시 보존, 학습 완료 후 삭제.
+- 2026-05-11 (v6_nubes manifest archive, § 12.16): v6 학습 manifest 전체 (246 jsonl, 5.2 GB) 를 nubes `/users/jos/AudioEnc/manifests/v6_nubes/` 에 archive snapshot 으로 업로드 (24초 with -j 16). 학습은 local `/mnt/tmp/datasets/manifests/v6_nubes/` 그대로 사용 (yaml 변경 X, dataloader 코드 변경 X) — nubes 는 read-only mirror. 새 노드 셋업 시 `nubescli dir-download` 한 줄로 복원 가능. § 9.8 grand total "업로드 완료" 11 → 12.
 
 ## 11. Nubes Guide
 
@@ -1654,4 +1655,39 @@ nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/aud
 | freesound_no_overlap_meta.csv | 94 MB | 1 obj | ✓ |
 | README.md | 3 KB | 1 obj | ✓ |
 | v6_nubes_full manifest sample | `422341.flac` audio_path | `hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/422341.flac` | ✓ |
+
+
+### 12.16 v6_nubes manifest archive — 완료 2026-05-11
+
+**대상**: v6 학습용 manifest 전체 (246 jsonl, 5.2 GB) 를 nubes 에 archive snapshot 으로 업로드.
+
+`audio_asr/` 175 shard (gigaspeech / mls / voxpopuli / unknown_asr — 약 4.9 GB)
+`audio_env_sound/` 55 shard (9 source — 약 242 MB)
+`audio_emotion/` 16 shard (6 source — 약 20 MB)
+
+**동기**: 학습 인프라 reproducibility — 새 노드/사용자가 cluster 에 들어왔을 때 manifest 까지 nubes 에서 단일 source 로 복원 가능. PR clone 만으로 학습 launch 까지 필요한 모든 데이터가 nubes 에 모임 (audio + model + manifest).
+
+**운영 패턴 — local cache, nubes 는 archive**:
+- 학습 yaml 의 `omni_per_modality_manifests` 는 `local /mnt/tmp/datasets/manifests/v6_nubes/` 그대로 사용 (yaml 변경 0)
+- nubes 사본은 read-only archive — 매 학습 startup 마다 fetch 안 함 (HTTP streaming jsonl 경로 안 가서 dataloader 코드 변경 X)
+- 새 노드 셋업: `nubescli dir-download hyperscaleai-audiollm/users/jos/AudioEnc/manifests/v6_nubes/ /mnt/tmp/datasets/manifests/v6_nubes/` 1회
+
+**명령**:
+```bash
+export NUBES_GATEWAY_ADDRESS=c.nubes.sto.navercorp.com:8000
+export NUBES_IP_LOOKUP_ADDRESS=c.lookup.nubes.navercorp.com:8080
+nubescli dir-upload -j 16 \
+    hyperscaleai-audiollm/users/jos/AudioEnc/manifests/v6_nubes/ \
+    /mnt/tmp/datasets/manifests/v6_nubes/
+```
+
+**검증 (2026-05-11)**:
+
+| 대상 | local | nubes (`/users/jos/AudioEnc/manifests/v6_nubes/`) | 상태 |
+|---|---|---|---|
+| audio_asr 175 jsonl | 175 / ~4.9 GB | 175 obj | ✓ |
+| audio_env_sound 55 jsonl | 55 / ~242 MB | 55 obj | ✓ |
+| audio_emotion 16 jsonl | 16 / ~20 MB | 16 obj | ✓ |
+| **total** | **246 jsonl / 5.2 GB** | **246 obj** (recursive list `-R -o` = 247 = +1 dir) | ✓ 일치 |
+| 업로드 시간 | – | 24 초 (-j 16 parallel) | – |
 

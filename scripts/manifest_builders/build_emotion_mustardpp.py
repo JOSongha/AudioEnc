@@ -28,7 +28,7 @@ SHARD_SIZE = 15000
 QUESTION = "What emotion is expressed in this audio clip?"
 SOURCE = "mustardpp"
 LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
-FFMPEG = "/mnt/ddn/users/jos/miniforge3/bin/ffmpeg"
+FFMPEG = "ffmpeg"
 
 
 def extract_audio(mp4_path: Path, wav_path: Path) -> bool:

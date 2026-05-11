@@ -2,8 +2,7 @@
 
 Sources:
     Audio: /mnt/tmp/datasets/env_sound/AudioSet/audio/<video_id>.flac
-        (extracted earlier from data/bal_train/*.parquet by
-        scripts/env_sound/prepare_manifest.py; here we only read labels.)
+        (extracted earlier from data/bal_train/*.parquet; here we only read labels.)
     Labels: /mnt/tmp/datasets/env_sound/AudioSet/data/bal_train/*.parquet
         cols: video_id, audio (ignored), labels (Freebase ids), human_labels (text)
     Ontology: nubes /users/jos/AudioEnc/AudioSet/ontology.json (632 entries).
