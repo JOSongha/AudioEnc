@@ -54,8 +54,8 @@ accelerator_config:
 
 ### output (kept on /mnt/tmp xfs — Lustre quota is full at the cluster level)
 run_name: Qwen3.5AE-ASR-Stage1-dac-vae-v6
-output_dir: /mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos
-logging_dir: /mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos
+output_dir: /mnt/tmp/Qwen3.5_dac_vae_v6_Stage1
+logging_dir: /mnt/tmp/Qwen3.5_dac_vae_v6_Stage1
 logging_steps: 50
 save_steps: 1000
 plot_loss: false

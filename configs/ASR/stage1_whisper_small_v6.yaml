@@ -51,8 +51,8 @@ accelerator_config:
 
 ### output
 run_name: Qwen3.5AE-ASR-Stage1-whisper-small-v6
-output_dir: /mnt/tmp/Qwen3.5_whisper_small_v6_Stage1_jos
-logging_dir: /mnt/tmp/Qwen3.5_whisper_small_v6_Stage1_jos
+output_dir: /mnt/tmp/Qwen3.5_whisper_small_v6_Stage1
+logging_dir: /mnt/tmp/Qwen3.5_whisper_small_v6_Stage1
 logging_steps: 50
 save_steps: 1000
 save_total_limit: 8

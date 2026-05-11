@@ -74,7 +74,7 @@ if [ -n "${RESUME_FROM:-}" ]; then
 fi
 
 # Persist stdout/stderr so a dropped tmux pane no longer loses the traceback.
-LOG_DIR=/mnt/tmp/Qwen3.5_whisper_tiny_v6_Stage1_jos/launch_logs
+LOG_DIR=/mnt/tmp/Qwen3.5_whisper_tiny_v6_Stage1/launch_logs
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
 echo "[s1-whisper-tiny-v6] tee → $LOG_FILE"
