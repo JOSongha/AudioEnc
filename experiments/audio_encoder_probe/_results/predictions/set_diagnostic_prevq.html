@@ -1384,9 +1384,11 @@
       <h3 style="font-size:15px;margin:0 0 8px;">Whisper 성공 요인</h3>
       <ul style="margin:0;padding-left:20px;line-height:1.8">
         <li>평균 confidence <b>0.835</b> — 매우 높음</li>
-        <li>언어 모델 사전학습이 악기 <em>이름</em> 관련 audio 패턴 학습</li>
-        <li>50fps 고해상도 프레임으로 onset 특징 포착</li>
-        <li>16kHz + log-mel 입력: 배음 구조에 민감</li>
+        <li>ASR objective가 음소 수준 세밀한 음향 특징(배음, formant, onset) 학습을 강제
+            → 이 표현이 악기 분류로 <em>전이</em></li>
+        <li>대규모 diverse speech 데이터로 학습된 general-purpose 음향 표현</li>
+        <li>50fps 고해상도 프레임으로 onset/transient 특징 포착</li>
+        <li>16kHz log-mel 입력: 배음 구조에 민감한 표현 학습</li>
       </ul>
     </div>
     <div>
