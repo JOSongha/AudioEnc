@@ -7,7 +7,17 @@ set -u
 set -o pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-ENV_PREFIX="${AUDIO_LMF_ENV:-/mnt/ddn/users/jos/miniforge3/envs/audio_lmf}"
+# Pick the conda env: prefer AUDIO_LMF_ENV, else use the currently-activated
+# CONDA_PREFIX. Fail loudly if neither is set — better than silently picking
+# the wrong env.
+if [ -n "${AUDIO_LMF_ENV:-}" ]; then
+    ENV_PREFIX="$AUDIO_LMF_ENV"
+elif [ -n "${CONDA_PREFIX:-}" ]; then
+    ENV_PREFIX="$CONDA_PREFIX"
+else
+    echo "[$(basename "$0")] Set AUDIO_LMF_ENV to the miniforge env path (e.g. ~/miniforge3/envs/audio_lmf), or 'conda activate' your env before launching." >&2
+    exit 1
+fi
 PY=$ENV_PREFIX/bin/python
 
 export PATH=$ENV_PREFIX/bin:$PATH
