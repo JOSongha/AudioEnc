@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NSynth train_30k — 4-set Diagnostic (W±A±)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 24px 32px;
+          background: #f8fafc; color: #1e293b; }
+  h1 { font-size: 26px; margin: 0 0 4px }
+  p.subtitle { color: #64748b; margin: 0 0 28px; font-size: 14px }
+  nav { display:flex; gap: 12px; margin-bottom:28px; flex-wrap:wrap }
+  nav a { padding:6px 14px; border-radius:20px; text-decoration:none;
+           font-size:13px; font-weight:600; border:2px solid }
+  table.overview { border-collapse:collapse; background:white;
+                   border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;
+                   margin-bottom:28px; font-size:13px }
+  table.overview th { background:#f1f5f9; padding:8px 12px; text-align:left;
+                      font-size:12px; color:#64748b; font-weight:600 }
+  table.overview tr:hover { background:#f8fafc }
+  @media (max-width:700px) { body { padding:12px } }
+</style>
+</head>
+<body>
+<h1>NSynth train_30k — 4-set Diagnostic (W±A±)</h1>
+<p class="subtitle">
+  Whisper-small (85.6%) vs DAC-VAE z_e (55.1%) · NSynth train_30k · n=27,218<br>
+  W = whisper_small correct / A = dacvae_prevq correct
+</p>
+
+<nav>
+  <a href="#WpAp" style="color:#22c55e;border-color:#22c55e">W+A+</a><a href="#WpAm" style="color:#ef4444;border-color:#ef4444">W+A-</a><a href="#WmAp" style="color:#3b82f6;border-color:#3b82f6">W-A+</a><a href="#WmAm" style="color:#9ca3af;border-color:#9ca3af">W-A-</a>
+  <a href="#analysis" style="color:#b45309;border-color:#f59e0b">분석</a>
+</nav>
+
+<!-- Overview table -->
+<table class="overview">
+  <thead>
+    <tr>
+      <th>Set</th><th>n</th><th>%</th>
+      <th>W̄ proba</th><th>D̄ proba</th>
+      <th>mean pitch</th><th>source 분포</th>
+    </tr>
+  </thead>
+  <tbody>
+<tr>
+  <td style="padding:8px 12px;font-weight:700;color:#22c55e">W+A+</td>
+  <td style="padding:8px 12px;text-align:right">13,971</td>
+  <td style="padding:8px 12px;text-align:right">51.3%</td>
+  <td style="padding:8px 12px;text-align:right">0.909</td>
+  <td style="padding:8px 12px;text-align:right">0.567</td>
+  <td style="padding:8px 12px;text-align:right">60.6</td>
+  <td style="padding:8px 12px;font-size:12px">
+    acou 63%
+    elec 26%
+    syn 11%
+  </td>
+</tr>
+<tr>
+  <td style="padding:8px 12px;font-weight:700;color:#ef4444">W+A-</td>
+  <td style="padding:8px 12px;text-align:right">9,336</td>
+  <td style="padding:8px 12px;text-align:right">34.3%</td>
+  <td style="padding:8px 12px;text-align:right">0.835</td>
+  <td style="padding:8px 12px;text-align:right">0.414</td>
+  <td style="padding:8px 12px;text-align:right">63.9</td>
+  <td style="padding:8px 12px;font-size:12px">
+    acou 46%
+    elec 26%
+    syn 28%
+  </td>
+</tr>
+<tr>
+  <td style="padding:8px 12px;font-weight:700;color:#3b82f6">W-A+</td>
+  <td style="padding:8px 12px;text-align:right">1,030</td>
+  <td style="padding:8px 12px;text-align:right">3.8%</td>
+  <td style="padding:8px 12px;text-align:right">0.607</td>
+  <td style="padding:8px 12px;text-align:right">0.459</td>
+  <td style="padding:8px 12px;text-align:right">65.6</td>
+  <td style="padding:8px 12px;font-size:12px">
+    acou 45%
+    elec 33%
+    syn 22%
+  </td>
+</tr>
+<tr>
+  <td style="padding:8px 12px;font-weight:700;color:#9ca3af">W-A-</td>
+  <td style="padding:8px 12px;text-align:right">2,881</td>
+  <td style="padding:8px 12px;text-align:right">10.6%</td>
+  <td style="padding:8px 12px;text-align:right">0.630</td>
+  <td style="padding:8px 12px;text-align:right">0.434</td>
+  <td style="padding:8px 12px;text-align:right">67.2</td>
+  <td style="padding:8px 12px;font-size:12px">
+    acou 25%
+    elec 41%
+    syn 33%
+  </td>
+</tr></tbody>
+</table>
+
+
+<section id="WpAp"
+         style="background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:22px;color:#22c55e">W+A+</h2>
+    <span style="font-size:14px;color:#374151;font-weight:500">
+      n=13,971 &nbsp;(51.3% of total)
+    </span>
+  </div>
+  <p style="margin:0 0 16px;font-size:14px;color:#374151">Whisper ✓  DAC ✓ — 둘 다 맞춤. 두 인코더 모두 악기 특징을 잘 포착한 '쉬운' 샘플.</p>
+
+  <!-- Stats row -->
+  <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:18px;font-size:13px">
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">Whisper mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#22c55e">0.909</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">DAC mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#22c55e">0.567</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">mean pitch (MIDI)</div>
+      <div style="font-size:20px;font-weight:700;color:#22c55e">60.6</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">source 분포</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>acoustic</td><td><span style="display:inline-block;background:#3b82f6;height:10px;width:100px;border-radius:3px;vertical-align:middle;"></span> <small>62.5%&nbsp;(8733)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>electronic</td><td><span style="display:inline-block;background:#f97316;height:10px;width:42px;border-radius:3px;vertical-align:middle;"></span> <small>26.3%&nbsp;(3674)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>synthetic</td><td><span style="display:inline-block;background:#8b5cf6;height:10px;width:17px;border-radius:3px;vertical-align:middle;"></span> <small>11.2%&nbsp;(1564)</small></td></tr></table>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">instrument family (top 6)</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>organ</td><td><span style="display:inline-block;background:#64748b;height:10px;width:23px;border-radius:3px;vertical-align:middle;"></span> <small>16.6%&nbsp;(2325)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>string</td><td><span style="display:inline-block;background:#64748b;height:10px;width:22px;border-radius:3px;vertical-align:middle;"></span> <small>15.8%&nbsp;(2211)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>mallet</td><td><span style="display:inline-block;background:#64748b;height:10px;width:17px;border-radius:3px;vertical-align:middle;"></span> <small>12.5%&nbsp;(1746)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>brass</td><td><span style="display:inline-block;background:#64748b;height:10px;width:16px;border-radius:3px;vertical-align:middle;"></span> <small>11.6%&nbsp;(1627)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>reed</td><td><span style="display:inline-block;background:#64748b;height:10px;width:14px;border-radius:3px;vertical-align:middle;"></span> <small>10.7%&nbsp;(1491)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>vocal</td><td><span style="display:inline-block;background:#64748b;height:10px;width:11px;border-radius:3px;vertical-align:middle;"></span> <small>8.3%&nbsp;(1165)</small></td></tr></table>
+    </div>
+    
+  </div>
+
+  <!-- Sample cards -->
+  <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">
+    대표 샘플 (8개)
+    — 가장 높은 Whisper confidence
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+    
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-076-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-076-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.631</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 76
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_009-098-050</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_009-098-050.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.557</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 98
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_acoustic_018-059-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_acoustic_018-059-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.686</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#3b82f6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">acoustic</span>
+        pitch 59
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_001-058-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_001-058-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.518</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 58
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_001-051-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_001-051-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.561</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 51
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_009-098-025</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_009-098-025.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.467</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 98
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_001-093-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_001-093-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.599</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 93
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_acoustic_018-052-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_acoustic_018-052-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.836</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#3b82f6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">acoustic</span>
+        pitch 52
+      </td>
+    </tr>
+  </table>
+</div>
+  </div>
+</section>
+
+<section id="WpAm"
+         style="background:#fef2f2;border:2px solid #ef4444;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:22px;color:#ef4444">W+A-</h2>
+    <span style="font-size:14px;color:#374151;font-weight:500">
+      n=9,336 &nbsp;(34.3% of total)
+    </span>
+  </div>
+  <p style="margin:0 0 16px;font-size:14px;color:#374151">Whisper ✓  DAC ✗ — Whisper만 맞춤. Whisper의 언어·음향 사전학습이 DAC z_e가 놓치는 정보를 포착.</p>
+
+  <!-- Stats row -->
+  <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:18px;font-size:13px">
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">Whisper mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#ef4444">0.835</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">DAC mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#ef4444">0.414</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">mean pitch (MIDI)</div>
+      <div style="font-size:20px;font-weight:700;color:#ef4444">63.9</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">source 분포</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>acoustic</td><td><span style="display:inline-block;background:#3b82f6;height:10px;width:74px;border-radius:3px;vertical-align:middle;"></span> <small>46.3%&nbsp;(4323)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>electronic</td><td><span style="display:inline-block;background:#f97316;height:10px;width:41px;border-radius:3px;vertical-align:middle;"></span> <small>26.1%&nbsp;(2433)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>synthetic</td><td><span style="display:inline-block;background:#8b5cf6;height:10px;width:44px;border-radius:3px;vertical-align:middle;"></span> <small>27.6%&nbsp;(2580)</small></td></tr></table>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">instrument family (top 6)</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>guitar</td><td><span style="display:inline-block;background:#64748b;height:10px;width:19px;border-radius:3px;vertical-align:middle;"></span> <small>14.3%&nbsp;(1333)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>bass</td><td><span style="display:inline-block;background:#64748b;height:10px;width:19px;border-radius:3px;vertical-align:middle;"></span> <small>13.8%&nbsp;(1293)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>keyboard</td><td><span style="display:inline-block;background:#64748b;height:10px;width:17px;border-radius:3px;vertical-align:middle;"></span> <small>12.8%&nbsp;(1199)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>reed</td><td><span style="display:inline-block;background:#64748b;height:10px;width:15px;border-radius:3px;vertical-align:middle;"></span> <small>11.2%&nbsp;(1050)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>flute</td><td><span style="display:inline-block;background:#64748b;height:10px;width:14px;border-radius:3px;vertical-align:middle;"></span> <small>10.2%&nbsp;(952)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>brass</td><td><span style="display:inline-block;background:#64748b;height:10px;width:12px;border-radius:3px;vertical-align:middle;"></span> <small>9.1%&nbsp;(854)</small></td></tr></table>
+    </div>
+    
+<div style="margin-top:16px">
+  <div style="font-size:13px;font-weight:600;margin-bottom:6px;">DAC confusion (top predicted instead)</div>
+  <table style='font-size:12px;border-collapse:collapse'><tr><td style='padding:3px 10px 3px 0'>keyboard</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>mallet</b></td><td style='padding:3px 0;color:#6b7280'>443</td></tr><tr><td style='padding:3px 10px 3px 0'>flute</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>reed</b></td><td style='padding:3px 0;color:#6b7280'>341</td></tr><tr><td style='padding:3px 10px 3px 0'>guitar</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>mallet</b></td><td style='padding:3px 0;color:#6b7280'>339</td></tr><tr><td style='padding:3px 10px 3px 0'>reed</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>string</b></td><td style='padding:3px 0;color:#6b7280'>330</td></tr><tr><td style='padding:3px 10px 3px 0'>guitar</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>keyboard</b></td><td style='padding:3px 0;color:#6b7280'>283</td></tr><tr><td style='padding:3px 10px 3px 0'>mallet</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>keyboard</b></td><td style='padding:3px 0;color:#6b7280'>276</td></tr><tr><td style='padding:3px 10px 3px 0'>reed</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>brass</b></td><td style='padding:3px 0;color:#6b7280'>272</td></tr><tr><td style='padding:3px 10px 3px 0'>brass</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>string</b></td><td style='padding:3px 0;color:#6b7280'>272</td></tr><tr><td style='padding:3px 10px 3px 0'>bass</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>mallet</b></td><td style='padding:3px 0;color:#6b7280'>267</td></tr><tr><td style='padding:3px 10px 3px 0'>keyboard</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>guitar</b></td><td style='padding:3px 0;color:#6b7280'>259</td></tr></table>
+</div>
+  </div>
+
+  <!-- Sample cards -->
+  <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">
+    대표 샘플 (8개)
+    — 가장 높은 Whisper confidence
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+    
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-067-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-067-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.891</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 67
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-063-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-063-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.801</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 63
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-075-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-075-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.653</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 75
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_001-098-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_001-098-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ guitar</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.500</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 98
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-060-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-060-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.706</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 60
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-083-050</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-083-050.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ guitar</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.410</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 83
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    vocal_synthetic_013-067-050</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/vocal_synthetic_013-067-050.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">vocal</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ vocal</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.572</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 67
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    bass_synthetic_151-023-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/bass_synthetic_151-023-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">bass</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✓ bass</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">1.000</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ reed</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.478</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 23
+      </td>
+    </tr>
+  </table>
+</div>
+  </div>
+</section>
+
+<section id="WmAp"
+         style="background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:22px;color:#3b82f6">W-A+</h2>
+    <span style="font-size:14px;color:#374151;font-weight:500">
+      n=1,030 &nbsp;(3.8% of total)
+    </span>
+  </div>
+  <p style="margin:0 0 16px;font-size:14px;color:#374151">Whisper ✗  DAC ✓ — DAC만 맞춤. 드문 케이스 — Whisper가 틀리고 DAC이 맞는 예외적 샘플.</p>
+
+  <!-- Stats row -->
+  <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:18px;font-size:13px">
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">Whisper mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#3b82f6">0.607</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">DAC mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#3b82f6">0.459</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">mean pitch (MIDI)</div>
+      <div style="font-size:20px;font-weight:700;color:#3b82f6">65.6</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">source 분포</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>acoustic</td><td><span style="display:inline-block;background:#3b82f6;height:10px;width:71px;border-radius:3px;vertical-align:middle;"></span> <small>44.8%&nbsp;(461)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>electronic</td><td><span style="display:inline-block;background:#f97316;height:10px;width:53px;border-radius:3px;vertical-align:middle;"></span> <small>33.4%&nbsp;(344)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>synthetic</td><td><span style="display:inline-block;background:#8b5cf6;height:10px;width:34px;border-radius:3px;vertical-align:middle;"></span> <small>21.8%&nbsp;(225)</small></td></tr></table>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">instrument family (top 6)</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>mallet</td><td><span style="display:inline-block;background:#64748b;height:10px;width:27px;border-radius:3px;vertical-align:middle;"></span> <small>19.9%&nbsp;(205)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>bass</td><td><span style="display:inline-block;background:#64748b;height:10px;width:24px;border-radius:3px;vertical-align:middle;"></span> <small>17.8%&nbsp;(183)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>guitar</td><td><span style="display:inline-block;background:#64748b;height:10px;width:22px;border-radius:3px;vertical-align:middle;"></span> <small>15.9%&nbsp;(164)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>keyboard</td><td><span style="display:inline-block;background:#64748b;height:10px;width:18px;border-radius:3px;vertical-align:middle;"></span> <small>13.5%&nbsp;(139)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>reed</td><td><span style="display:inline-block;background:#64748b;height:10px;width:13px;border-radius:3px;vertical-align:middle;"></span> <small>9.4%&nbsp;(97)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>organ</td><td><span style="display:inline-block;background:#64748b;height:10px;width:11px;border-radius:3px;vertical-align:middle;"></span> <small>8.3%&nbsp;(85)</small></td></tr></table>
+    </div>
+    
+<div style="margin-top:16px">
+  <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Whisper confusion (top predicted instead)</div>
+  <table style='font-size:12px;border-collapse:collapse'><tr><td style='padding:3px 10px 3px 0'>mallet</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>keyboard</b></td><td style='padding:3px 0;color:#6b7280'>82</td></tr><tr><td style='padding:3px 10px 3px 0'>bass</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>guitar</b></td><td style='padding:3px 0;color:#6b7280'>65</td></tr><tr><td style='padding:3px 10px 3px 0'>mallet</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>guitar</b></td><td style='padding:3px 0;color:#6b7280'>63</td></tr><tr><td style='padding:3px 10px 3px 0'>bass</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>keyboard</b></td><td style='padding:3px 0;color:#6b7280'>60</td></tr><tr><td style='padding:3px 10px 3px 0'>guitar</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>keyboard</b></td><td style='padding:3px 0;color:#6b7280'>54</td></tr><tr><td style='padding:3px 10px 3px 0'>keyboard</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>guitar</b></td><td style='padding:3px 0;color:#6b7280'>52</td></tr><tr><td style='padding:3px 10px 3px 0'>reed</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>flute</b></td><td style='padding:3px 0;color:#6b7280'>50</td></tr><tr><td style='padding:3px 10px 3px 0'>guitar</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>bass</b></td><td style='padding:3px 0;color:#6b7280'>49</td></tr><tr><td style='padding:3px 10px 3px 0'>keyboard</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>bass</b></td><td style='padding:3px 0;color:#6b7280'>38</td></tr><tr><td style='padding:3px 10px 3px 0'>mallet</td><td style='padding:3px 10px'>→</td><td style='padding:3px 10px 3px 0'><b>bass</b></td><td style='padding:3px 0;color:#6b7280'>36</td></tr></table>
+</div>
+  </div>
+
+  <!-- Sample cards -->
+  <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">
+    대표 샘플 (8개)
+    — 가장 높은 DAC confidence
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+    
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    organ_electronic_070-069-025</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/organ_electronic_070-069-025.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">organ</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ mallet</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.758</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ organ</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.992</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 69
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    bass_synthetic_090-049-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/bass_synthetic_090-049-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">bass</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ vocal</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.414</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ bass</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.992</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 49
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    organ_electronic_046-056-025</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/organ_electronic_046-056-025.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">organ</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ guitar</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.929</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ organ</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.977</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 56
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    organ_electronic_073-059-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/organ_electronic_073-059-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">organ</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ mallet</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.913</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ organ</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.973</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 59
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    organ_electronic_072-072-050</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/organ_electronic_072-072-050.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">organ</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ mallet</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.801</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ organ</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.971</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 72
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    bass_synthetic_137-024-025</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/bass_synthetic_137-024-025.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">bass</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ guitar</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.751</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ bass</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.962</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 24
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    organ_electronic_101-067-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/organ_electronic_101-067-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">organ</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ keyboard</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.490</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ organ</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.962</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 67
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_033-032-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_033-032-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ bass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.783</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✓ keyboard</td>
+      <td><span style="background:#bbf7d0;border:1px solid #16a34a;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.955</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 32
+      </td>
+    </tr>
+  </table>
+</div>
+  </div>
+</section>
+
+<section id="WmAm"
+         style="background:#f9fafb;border:2px solid #9ca3af;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+    <h2 style="margin:0;font-size:22px;color:#9ca3af">W-A-</h2>
+    <span style="font-size:14px;color:#374151;font-weight:500">
+      n=2,881 &nbsp;(10.6% of total)
+    </span>
+  </div>
+  <p style="margin:0 0 16px;font-size:14px;color:#374151">Whisper ✗  DAC ✗ — 둘 다 틀림. 두 인코더 모두 어려운 샘플. electronic 비중이 높음.</p>
+
+  <!-- Stats row -->
+  <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:18px;font-size:13px">
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">Whisper mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#9ca3af">0.630</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">DAC mean proba</div>
+      <div style="font-size:20px;font-weight:700;color:#9ca3af">0.434</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">mean pitch (MIDI)</div>
+      <div style="font-size:20px;font-weight:700;color:#9ca3af">67.2</div>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">source 분포</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>acoustic</td><td><span style="display:inline-block;background:#3b82f6;height:10px;width:40px;border-radius:3px;vertical-align:middle;"></span> <small>25.2%&nbsp;(726)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>electronic</td><td><span style="display:inline-block;background:#f97316;height:10px;width:66px;border-radius:3px;vertical-align:middle;"></span> <small>41.3%&nbsp;(1191)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;'>synthetic</td><td><span style="display:inline-block;background:#8b5cf6;height:10px;width:53px;border-radius:3px;vertical-align:middle;"></span> <small>33.5%&nbsp;(964)</small></td></tr></table>
+    </div>
+    <div>
+      <div style="color:#6b7280;margin-bottom:4px">instrument family (top 6)</div>
+      <table style='border-collapse:collapse'><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>keyboard</td><td><span style="display:inline-block;background:#64748b;height:10px;width:34px;border-radius:3px;vertical-align:middle;"></span> <small>24.6%&nbsp;(708)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>bass</td><td><span style="display:inline-block;background:#64748b;height:10px;width:28px;border-radius:3px;vertical-align:middle;"></span> <small>20.3%&nbsp;(585)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>guitar</td><td><span style="display:inline-block;background:#64748b;height:10px;width:28px;border-radius:3px;vertical-align:middle;"></span> <small>20.2%&nbsp;(581)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>mallet</td><td><span style="display:inline-block;background:#64748b;height:10px;width:13px;border-radius:3px;vertical-align:middle;"></span> <small>9.4%&nbsp;(271)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>organ</td><td><span style="display:inline-block;background:#64748b;height:10px;width:9px;border-radius:3px;vertical-align:middle;"></span> <small>6.5%&nbsp;(188)</small></td></tr><tr><td style='font-size:12px;padding:2px 8px 2px 0;width:80px'>flute</td><td><span style="display:inline-block;background:#64748b;height:10px;width:8px;border-radius:3px;vertical-align:middle;"></span> <small>6.1%&nbsp;(177)</small></td></tr></table>
+    </div>
+    
+  </div>
+
+  <!-- Sample cards -->
+  <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#374151">
+    대표 샘플 (8개)
+    — 두 모델 모두 높은 confidence로 틀린 샘플
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;">
+    
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_079-021-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_079-021-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.981</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ brass</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.981</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 21
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_088-055-050</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_088-055-050.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.985</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.960</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 55
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_101-083-127</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_101-083-127.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.983</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.956</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 83
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_101-081-100</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_101-081-100.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.959</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.980</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 81
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_101-038-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_101-038-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.988</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.948</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 38
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_101-060-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_101-060-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.988</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.945</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 60
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    bass_synthetic_017-021-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/bass_synthetic_017-021-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">bass</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ vocal</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.980</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ vocal</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.927</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#8b5cf6;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">synthetic</span>
+        pitch 21
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;
+            background:#fff;min-width:240px;max-width:280px;flex-shrink:0;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:4px;word-break:break-all;">
+    keyboard_electronic_101-063-075</div>
+  <audio controls preload="none"
+         style="width:100%;height:30px;margin-bottom:8px;"
+         src="nsynth_audio_root/nsynth/train_30k/keyboard_electronic_101-063-075.wav"></audio>
+  <table style="font-size:12px;border-collapse:collapse;width:100%">
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">true</td>
+      <td style="font-weight:700;padding:2px 6px;">keyboard</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">W pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.987</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">D pred</td>
+      <td style="padding:2px 6px;">✗ organ</td>
+      <td><span style="background:#fecaca;border:1px solid #dc2626;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;">0.920</span></td>
+    </tr>
+    <tr>
+      <td style="color:#6b7280;padding:2px 0;">source</td>
+      <td colspan="2" style="padding:2px 6px;">
+        <span style="background:#f97316;color:#fff;border-radius:3px;
+              padding:1px 5px;font-size:11px;">electronic</span>
+        pitch 63
+      </td>
+    </tr>
+  </table>
+</div>
+  </div>
+</section>
+
+<div id="analysis">
+
+<section style="background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <h2 style="margin:0 0 16px;color:#b45309">왜 Whisper는 맞추고 DAC은 틀리는가? (W+A- 분석)</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:14px">
+    <div>
+      <h3 style="font-size:15px;margin:0 0 8px;">Whisper 성공 요인</h3>
+      <ul style="margin:0;padding-left:20px;line-height:1.8">
+        <li>평균 confidence <b>0.835</b> — 매우 높음</li>
+        <li>언어 모델 사전학습이 악기 <em>이름</em> 관련 audio 패턴 학습</li>
+        <li>50fps 고해상도 프레임으로 onset 특징 포착</li>
+        <li>16kHz + log-mel 입력: 배음 구조에 민감</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="font-size:15px;margin:0 0 8px;">DAC 실패 요인</h3>
+      <ul style="margin:0;padding-left:20px;line-height:1.8">
+        <li>평균 confidence <b>0.414</b> — 낮음</li>
+        <li>synthetic 비중 <b>28%</b>
+          (전체 대비 +8pp 과다)</li>
+        <li>전음성(timbre) 유사 악기 간 혼동: keyboard↔mallet, guitar↔mallet, flute↔reed</li>
+        <li>VAE bottleneck 압축(1024→128)으로 섬세한 배음 정보 손실</li>
+        <li>48kHz 코덱 손실 최소화 목적으로 학습 → 악기 식별보다 재현에 최적화</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section style="background:#f0f9ff;border:2px solid #0ea5e9;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <h2 style="margin:0 0 16px;color:#0369a1">왜 DAC은 맞추고 Whisper는 틀리는가? (W-A+ 분석, n=1030)</h2>
+  <div style="font-size:14px">
+    <p style="margin:0 0 10px">W-A+는 전체의 <b>3.8%</b>로 매우 드문 케이스입니다.</p>
+    <ul style="margin:0;padding-left:20px;line-height:1.8">
+      <li>Whisper 평균 confidence <b>0.607</b> (낮음) —
+          불확실한 경계 케이스에서 DAC가 우연히 맞춤</li>
+      <li>mallet→keyboard(82건),
+          bass→guitar(65건):
+          Whisper의 언어적 연상이 오히려 혼동 유발</li>
+      <li>electronic 비중 <b>33%</b>
+          — 전자악기 특유의 파형에서 DAC 코덱 표현이 유리</li>
+      <li>평균 pitch <b>65.6</b> MIDI
+          (W+A- 63.9보다 높음)</li>
+    </ul>
+  </div>
+</section>
+</div>
+
+<!-- Chi-square table -->
+<section style="background:white;border:1px solid #e5e7eb;border-radius:12px;
+                padding:20px 24px;margin-bottom:28px;">
+  <h2 style="margin:0 0 12px;font-size:18px">Meta-attribute χ² test (W+A- vs 전체)</h2>
+  <p style="font-size:13px;color:#6b7280;margin:0 0 12px">
+    W+A- 집합이 전체 분포와 통계적으로 다른지 검정 (chi-square, dof=categories-1)
+  </p>
+  <table style="border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:#f1f5f9">
+        <th style="padding:6px 12px;text-align:left">attribute</th>
+        <th style="padding:6px 12px;text-align:right">χ²</th>
+        <th style="padding:6px 12px;text-align:right">p-value</th>
+        <th style="padding:6px 12px">sig</th>
+        <th style="padding:6px 12px;text-align:right">dof</th>
+      </tr>
+    </thead>
+    <tbody>
+<tr>
+  <td style="padding:6px 12px">source</td>
+  <td style="padding:6px 12px;text-align:right">588.1</td>
+  <td style="padding:6px 12px;text-align:right">1.96e-128</td>
+  <td style="padding:6px 12px;font-weight:700;color:#ef4444">***</td>
+  <td style="padding:6px 12px;text-align:right">2</td>
+</tr>
+<tr>
+  <td style="padding:6px 12px">velocity</td>
+  <td style="padding:6px 12px;text-align:right">5.7</td>
+  <td style="padding:6px 12px;text-align:right">2.20e-01</td>
+  <td style="padding:6px 12px;font-weight:700;color:#ef4444">ns</td>
+  <td style="padding:6px 12px;text-align:right">4</td>
+</tr>
+<tr>
+  <td style="padding:6px 12px">pitch_bin</td>
+  <td style="padding:6px 12px;text-align:right">92.0</td>
+  <td style="padding:6px 12px;text-align:right">4.77e-17</td>
+  <td style="padding:6px 12px;font-weight:700;color:#ef4444">***</td>
+  <td style="padding:6px 12px;text-align:right">7</td>
+</tr></tbody>
+  </table>
+  <p style="font-size:12px;color:#9ca3af;margin-top:8px">*** p&lt;0.001 &nbsp;** p&lt;0.01 &nbsp;* p&lt;0.05 &nbsp;ns not significant</p>
+</section>
+
+<footer style="font-size:12px;color:#9ca3af;margin-top:32px;padding-top:16px;
+               border-top:1px solid #e5e7eb">
+  Generated by experiments/audio_encoder_probe/phase_a/make_diagnostic_html.py
+</footer>
+</body>
+</html>
