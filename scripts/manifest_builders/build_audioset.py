@@ -40,7 +40,6 @@ PARQUET_DIR = Path("/mnt/tmp/datasets/env_sound/AudioSet/data/bal_train")
 ONTOLOGY_NUBES_PATH = "users/jos/AudioEnc/AudioSet/ontology.json"
 ONTOLOGY_LOCAL_FALLBACKS = [
     Path("/mnt/tmp/datasets/env_sound/AudioSet/ontology.json"),
-    Path("/mnt/ddn/users/jos/AudioEnc/log/tmp/datasets/env_sound/AudioSet/ontology.json"),
 ]
 OUT_MANIFEST = Path("/mnt/tmp/datasets/manifests/v3")
 OUT_MANIFEST.mkdir(parents=True, exist_ok=True)

@@ -6,11 +6,11 @@ Same prompt + greedy decode as eval_source_emotion.py.
 
 Usage:
     python -m evaluation.stage2.eval_iemocap_session5 \
-        --ckpt-root /mnt/tmp/v4_ckpts_only \
-        --out-root  /mnt/tmp/Qwen3.5_dac_vae_v4_Stage1_jos/eval_v4/eval_iemocap_session5 \
+        --ckpt-root /path/to/stage1_run \
+        --out-root  /path/to/eval_iemocap_session5 \
         --ckpts 100000
 
-For Stage-2 LoRA ckpts add `--base-model /mnt/tmp/s2_init_42k`.
+For Stage-2 LoRA ckpts add `--base-model /path/to/stage2_init`.
 """
 from __future__ import annotations
 

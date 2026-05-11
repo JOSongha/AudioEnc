@@ -19,8 +19,7 @@ conda activate audiollm
 
 # pip install flash-attn==2.8.3 --no-build-isolation -q
 
-# pip install -e /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer -q
-# pip install -e /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae -q
+# pip install -e . -q   # editable install of this repo (run from repo root)
 
 # # ── glibc_stub.so (flash_attn GLIBC_2.32 workaround) ─────────────────────────
 # if [ ! -f "$CONDA_PREFIX/lib/glibc_stub.so" ]; then

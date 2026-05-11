@@ -42,7 +42,6 @@ GT_CSV = Path("/mnt/tmp/datasets/env_sound/FSD50K/FSD50K.ground_truth/dev.csv")
 ONTOLOGY_NUBES_PATH = "users/jos/AudioEnc/AudioSet/ontology.json"
 ONTOLOGY_LOCAL_FALLBACKS = [
     Path("/mnt/tmp/datasets/env_sound/AudioSet/ontology.json"),
-    Path("/mnt/ddn/users/jos/AudioEnc/log/tmp/datasets/env_sound/AudioSet/ontology.json"),
 ]
 OUT_MANIFEST = Path("/mnt/tmp/datasets/manifests/v3")
 OUT_MANIFEST.mkdir(parents=True, exist_ok=True)

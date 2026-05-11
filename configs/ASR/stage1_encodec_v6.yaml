@@ -5,12 +5,11 @@
 # env_sound 0.25, emotion 0.10), replacing the v5-era single libri_mls_vox
 # manifest. EnCodec emits 75 fps at 24k (320-sample hop).
 #
-# TODO: external/models/Qwen3.5AE-4B-encodec-projL must be created first.
-# Suggested setup: copy Qwen3.5AE-4B-projL/config.json, swap audio_config to
-# the EnCodec block from the existing sehyun base
-# (sehyun .../external/models/Qwen3.5AE-4B-encodec-24k/config.json), keep
-# adapter_hidden_size=1024 / intermediate_size=4096 / num_attention_heads=16
-# from projL, then symlink weights/code from a working encodec base.
+# external/models/Qwen3.5AE-4B-encodec-projL is the projL overlay over the
+# encodec-24k base: same projector dims (H=1024 / I=4096 / heads=16) as
+# Qwen3.5AE-4B-projL, but the audio_config block is swapped to EnCodec.
+# scripts/setup_models.sh fetches the base safetensors from nubes and
+# regenerates the relative symlinks for the overlay.
 model_name_or_path: external/models/Qwen3.5AE-4B-encodec-projL
 flash_attn: fa2
 enable_liger_kernel: true
