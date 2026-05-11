@@ -40,9 +40,6 @@ from manifest_builders._nubes_helper import fetch_object  # noqa: E402
 AUDIO_ROOT = Path("/mnt/tmp/datasets/env_sound/FSD50K/FSD50K.dev_audio")
 GT_CSV = Path("/mnt/tmp/datasets/env_sound/FSD50K/FSD50K.ground_truth/dev.csv")
 ONTOLOGY_NUBES_PATH = "users/jos/AudioEnc/AudioSet/ontology.json"
-ONTOLOGY_LOCAL_FALLBACKS = [
-    Path("/mnt/tmp/datasets/env_sound/AudioSet/ontology.json"),
-]
 OUT_MANIFEST = Path("/mnt/tmp/datasets/manifests/v3")
 OUT_MANIFEST.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +47,7 @@ SHARD_ROWS = 15000
 
 
 def load_ontology() -> tuple[dict[str, dict], dict[str, dict]]:
-    """Load AudioSet ontology: env override -> nubes -> ddn fallback."""
+    """Load AudioSet ontology: AUDIOSET_ONTOLOGY env override, else nubes."""
     override = os.environ.get("AUDIOSET_ONTOLOGY")
     if override and Path(override).is_file():
         with open(override) as f:
@@ -60,17 +57,9 @@ def load_ontology() -> tuple[dict[str, dict], dict[str, dict]]:
         entries = json.loads(fetch_object(ONTOLOGY_NUBES_PATH, timeout=60).decode())
         return {e["name"]: e for e in entries}, {e["id"]: e for e in entries}
     except Exception as e:
-        for p in ONTOLOGY_LOCAL_FALLBACKS:
-            if p.is_file():
-                print(f"[fsd50k] nubes ontology fetch failed ({e}), falling back to {p}",
-                      flush=True)
-                with open(p) as f:
-                    entries = json.load(f)
-                return {e_["name"]: e_ for e_ in entries}, {e_["id"]: e_ for e_ in entries}
         raise FileNotFoundError(
-            "AudioSet ontology.json not reachable from nubes "
-            f"({ONTOLOGY_NUBES_PATH}) nor ddn fallbacks ({ONTOLOGY_LOCAL_FALLBACKS}); "
-            "set AUDIOSET_ONTOLOGY=/path/to/ontology.json"
+            f"AudioSet ontology.json not reachable from nubes ({ONTOLOGY_NUBES_PATH}); "
+            "set AUDIOSET_ONTOLOGY=/path/to/ontology.json to override."
         ) from e
 
 
