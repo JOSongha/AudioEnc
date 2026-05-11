@@ -6,8 +6,9 @@ Sources:
         scripts/env_sound/prepare_manifest.py; here we only read labels.)
     Labels: /mnt/tmp/datasets/env_sound/AudioSet/data/bal_train/*.parquet
         cols: video_id, audio (ignored), labels (Freebase ids), human_labels (text)
-    Ontology: /mnt/tmp/datasets/env_sound/AudioSet/ontology.json
-        (also available under /mnt/ddn/users/jos/AudioEnc/log/tmp/...; both 632 entries.)
+    Ontology: nubes /users/jos/AudioEnc/AudioSet/ontology.json (632 entries).
+        Override with env AUDIOSET_ONTOLOGY=/local/path/ontology.json if needed;
+        ddn legacy paths kept as last-resort fallback.
 
 Output (matches v3 sound-captioning spec, Clotho/AudioCaps multi-caption style):
     /mnt/tmp/datasets/manifests/v3/audioset_bal_train_<NNNN>.jsonl
@@ -26,13 +27,19 @@ Skip rows with empty human_labels OR missing audio file.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pyarrow.parquet as pq
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from manifest_builders._nubes_helper import fetch_object  # noqa: E402
+
 AUDIO_ROOT = Path("/mnt/tmp/datasets/env_sound/AudioSet/audio")
 PARQUET_DIR = Path("/mnt/tmp/datasets/env_sound/AudioSet/data/bal_train")
-ONTOLOGY_CANDIDATES = [
+ONTOLOGY_NUBES_PATH = "users/jos/AudioEnc/AudioSet/ontology.json"
+ONTOLOGY_LOCAL_FALLBACKS = [
     Path("/mnt/tmp/datasets/env_sound/AudioSet/ontology.json"),
     Path("/mnt/ddn/users/jos/AudioEnc/log/tmp/datasets/env_sound/AudioSet/ontology.json"),
 ]
@@ -43,14 +50,28 @@ SHARD_ROWS = 15000
 
 
 def load_ontology() -> dict[str, dict]:
-    for p in ONTOLOGY_CANDIDATES:
-        if p.exists():
-            with open(p) as f:
-                entries = json.load(f)
-            return {e["name"]: e for e in entries}
-    raise FileNotFoundError(
-        f"AudioSet ontology.json not found in any of: {ONTOLOGY_CANDIDATES}"
-    )
+    """Load AudioSet ontology: env override -> nubes -> ddn fallback."""
+    override = os.environ.get("AUDIOSET_ONTOLOGY")
+    if override and Path(override).is_file():
+        with open(override) as f:
+            entries = json.load(f)
+        return {e["name"]: e for e in entries}
+    try:
+        entries = json.loads(fetch_object(ONTOLOGY_NUBES_PATH, timeout=60).decode())
+        return {e["name"]: e for e in entries}
+    except Exception as e:
+        for p in ONTOLOGY_LOCAL_FALLBACKS:
+            if p.is_file():
+                print(f"[audioset] nubes ontology fetch failed ({e}), falling back to {p}",
+                      flush=True)
+                with open(p) as f:
+                    entries = json.load(f)
+                return {e_["name"]: e_ for e_ in entries}
+        raise FileNotFoundError(
+            "AudioSet ontology.json not reachable from nubes "
+            f"({ONTOLOGY_NUBES_PATH}) nor ddn fallbacks ({ONTOLOGY_LOCAL_FALLBACKS}); "
+            "set AUDIOSET_ONTOLOGY=/path/to/ontology.json"
+        ) from e
 
 
 def descriptions_for(human_labels: list[str], onto: dict) -> list[str]:
