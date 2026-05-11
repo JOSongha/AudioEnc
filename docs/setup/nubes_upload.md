@@ -259,6 +259,7 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 - 2026-05-08 (MACS yaml nubes backup, 옵션 C): MACS audio 는 nubes `/datasets/public/MACS/audio/` (TAU2019 source `a` 14,400) 의 3,930 사용 — audio 중복 업로드 안 함. 대신 `MACS.yaml` (2.7 MB, 3,930 entry caption metadata) 만 `/users/jos/AudioEnc/MACS/MACS.yaml` 에 backup 업로드 (§ 12.8). [`build_macs.py`](../../scripts/manifest_builders/build_macs.py) 갱신: `_fetch_yaml()` 가 nubes URL 우선 fetch + `MACS_YAML_LOCAL` env var fallback (ddn 도 사용 가능). 완전 nubes-only 동작 가능. smoke test 통과 (3,930 entry / captions). § 9.2 MACS 행 / § 3 MACS 행 / § 9.8 종합 결론 의 "✓ 업로드 완료" 카테고리 (3 → 8) / "즉시 보완 필요" 항목 갱신 (EmoV-DB / RAVDESS / IEMOCAP / AudioSet 모두 완료 표기 + AudioCaps + eval 4종 만 미완으로 정정). § 9.8 v6 grand total 변동 없음 (yaml 만 추가, audio 는 표준 영역 그대로 인용).
 - 2026-05-08 (MELD audio wav 사용자 영역 업로드, § 12.14): § 12.10 의 nubes public mp3 (`/MELD.Raw/<split>/*.mp3`) 가 multi-worker dataloader 환경에서 libsndfile 디코드 inconsistent (Format not recognised) — v6 stage1 학습 시 11k MELD row 모두 skip. wav 본을 `/users/jos/AudioEnc/MELD/audio/{train,dev,test}/` 에 직접 업로드 (13,847 wav, ~1.4 GB, 17분). build_emotion_meld.py / rewrite_audio_paths_nubes.py / eval_source_emotion.py 갱신해서 nubes_path 가 wav 가리킴. omni_dataset.py / audio_io.py 의 ffmpeg fallback 코드 revert (mp3 안 쓰니 불필요). § 9.8 종합 결론 "✓ 업로드 완료" 9 → 10. v6_nubes 재빌드 후 학습 정상 (MELD 11k row 모두 wav nubes-direct).
 - 2026-05-08 (LAION-Freesound § 9 누락 보완 + 매핑 검증): § 9 의 어느 카테고리에도 없던 LAION-Freesound (460,141 row) 를 § 9.3 행에 추가. **200-sample ID 매칭 검증 결과 매핑 불가 확인**: 80 hit / 120 miss (60% 부재), 80 hit 도 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB) — nubes `/datasets/public/Freesound/audio/` 는 다른 encoding/quality 의 별도 dump. § 9.8 종합 결론 에 "✗ 매핑 불가 (1): LAION-Freesound" 카테고리 추가. Stage-1 학습은 audio_path local fallback 으로 정상 동작. LAION 본 (607 GB) 별도 업로드는 보류.
+- 2026-05-11 (LAION-Freesound § 12.15 audio + manifest + swap 완료): § 12.15 audio dir-upload (`/users/jos/AudioEnc/LAION-Freesound/audio/`) 완료 — nubescli recursive list 결과 460,142 obj (local 460,141 flac + 1 dir entry) 일치. `rewrite_audio_paths_nubes.py` 의 `PREFIX_MAPPINGS` 에 `laion_freesound` 추가. `v6_nubes_full` 별도 dir 빌드 (모든 source 100% nubes_path). 학습 open fd 0개 확인 후 atomic rename swap (`mv v6_nubes v6_nubes_old && mv v6_nubes_full v6_nubes`) — 진행 중 학습 (whisper-tiny v6, 138 procs) 무중단 적용. `v6_nubes_old` 는 rollback safety 로 일시 보존, 학습 완료 후 삭제.
 
 ## 11. Nubes Guide
 
@@ -1606,9 +1607,9 @@ nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/MELD/audio/test/ \
 
 **Side effect on § 12.13 #6 (mp3 디코드 인프라)**: 더 이상 필요 없음 — § 12.13 의 fallback chain 설명 obsolete. 현재 v6 stage1 / Stage-2 eval 모두 wav 만 사용. § 12.13 #6 은 "이전 시도 (deprecated)" 로 마크 하거나 삭제.
 
-### 12.15 LAION-Freesound (audio + meta csv) — 진행 중 2026-05-08
+### 12.15 LAION-Freesound (audio + meta csv) — 완료 2026-05-11 (audio + manifest + swap)
 
-**상태**: 진행 중 (2026-05-08 08:04 시작). csv + README 완료, audio 460k flac 업로드 중 (~60min ETA).
+**상태**: audio 업로드 + manifest 빌드 + live swap 완료. `v6_nubes` 가 신규 (모든 source 100% nubes_path) 본으로 교체됨. 진행 중 학습은 atomic rename swap (학습 open fd 0개 확인 후) 으로 무중단 적용 — 다음 shard 부터 laion_freesound 도 nubes-direct fetch.
 
 **대상**: LAION-Freesound 460,141 flac + metadata.
 - `audio/` 460,141 flac (~607 GB, `/mnt/tmp/datasets/laion_extracted/freesound/`)
@@ -1630,19 +1631,27 @@ nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/aud
     /mnt/tmp/datasets/laion_extracted/freesound/ -j 16
 ```
 
-**예상 후속 (audio 업로드 완료 후)**:
-1. [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py) `PREFIX_MAPPINGS` 에 매핑 추가:
+**후속 액션 진행 상태**:
+1. ✓ [`scripts/manifest_builders/rewrite_audio_paths_nubes.py`](../../scripts/manifest_builders/rewrite_audio_paths_nubes.py) `PREFIX_MAPPINGS` 에 `laion_freesound` 매핑 추가:
    ```python
    "laion_freesound": (
        "/mnt/tmp/datasets/laion_extracted/freesound/",
        "hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/",
    ),
    ```
-2. v6_nubes 재빌드 → laion_freesound 460k row 가 nubes_path 박힘 (현재 100% local → 100% nubes-mapped)
-3. 학습은 다음 launch 시 자동 적용 (현재 학습 영향 X, 진행 중 학습은 local fallback 으로 정상)
-4. § 9.3 LAION-Freesound 행 갱신: ⚠ 매핑 불가 → ✓ done
-5. § 9.8 종합 결론: "✗ 매핑 불가 (1)" 카테고리 제거, "✓ 업로드 완료 (10 → 11)" 추가
-6. § 12.15 검증 표 추가 (count, sample HEAD)
+2. ✓ `v6_nubes_full` (별도 dir) 빌드 — laion_freesound 45,000/45,000 row nubes_path 박힘
+3. ✓ live `v6_nubes` ↔ `v6_nubes_full` atomic swap 완료 (2026-05-11). 학습 open fd 0개 확인 후 `mv v6_nubes v6_nubes_old && mv v6_nubes_full v6_nubes` — 진행 중 학습 무중단 (138 procs alive). `v6_nubes_old` 는 rollback safety 로 일시 보존, 학습 완료 후 삭제.
+4. ✓ § 9.3 LAION-Freesound 행 갱신 (⚠ 매핑 불가 → ✓ done)
+5. ✓ § 9.8 종합 결론 갱신 ("✓ 업로드 완료 (11)" 에 § 12.15 추가)
+6. ✓ § 12.15 검증 표 (아래)
 
-**검증**: 업로드 완료 후 작성 (count + sample HEAD).
+**검증 (2026-05-11)**:
+
+| 대상 | local | nubes (`/users/jos/AudioEnc/LAION-Freesound/`) | 상태 |
+|---|---|---|---|
+| audio/*.flac | 460,141 flac (~607 GB, `/mnt/tmp/datasets/laion_extracted/freesound/`) | 460,142 obj (recursive `nubescli list -R -o ...audio`) | ✓ 일치 (+1 = list 헤더 / dir entry) |
+| freesound_meta.csv | 105 MB | 1 obj | ✓ |
+| freesound_no_overlap_meta.csv | 94 MB | 1 obj | ✓ |
+| README.md | 3 KB | 1 obj | ✓ |
+| v6_nubes_full manifest sample | `422341.flac` audio_path | `hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/422341.flac` | ✓ |
 

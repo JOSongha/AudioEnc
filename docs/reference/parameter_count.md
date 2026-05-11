@@ -1,8 +1,8 @@
-# Qwen3AE / Qwen3.5AE — Audio 파라미터 수
+# Qwen3.5AE-projL — Audio 파라미터 수
 
-> 대상: `/mnt/fr20tb/audiollm/sanghyuk/Qwen3AE-4B`, `/mnt/fr20tb/audiollm/sanghyuk/Qwen3.5AE-4B`
+> 대상: `/mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-projL` (DACVAE encoder), 그리고 동일 projL 구성을 공유하는 `Qwen3.5AE-4B-{encodec,wavtok,whisper-tiny,whisper-small}-projL` (encoder 만 다름).
 > 측정 방법: `audio_encoder.py` 의 `AudioEncoder(AudioConfig)` 를 `config.json` 의 `audio_config` 그대로 인스턴스화 후, `sum(p.numel() for p in module.parameters())`.
-> 두 variant 의 audio 쪽 구성은 동일 — DACVAE + AudioProjector 파라미터 수는 완전히 같음.
+> v6 부터 projector 가 base (H=512) → **projL (H=1024, I=4096, heads=16)** 로 확장되어 projector 파라미터 약 3.85× 증가.
 
 ---
 
@@ -14,9 +14,9 @@
 
 | 구성 | 파라미터 |
 |---|---|
-| **AudioEncoder 전체** | **125,806,146 (~125.8M)** |
+| **AudioEncoder 전체** | **177,518,658 (~177.5M)** |
 | └ `self.encoder` (DACVAE, 전체 로드, frozen) | 107,648,066 (~107.6M) |
-| └ `self.projector` (AudioProjector, Stage1 학습 대상) | **18,158,080 (~18.2M)** |
+| └ `self.projector` (AudioProjector projL, Stage1 학습 대상) | **69,870,592 (~69.87M)** |
 
 `model.safetensors` 에도 DACVAE 255개 key 전부 실려있음 (decoder 162, encoder+quantizer 93). 체크포인트가 "watermarked DACVAE full model" 인 걸 그대로 박제한 결과.
 
@@ -24,9 +24,9 @@
 
 | 구성 | 파라미터 |
 |---|---|
-| **Active 총합** | **45,709,440 (~45.7M)** |
+| **Active 총합** | **97,421,952 (~97.42M)** |
 | └ DACVAE encode path (encoder + `quantizer.in_proj`) | 27,551,360 (~27.6M) |
-| └ AudioProjector | 18,158,080 (~18.2M) |
+| └ AudioProjector (projL) | 69,870,592 (~69.87M) |
 
 나머지 **80,096,706 (~80.1M)** 은 로드만 되고 한 번도 안 불리는 dead weight:
 - `decoder.model` (upsampler, 70.66M)
@@ -37,9 +37,14 @@
 → `DACVAE.encode()` 는 `encoder(x) → quantizer.in_proj(z).chunk → _vae_sample` 로 끝 →
 → decoder/out_proj/watermarker 는 영원히 dead path.
 
-### Projector 대조
+### Projector 대조 (base vs projL)
 
-Projector 18,158,080 은 PDF / notion 문서의 **18,158,080 (18M)** 표기와 정확히 일치.
+| variant | hidden / heads / ffn | per-layer | 4-layer total | input_proj (DACVAE 128) | output_proj (1024→2560 / 512→2560) | projector total |
+|---|---|---|---|---|---|---|
+| base (v5 까지) | 512 / 8 / 2048 | 4,195,328 | 16,781,312 | 65,536 | 1,310,720 | **18,158,080** |
+| **projL (v6 부터)** | **1024 / 16 / 4096** | **16,779,264** | **67,117,056** | **131,072** | **2,621,440** | **69,870,592** |
+
+→ projL 은 base 대비 약 **3.85×** 증가 (per-layer 4×, layer 합계 4×, output_proj 도 2×). PDF/notion 의 18M 표기는 base 기준이며, **v6 ckpt 의 학습 파라미터 = 69.87M** 으로 갱신.
 
 ### AudioEncoder = DACVAE + AudioProjector 인 이유
 
@@ -58,9 +63,9 @@ self.projector = AudioProjector(config)
 
 ### 숫자 어떻게 인용할지
 
-- **모델 사이즈/체크포인트 크기** 문맥 → **A (125.8M)** — 저장/로드 되는 실제 물리량
-- **연산량/FLOPs/메모리 효율** 문맥 → **B (45.7M)** — forward 에 관여하는 실질 크기
-- **"audio encoder 가 몇 M이냐?"** 같은 모호한 경우 → 둘 다 병기, dead weight 80M 이유 한 줄 덧붙이는 게 안전
+- **모델 사이즈/체크포인트 크기** 문맥 → **A (177.5M)** — 저장/로드 되는 실제 물리량 (DACVAE projL 기준)
+- **연산량/FLOPs/메모리 효율** 문맥 → **B (97.42M)** — forward 에 관여하는 실질 크기
+- **"audio encoder 가 몇 M이냐?"** 같은 모호한 경우 → 둘 다 병기, dead weight 80M (DACVAE decoder/wm/out_proj) 이유 한 줄 덧붙이는 게 안전
 
 ---
 
@@ -144,16 +149,16 @@ forward 에 관여하는 27.55M 만 실제로 audio waveform → latent 변환�
 
 ## AudioProjector (Stage1 학습 대상)
 
-### Config (`audio_config`)
+### Config (`audio_config`, projL)
 
 | key | 값 |
 |---|---|
 | `audio_hidden_size` | 128 (= DACVAE `codebook_dim`) |
-| `adapter_hidden_size` | 512 |
+| `adapter_hidden_size` | **1,024** |
 | `num_adapter_layers` | 4 |
-| `num_attention_heads` | 8 |
-| `num_key_value_heads` | 8 |
-| `intermediate_size` | 2,048 |
+| `num_attention_heads` | **16** |
+| `num_key_value_heads` | **16** |
+| `intermediate_size` | **4,096** |
 | `llm_embed_size` | 2,560 |
 | `head_dim` | 64 |
 
@@ -161,38 +166,38 @@ forward 에 관여하는 27.55M 만 실제로 audio waveform → latent 변환�
 
 ```python
 class AudioProjector(nn.Module):
-    self.input_proj   = nn.Linear(128, 512, bias=False)             #   65,536
-    self.layers       = nn.ModuleList([LlamaDecoderLayer(...) x 4]) # 16,781,312
-    self.final_norm   = LlamaRMSNorm(512)                           #      512
-    self.output_proj  = nn.Linear(512, 2560, bias=False)            #  1,310,720
+    self.input_proj   = nn.Linear(128, 1024, bias=False)            #    131,072
+    self.layers       = nn.ModuleList([LlamaDecoderLayer(...) x 4]) # 67,117,056
+    self.final_norm   = LlamaRMSNorm(1024)                          #      1,024
+    self.output_proj  = nn.Linear(1024, 2560, bias=False)           #  2,621,440
 ```
 
 ### Breakdown
 
 | 모듈 | 파라미터 | 비율 |
 |---|---|---|
-| **total** | **18,158,080** | 100% |
-| `input_proj` (128 → 512) | 65,536 | 0.36% |
-| `layers` (4 × LlamaDecoderLayer) | 16,781,312 | 92.4% |
-| `final_norm` (RMSNorm 512) | 512 | < 0.01% |
-| `output_proj` (512 → 2560) | 1,310,720 | 7.22% |
+| **total** | **69,870,592** | 100% |
+| `input_proj` (128 → 1024) | 131,072 | 0.19% |
+| `layers` (4 × LlamaDecoderLayer) | 67,117,056 | 96.06% |
+| `final_norm` (RMSNorm 1024) | 1,024 | < 0.01% |
+| `output_proj` (1024 → 2560) | 2,621,440 | 3.75% |
 
-Layer 1개당 내부 구조 (512 hidden, 8 heads × 64 head_dim, 2048 intermediate, attention_bias=false):
+Layer 1개당 내부 구조 (1024 hidden, 16 heads × 64 head_dim, 4096 intermediate, attention_bias=false):
 
 | 서브모듈 | 계산 | 파라미터 |
 |---|---|---|
-| q_proj | 512 × 512 | 262,144 |
-| k_proj | 512 × 512 | 262,144 |
-| v_proj | 512 × 512 | 262,144 |
-| o_proj | 512 × 512 | 262,144 |
-| gate_proj | 512 × 2048 | 1,048,576 |
-| up_proj | 512 × 2048 | 1,048,576 |
-| down_proj | 2048 × 512 | 1,048,576 |
-| input_layernorm | RMSNorm 512 | 512 |
-| post_attention_layernorm | RMSNorm 512 | 512 |
-| **layer total** | | **4,195,328** |
+| q_proj | 1024 × 1024 | 1,048,576 |
+| k_proj | 1024 × 1024 | 1,048,576 |
+| v_proj | 1024 × 1024 | 1,048,576 |
+| o_proj | 1024 × 1024 | 1,048,576 |
+| gate_proj | 1024 × 4096 | 4,194,304 |
+| up_proj | 1024 × 4096 | 4,194,304 |
+| down_proj | 4096 × 1024 | 4,194,304 |
+| input_layernorm | RMSNorm 1024 | 1,024 |
+| post_attention_layernorm | RMSNorm 1024 | 1,024 |
+| **layer total** | | **16,779,264** |
 
-4 layer × 4,195,328 = **16,781,312** ✓
+4 layer × 16,779,264 = **67,117,056** ✓
 
 ---
 
@@ -204,7 +209,7 @@ Stage1 workflow 는 `audio_encoder.projector` 를 제외한 모든 파라미터 
 |---|---|---|
 | Qwen3.5-4B LLM backbone | ~4B | frozen (0) |
 | DACVAE encoder | 107.6M | frozen (0) |
-| **AudioProjector** (학습 대상) | **18,158,080** | bf16 weight + fp32 grad + optimizer state |
+| **AudioProjector** (학습 대상, projL) | **69,870,592** | bf16 weight + fp32 grad + optimizer state |
 
 ---
 
@@ -214,7 +219,7 @@ Stage1 workflow 는 `audio_encoder.projector` 를 제외한 모든 파라미터 
 import sys, json, importlib.util
 sys.path.insert(0, "AudioEnc/dacvae")   # dacvae 패키지 경로
 
-MODEL_DIR = "/mnt/fr20tb/audiollm/sanghyuk/Qwen3.5AE-4B"
+MODEL_DIR = "/mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-projL"
 sys.path.insert(0, MODEL_DIR)
 
 spec = importlib.util.spec_from_file_location("audio_encoder", f"{MODEL_DIR}/audio_encoder.py")
@@ -234,7 +239,7 @@ total = sum(p.numel() for p in m.parameters())
 proj  = sum(p.numel() for p in m.projector.parameters())
 enc   = sum(p.numel() for p in m.encoder.parameters())
 print(f"total: {total:,}   encoder: {enc:,}   projector: {proj:,}")
-# total: 125,806,146   encoder: 107,648,066   projector: 18,158,080
+# total: 177,518,658   encoder: 107,648,066   projector: 69,870,592
 ```
 
 ---
@@ -260,43 +265,44 @@ print(f"total: {total:,}   encoder: {enc:,}   projector: {proj:,}")
 
 ### Projector 영향
 
-`AudioProjector` 는 4-layer LlamaDecoder adapter (hidden=512, 8 heads, ffn=2048) + 양끝 Linear. Encoder 교체 시 달라지는 건 **`input_proj` 한 레이어뿐**:
+`AudioProjector` (projL) 는 4-layer LlamaDecoder adapter (hidden=1024, 16 heads, ffn=4096) + 양끝 Linear. Encoder 교체 시 달라지는 건 **`input_proj` 한 레이어뿐**:
 
 ```python
-self.input_proj  = nn.Linear(audio_hidden_size, 512, bias=False)   # encoder 에 따라 변동
-self.layers      = [LlamaDecoderLayer() × 4]                         # 고정 16,781,312
-self.final_norm  = LlamaRMSNorm(512)                                  # 고정 512
-self.output_proj = nn.Linear(512, 2560, bias=False)                   # 고정 1,310,720 (LLM hidden 2560)
+self.input_proj  = nn.Linear(audio_hidden_size, 1024, bias=False)  # encoder 에 따라 변동
+self.layers      = [LlamaDecoderLayer() × 4]                         # 고정 67,117,056
+self.final_norm  = LlamaRMSNorm(1024)                                # 고정 1,024
+self.output_proj = nn.Linear(1024, 2560, bias=False)                 # 고정 2,621,440 (LLM hidden 2560)
 ```
 
-→ projector 고정 부분 = **18,092,544**
-→ `input_proj` = `audio_hidden_size × 512`
+→ projector 고정 부분 = **69,739,520**
+→ `input_proj` = `audio_hidden_size × 1024`
 
 ### 종합 비교 (encoder + projector, Stage1 학습 규모 포함)
 
 | 모델 | Enc output dim / fps | Encoder (frozen) | input_proj | Projector 전체 | **Active AudioEncoder** | **Stage1 학습 param** |
 |---|---|---|---|---|---|---|
-| **DACVAE** (현재) | 128 / 25 | 27,551,360 | 65,536 | 18,158,080 | **45,709,440 (~45.7M)** | **18,158,080** |
-| EnCodec 24k | 128 / 75 | 7,425,792 | 65,536 | 18,158,080 | 25,583,872 (~25.6M) | 18,158,080 |
-| EnCodec 48k | 128 / 150 | 7,428,336 | 65,536 | 18,158,080 | 25,586,416 (~25.6M) | 18,158,080 |
-| Mimi acoustic | 512 / 25 | 12,628,256 | 262,144 | 18,354,688 | 30,982,944 (~30.98M) | 18,354,688 |
-| Mimi semantic | 512 / 25 | 37,818,656 | 262,144 | 18,354,688 | 56,173,344 (~56.17M) | 18,354,688 |
-| Whisper-tiny.en | 384 / 50 | 8,208,384 | 196,608 | 18,289,152 | 26,497,536 (~26.5M) | 18,289,152 |
-| Whisper-base.en | 512 / 50 | 20,590,592 | 262,144 | 18,354,688 | 38,945,280 (~38.9M) | 18,354,688 |
-| Whisper-small.en | 768 / 50 | 88,154,112 | 393,216 | 18,485,760 | 106,639,872 (~106.6M) | 18,485,760 |
+| **DACVAE** (현재) | 128 / 25 | 27,551,360 | 131,072 | 69,870,592 | **97,421,952 (~97.42M)** | **69,870,592** |
+| EnCodec 24k | 128 / 75 | 7,425,792 | 131,072 | 69,870,592 | 77,296,384 (~77.30M) | 69,870,592 |
+| EnCodec 48k | 128 / 150 | 7,428,336 | 131,072 | 69,870,592 | 77,298,928 (~77.30M) | 69,870,592 |
+| Mimi acoustic | 512 / 25 | 12,628,256 | 524,288 | 70,263,808 | 82,892,064 (~82.89M) | 70,263,808 |
+| Mimi semantic | 512 / 25 | 37,818,656 | 524,288 | 70,263,808 | 108,082,464 (~108.08M) | 70,263,808 |
+| Whisper-tiny.en | 384 / 50 | 8,208,384 | 393,216 | 70,132,736 | 78,341,120 (~78.34M) | 70,132,736 |
+| Whisper-base.en | 512 / 50 | 20,590,592 | 524,288 | 70,263,808 | 90,854,400 (~90.85M) | 70,263,808 |
+| Whisper-small.en | 768 / 50 | 88,154,112 | 786,432 | 70,525,952 | 158,680,064 (~158.68M) | 70,525,952 |
 
 ### DACVAE 대비 비교
 
-| 모델 | Active AudioEncoder | vs 현재 45.7M | Stage1 param | vs 현재 18.16M |
+| 모델 | Active AudioEncoder | vs DACVAE 97.42M | Stage1 param | vs DACVAE 69.87M |
 |---|---|---|---|---|
-| EnCodec 24k/48k | 25.6M | **1.79× 감소** | 18.16M | 동일 |
-| Whisper-tiny.en | 26.5M | **1.73× 감소** | 18.29M | +0.72% |
-| Mimi acoustic | 30.98M | 1.47× 감소 | 18.35M | +1.09% |
-| Whisper-base.en | 38.9M | 1.17× 감소 | 18.35M | +1.09% |
-| Mimi semantic | 56.17M | 1.23× 증가 | 18.35M | +1.09% |
-| Whisper-small.en | 106.6M | 2.33× 증가 | 18.49M | +1.80% |
+| EnCodec 24k | 77.30M | **1.26× 감소** | 69.87M | 동일 |
+| EnCodec 48k | 77.30M | **1.26× 감소** | 69.87M | 동일 |
+| Whisper-tiny.en | 78.34M | 1.24× 감소 | 70.13M | +0.38% |
+| Mimi acoustic | 82.89M | 1.18× 감소 | 70.26M | +0.56% |
+| Whisper-base.en | 90.85M | 1.07× 감소 | 70.26M | +0.56% |
+| Mimi semantic | 108.08M | 1.11× 증가 | 70.26M | +0.56% |
+| Whisper-small.en | 158.68M | 1.63× 증가 | 70.53M | +0.94% |
 
-→ Projector 쪽 변동은 encoder 선택 무관하게 **±2% 이하**. Stage1 memory/optimizer cost 는 실질 동일.
+→ Projector 쪽 변동은 encoder 선택 무관하게 **±1% 이하** (`input_proj` 만 변동). Stage1 memory/optimizer cost 는 실질 동일.
 → 차이 대부분은 **frozen encoder** 쪽 (forward latency + GPU 상주 메모리).
 
 ### 재현 스크립트
