@@ -72,6 +72,16 @@ export CC=/usr/bin/gcc
 export CXX=/usr/bin/g++
 export CUDAHOSTCXX=/usr/bin/g++
 
-# ── Training ──────────────────────────────────────────────────────────────────
-FORCE_TORCHRUN=1 NNODES=$NSML_WORLD_SIZE NODE_RANK=$NSML_RANK MASTER_ADDR=$NSML_HOST_RANK0 MASTER_PORT=21267 \
-    llamafactory-cli train /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/configs/test.yaml
+# ── Training (template — pick a concrete v6 yaml + launcher pattern below) ────
+# This script is the legacy multi-node template (NSML world vars, glibc_stub
+# env, online wandb). Day-to-day v6 training uses the encoder-specific
+# launchers — start there:
+#   bash scripts/ASR/run_stage1_dac_vae_v6.sh
+#   bash scripts/ASR/run_stage1_encodec_v6.sh
+#   bash scripts/ASR/run_stage1_wavtok_v6.sh
+#   bash scripts/ASR/run_stage1_whisper_tiny_v6.sh
+#   bash scripts/ASR/run_stage1_whisper_small_v6.sh
+#
+# To use this template, edit the yaml path and rerun:
+# FORCE_TORCHRUN=1 NNODES=$NSML_WORLD_SIZE NODE_RANK=$NSML_RANK MASTER_ADDR=$NSML_HOST_RANK0 MASTER_PORT=21267 \
+#     llamafactory-cli train configs/ASR/stage1_<encoder>_v6.yaml

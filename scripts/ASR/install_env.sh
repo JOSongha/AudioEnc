@@ -28,9 +28,10 @@ pip install causal-conv1d --no-build-isolation -q
 # flash-attn wheel ~400 MB; skips build if pre-built wheel exists ~5-15 min ──
 pip install flash-attn==2.8.3 --no-build-isolation -q
 
-# editable installs (local source, fast) ──────────────────────── ~1 min ──────
-pip install -e /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer -q
-pip install -e /mnt/ddn/users/sehyun/AudioEncoder/AudioEnc/dacvae -q
+# editable install of this repo (cwd = audiollm-trainer/) ─────── ~1 min ──────
+# Run from repo root; v6 projL audio_encoder.py is self-contained, so the
+# separate dacvae package install is no longer needed.
+pip install -e . -q
 
 # ── flash-linear-attention (modeling_qwen3_5AE.py imports fla.modules.FusedRMSNormGated)
 # Use fla-core 0.4.x which is compatible with torch 2.5.1 (avoids torch>=2.7.0 requirement)
