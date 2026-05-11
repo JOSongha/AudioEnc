@@ -1,6 +1,0 @@
-model_name_or_path: /mnt/fr20tb/audiollm/voice_model/models/voice_model_v5/checkpoint-29500
-adapter_name_or_path: /mnt/fr20tb/audiollm/soyoon/models/v5_vm_250324_sc_stts_ep10/checkpoint-80
-template: speechx_empty
-finetuning_type: lora
-vllm_max_lora_rank: 256
-infer_backend: vllm
