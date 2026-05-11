@@ -264,6 +264,7 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 - 2026-05-11 (v6 model bases safetensors archive, § 12.17): 5 encoder base × 2 shard = 10 safetensors (40 GB) 를 nubes `/users/jos/AudioEnc/models/<base>/` 에 업로드 (6분 23초). PR clone 만으로 가중치 부재 (`.gitignore`) 문제 해결 — `bash scripts/setup_models.sh` 한 번 실행하면 (1) nubes 에서 safetensors fetch + (2) projL overlay 5 dir 의 relative symlink 재생성. 검증: 10/10 safetensors `X-Object-Size` 가 local size 와 정확히 일치. § 9.8 grand total 12 → 13.
 - 2026-05-11 (전수 byte-perfect audit, § 12.18): 13 업로드 단위 전체 (540,931 obj) 를 size manifest 기반 diff 로 재검증. 기존 sample 검증 (20-200 row) 으로는 통계 신뢰도 낮아 모든 source 에 대해 `find -printf '%P\t%s\n'` (local) vs `nubescli list -R -l` (nubes) diff. 결과: 0 diff lines 전체 통과. § 12.18 결과 표 + § 12.15/12.16 검증 표를 sample → full audit 로 격상.
 - 2026-05-11 (§ 12.8 MACS.yaml 재검증 + grep 패턴 수정): § 12.8 에 검증 D 서브섹션 (post-upload 재검증 절차, 5 step) 신규 + staging dir 사후 정리됨을 명시 (ddn 원본 기준 재검증). 보내준 snippet 의 `grep -c "^  - filename:"` (앞 공백 2칸) 은 yaml indent 0칸 구조와 불일치라 0 반환 → `^- filename:` 으로 수정. 5 step 모두 ✓: nubes X-Object-Size 2,772,273 / ddn stat 2,772,273 / md5 `23fcb2eb…2256` 양쪽 동일 / `files:` + `- filename: airport-…` structure / entry 3,930.
+- 2026-05-11 (§ 12.19 Qwen3.5_dac_vae_v6 Stage-1 학습 ckpts 업로드 진행): Stage-1 dac-vae v6 학습 (2026-05-08 시작, 100k step / ~39h) ckpt 100개 중 **10k 간격 10개** (26.36 GiB / ckpt = 263 GiB) 를 `/users/jos/AudioEnc/models/Qwen3.5_dac_vae_v6/ckpts/checkpoint-{10000,…,100000}/` 에 archive 시작 (`nubescli dir-upload --skip --retry 3 -j 16`). ckpt 내부 = 3 safetensors (9.36 GiB) + DeepSpeed optimizer state `global_step{N}/` (~17 GiB, ZeRO-3 partitioned 8-rank + combined) + tokenizer/code/RNG/trainer_state (~30 MiB). 압축 미적용 (binary 비중 99.9% 라 압축률 ~1%, xz -9 60-90분/ckpt 와 trade-off 안 맞음). 부수: 동일 학습의 20k 간격 5 ckpt 는 별도로 gdrive (`gdrive:models/Qwen3.5_dac_vae_v6/`, ~132 GiB) 에 off-site mirror — `rclone copy --transfers 8 --drive-chunk-size 128M`. 검증 (size manifest diff + sample `X-Object-Size` 일치 + tokenizer.json md5) 완료 후 본 § 의 "검증 예정" → 결과 표 교체 예정.
 
 ## 11. Nubes Guide
 
@@ -1782,6 +1783,7 @@ nubescli dir-upload -j 16 \
 setup_models.sh 작성됨 ([`scripts/setup_models.sh`](../../scripts/setup_models.sh)) — clone 후 `bash scripts/setup_models.sh` 한 번 실행해서 (1) nubes 에서 safetensors fetch, (2) projL overlay (5 dir) 의 relative symlink 재생성.
 
 
+
 ### 12.18 전수 audit (2026-05-11) — 13 업로드 전체 byte-perfect 검증
 
 **동기**: 기존 일부 § 의 검증이 sample 단위 (20-200 row) 라 통계적 신뢰도 낮음. 모든 업로드를 **전수 size diff** 로 재검증.
@@ -1814,4 +1816,62 @@ audit 스크립트: `/tmp/audit_one.sh` (per-source) — 9 source 병렬 실행 
 **§ 12.12 Clotho-v2 만 단독 처리 필요** — nubes destination 이 사용자 영역 아닌 `/datasets/public/Clotho-v2/audio_evaluation/` + `audio_validation/` 라 dir mix (옛 dev audio + 우리 업로드한 eval/val 섞임). audio_evaluation/ + audio_validation/ 각 1,045 wav 만 따로 audit 하면 동일 패턴 적용 가능 (별도 후속).
 
 **결론**: 13 업로드 540,931 object 모두 byte-perfect, 데이터 손실/부분 업로드 0건 확인.
+
+### 12.19 Qwen3.5_dac_vae_v6 Stage-1 학습 ckpts (10k 간격, 10개) — 진행 중 2026-05-11
+
+**Source**: `/mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos/Qwen3.5AE-ASR-Stage1-dac-vae-v6/checkpoint-{10000,20000,…,100000}/`. Stage-1 학습 (2026-05-08 08:31 시작 → 2026-05-09 23:47 종료, 100,000 step, ~39h) 결과. **archive 목적**: resume + 향후 inference / Stage-2 평가 재현 기준 ckpt 보관 + 노드 재셋업 대비.
+
+**대상 ckpt** (1,000-step 마다 자동 저장된 100개 ckpt 중 **10k 간격 10개 선택**):
+
+| step | mtime |
+|---|---|
+| 10000 | 2026-05-08 12:29 |
+| 20000 | 2026-05-08 16:26 |
+| 30000 | 2026-05-08 20:24 |
+| 40000 | 2026-05-09 00:23 |
+| 50000 | 2026-05-09 04:21 |
+| 60000 | 2026-05-09 08:19 |
+| 70000 | 2026-05-09 12:14 |
+| 80000 | 2026-05-09 16:09 |
+| 90000 | 2026-05-09 20:03 |
+| 100000 | 2026-05-09 23:47 |
+
+> 중간 90개 (1k~9k, 11k~19k, …, 91k~99k) 는 학습 디스크에만 보존, archive 미포함.
+
+**Ckpt 내부 구조** (각 ckpt 동일, 37 파일 / **~26.36 GiB**):
+
+| 분류 | 파일 | 사이즈 | 비고 |
+|---|---|---:|---|
+| Model weights (3 shard) | `model-{00001,00002,00003}-of-00003.safetensors` | 4.64 + 3.53 + 1.18 GiB = **9.36 GiB** | bf16. inference 에 필요한 핵심 가중치 |
+| Model weights index | `model.safetensors.index.json` | 73 KiB | shard 파일 → tensor 이름 매핑 |
+| **DeepSpeed optimizer state** (`global_step{N}/`) | `bf16_zero_pp_rank_{0..7}_mp_rank_00_optim_states.pt` (8개, ZeRO-3 partitioned) + `mp_rank_00_model_states.pt` (combined) | 8 × 100 MiB + 16.20 GiB = **~17.00 GiB** | resume 용. 8 = 학습 시 GPU rank 수. inference 만 쓰면 제외 가능 |
+| RNG state (8 rank) | `rng_state_{0..7}.pth` | 8 × 16 KiB = 128 KiB | resume 시 dataloader / cuda RNG 복원 |
+| Trainer state | `trainer_state.json` (loss / lr / wandb run id 등 메타), `training_args.bin`, `latest` | ~830 KiB | resume 필수 |
+| Tokenizer | `tokenizer.json` (20 MiB) / `vocab.json` (5 MiB) / `merges.txt` (3.2 MiB) / `tokenizer_config.json` / `added_tokens.json` / `special_tokens_map.json` / `chat_template.jinja` | 28.23 MiB | 99% 가 tokenizer.json + vocab.json + merges.txt (BPE) |
+| Model code | `audio_encoder.py` / `configuration_qwen3_5AE.py` / `modeling_qwen3_5AE.py` / `config.json` / `generation_config.json` / `zero_to_fp32.py` | ~115 KiB | trust_remote_code=True 용. zero_to_fp32 는 DeepSpeed shard → 단일 fp32 safetensors 변환 util |
+
+**대상 nubes path**: `hyperscaleai-audiollm/users/jos/AudioEnc/models/Qwen3.5_dac_vae_v6/ckpts/checkpoint-{step}/` — § 12.17 model bases 와 동일 계층 (`models/<name>/`).
+
+**용량**: 10 ckpts × 26.36 GiB = **약 263 GiB** (압축 미적용 — 아래 "압축 미적용 사유" 참고).
+
+**업로드 명령** ([`upload_nubes.sh`](/mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos/upload_nubes.sh) — repo 외부 보관):
+```bash
+nubescli dir-upload --skip --retry 3 -j 16 \
+    hyperscaleai-audiollm/users/jos/AudioEnc/models/Qwen3.5_dac_vae_v6/ckpts/checkpoint-${s} \
+    /mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos/Qwen3.5AE-ASR-Stage1-dac-vae-v6/checkpoint-${s}
+```
+- `--skip`: 동일 파일 존재 시 skip (재실행 idempotent)
+- `--retry 3`: 실패 시 2회 재시도
+- `-j 16`: parallel transfers (per ckpt 내부 file 단위)
+
+**압축 미적용 사유**: ckpt 26.36 GiB 중 ~26.33 GiB 가 binary (safetensors weights + DeepSpeed optimizer state) 라 random-like → 압축률 ~1%. 텍스트 (tokenizer.json + vocab.json + merges.txt + trainer_state.json 등) 합쳐 28 MiB 만 압축률 ~80%. ckpt 전체로는 **압축 효과 ~1%, xz -9 single-thread 60-90분/ckpt 소요** → 시간 vs 절감이 안 맞아 dir-upload 그대로 채택. 부분 실패 시 file-level resume 도 dir-upload 가 유리.
+
+**검증 예정**:
+- (A) per-ckpt size manifest diff: `find checkpoint-{step} -printf '%P\t%s\n'` (local) vs `nubescli list -R -l ckpts/checkpoint-{step}` (nubes) — § 12.18 패턴 동일
+- (B) sample safetensors `X-Object-Size` 가 local size 와 정확 일치 (10 ckpts × 3 shard = 30 obj)
+- (C) `tokenizer.json` md5 일치 (텍스트 파일 sanity)
+
+**상태**: 2026-05-11 09:42 UTC 업로드 시작. 진행률은 [`/mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos/upload_logs/nubes_summary.log`](/mnt/tmp/Qwen3.5_dac_vae_v6_Stage1_jos/upload_logs/nubes_summary.log) 에서 추적. 완료 후 본 § 의 "검증 예정" 표를 결과 표로 교체 예정.
+
+> **별도 (本 doc 범위 밖)**: 같은 학습 결과의 20k 간격 5개 ckpt (20k, 40k, 60k, 80k, 100k, ~132 GiB) 는 Google Drive (`gdrive:models/Qwen3.5_dac_vae_v6/`) 에도 mirror 업로드 중 (off-site backup). nubes 가 primary archive, gdrive 가 secondary.
 
