@@ -34,7 +34,6 @@ DRIVERS = [
     ("evaluation.stage2.eval_listen_mcqa",     ["--batch-size", "4"]),
     ("evaluation.stage2.eval_listen_official", ["--batch-size", "4"]),
     ("evaluation.stage2.eval_source_emotion",  ["--batch-size", "4"]),
-    ("evaluation.stage2.eval_text_retention",  ["--batch-size", "8"]),
 ]
 
 

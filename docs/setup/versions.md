@@ -52,7 +52,7 @@ ASR + sound captioning + emotion 첫 통합. Stage-2 v2 의 베이스가 됨.
 | Config | [configs/ASR/stage1_dac_vae_v3.yaml](../../configs/ASR/stage1_dac_vae_v3.yaml) |
 | Script | [scripts/ASR/archive/legacy_stage1/run_stage1_dac_vae_v3.sh](../../scripts/ASR/archive/legacy_stage1/run_stage1_dac_vae_v3.sh) (archive) |
 | Eval scripts | [scripts/ASR/archive/v3_eval/](../../scripts/ASR/archive/v3_eval/) — `eval_v3_{asr_external_gpu7,auto_dispatcher,baseline_encodec,dispatcher,overnight_fill,resume_failed,sweep}.sh` (7 파일, archive) |
-| Manifest builder | [scripts/emo/build_emotion_v3_manifest.py](../../scripts/emo/build_emotion_v3_manifest.py) |
+| Manifest builder | (삭제됨, 옛 `scripts/emo/` 디렉터리에 있었음) |
 | 보조 util | [scripts/stat_utils/convert_asr_v3.py](../../scripts/stat_utils/convert_asr_v3.py) |
 | Doc | [docs/v3_progress_log.md](../v3_progress_log.md), [docs/stage1/dac_vae_v3_data.md](../stage1/dac_vae_v3_data.md) |
 | Manifest dir | `/mnt/tmp/datasets/manifests/v3/` (외부), `/mnt/tmp/datasets/manifests/v3_emotion_split/` (16-shard emotion 재분할) |
@@ -148,13 +148,7 @@ v5 위에 IEMOCAP Sessions 1-4 (5,882 rows) 추가. emotion 39.9k → 47.05k.
 | Best ckpt | `/mnt/ddn/users/jos/s2_best_ckpts/dacvae_v2/` (외부) |
 | Inference 결과 | `/mnt/ddn/users/jos/v2_best_inference/` (외부) |
 
-## 8. 기타 산발 v 라벨
-
-| 경로 | 설명 |
-|---|---|
-| [scripts/emo/hash_match_ravdess_v2.py](../../scripts/emo/hash_match_ravdess_v2.py) | RAVDESS hash matching 유틸 v2 (v1 → v2 마이너 갱신, 버전 chain 무관) |
-
-## 9. 외부 경로 요약 (`/mnt/tmp/`)
+## 8. 외부 경로 요약 (`/mnt/tmp/`)
 
 | 경로 | 내용 |
 |---|---|

@@ -44,9 +44,6 @@ EVAL_METRICS: dict[str, list[tuple[str, callable, bool]]] = {
         ("ESC50_acc", lambda s: s["accuracy_pooled"], False),
         ("ESC50_acc_per_fold_mean", lambda s: s.get("accuracy_mean_per_fold"), False),
     ],
-    "eval_text_retention": [
-        ("text_mean", lambda s: s["unweighted_mean_accuracy"], False),
-    ],
     "eval_clotho": [
         ("Clotho_BLEU1", lambda s: s["bleu1"], False),
         ("Clotho_BLEU4", lambda s: s["bleu4"], False),
