@@ -47,25 +47,43 @@ generation:
 
 ### Emotion classification
 
-> ⚠ **MELD / IEMOCAP contamination warning** — LISTEN-train 에 MELD-test 881 audio + MELD-dev 361 audio 가 그대로 포함되어 있어 (cross-corpus 평가용 LISTEN-train 으로 학습한 모델 기준), MELD test split 으로 측정한 수치는 held-out 으로 해석할 수 없음. IEMOCAP 도 동일 패턴. 자세한 내용은 [`../stage2/leakage_audit.md §1`](../stage2/leakage_audit.md). clean held-out emotion 평가는 RAVDESS / EmoV-DB / DailyTalk + MMAU-speech 사용.
+> ⚠ **MELD / IEMOCAP contamination warning (Stage-2 LISTEN-mix only)** — Stage-2 의 LISTEN-train 에 MELD-test 881 + MELD-dev 361 audio 가 그대로 포함 → LISTEN-mix 학습 모델 기준 MELD test 수치는 held-out 으로 해석 불가. IEMOCAP 도 동일. 자세한 내용은 [`../stage2/leakage_audit.md §1`](../stage2/leakage_audit.md). **Stage-1 v6 ckpt** 평가는 LISTEN-mix 학습 안 했으므로 clean.
+>
+> **v6 emotion 평가 룰** (datasets.md § 4): canonical (공식 train/test) split 없는 source 는 통째로 학습 풀에 들어감 (DT/EmoV/RAVDESS/MUStARD), eval 시 self-held-out 또는 cross-corpus 사용. IEMOCAP 만 예외 (학계 관행 leave-session-out: Sessions 1-4 학습, Session 5 eval, 4-class 표준 프로토콜). MELD 는 공식 split 있어 train+dev 학습, test 만 eval. v5 leak-fix (DT 마지막 5% / EmoV-DB Jenie / RAVDESS Actors 21-24 held-out) 는 v6 에서 폐기.
 
 [`eval_source_emotion.py`](../../evaluation/stage2/eval_source_emotion.py)
 
-prompt builder ([line 187](../../evaluation/stage2/eval_source_emotion.py#L187)):
+prompt builder:
 ```
 {QUESTION}
 Choices: A) {c1} B) {c2} ... 
 Answer with the letter.
 ```
 
-- `QUESTION` (line 55): `What emotion does the speaker convey?`
-- 각 corpus 별 emotion list:
-  - **MELD** (lines 58, 7-class): `["anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise"]`
-  - **DailyTalk** (lines 59–60, 7-class): `["no emotion", "happiness", "sadness", "anger", "surprise", "fear", "disgust"]`
-  - **EmoV-DB Jenie** (line 61, 5-class): `["amused", "angry", "disgusted", "neutral", "sleepy"]`
-  - **RAVDESS** (lines 62–63, 8-class): `["neutral", "calm", "happy", "sad", "angry", "fearful", "disgust", "surprise"]`
+- `QUESTION` ([line 64](../../evaluation/stage2/eval_source_emotion.py#L64)): `What emotion does the speaker convey?`
+- **v6 평가 corpus 는 MELD test 만** ([`load_meld_test()`](../../evaluation/stage2/eval_source_emotion.py#L78)). v5 의 self-held-out eval (DT 마지막 5% / EmoV-DB Jenie / RAVDESS Actors 21-24) 은 leak-fix 폐기와 함께 같이 폐기됨 — 해당 `load_dailytalk_heldout` / `load_emov_jenie` / `load_ravdess_heldout` 함수도 제거.
+- **MELD** ([line 67](../../evaluation/stage2/eval_source_emotion.py#L67), 7-class): `["anger", "disgust", "fear", "joy", "neutral", "sadness", "surprise"]`
 - letters: `A, B, C, D, E, F, G, H`
 - generation: max_new_tokens=96, parse first `[A-H]` letter
+### IEMOCAP Session 5 (leave-session-out)
+
+[`eval_iemocap_session5.py`](../../evaluation/stage2/eval_iemocap_session5.py)
+
+prompt builder ([line 130-134](../../evaluation/stage2/eval_iemocap_session5.py#L130-L134)):
+```
+{QUESTION}
+{choices_str}
+Answer with the letter.
+```
+
+- `QUESTION` ([line 63](../../evaluation/stage2/eval_iemocap_session5.py#L63)): `What is the emotion expressed?`
+- **4-class 표준 프로토콜** (학계 관행):
+  - `LABEL_MAP` ([line 53-59](../../evaluation/stage2/eval_iemocap_session5.py#L53-L59)): `ang→angry, hap→happy, exc→happy (exc→hap merge), neu→neutral, sad→sad`
+  - choices: `["A. angry", "B. happy", "C. neutral", "D. sad"]`
+  - fru/sur/fea/dis/oth/xxx 는 학습은 10-class native 로 받았으나 eval 채점 대상 X (1,650 valid utt → 1,241 utt 만 채점 입력, 409 row silently drop)
+- generation: max_new_tokens (eval_source_emotion 와 동일), parse first `[A-D]` letter
+
+**v6 룰 예외**: IEMOCAP 만 canonical split 부재인데도 leave-session-out 유지 — 학계 관행 (Sessions 1-4 학습, Session 5 eval). datasets.md § 4 참고.
 
 ### LISTEN-MCQA (LISTEN benchmark MCQA aggregate)
 
@@ -162,4 +180,4 @@ predictions jsonl 의 entry:
 }
 ```
 
-Cross-node share 시: 특정 ckpt × task 의 `predictions.jsonl` 파일을 [`docs/stage1/whisper/ckpt12k/`](../stage1/whisper/ckpt12k/) 등 shared 경로로 cp.
+Cross-node share 시: 특정 ckpt × task 의 `predictions.jsonl` 파일을 ad-hoc shared 경로 (`/mnt/tmp/share/<topic>/` 등) 로 cp.
