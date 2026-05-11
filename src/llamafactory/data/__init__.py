@@ -19,7 +19,7 @@ from .collator import (
     SFTDataCollatorWith4DAttentionMask,
 )
 from .data_utils import Role, split_dataset
-from .loader import get_dataset, get_speechx_dataset, get_omni_dataset
+from .loader import get_dataset, get_omni_dataset
 from .template import TEMPLATES, Template, get_template_and_fix_tokenizer
 from .omni_dataset import resolve_jsonl_files, create_omni_processor, create_omni_packer, prepare_4d_attention_mask, OmniCollator
 
@@ -32,7 +32,6 @@ __all__ = [
     "Role",
     "split_dataset",
     "get_dataset",
-    "get_speechx_dataset",
     "TEMPLATES",
     "Template",
     "get_template_and_fix_tokenizer",

@@ -2301,21 +2301,6 @@ register_template(
 )
 
 register_template(
-    name="speechx",
-    format_user=StringFormatter(slots=["{{content}}"]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    stop_words=[]
-)
-
-register_template(
-    name="speechx_empty",
-    format_system=StringFormatter(slots=["{{content}}"]),
-    format_user=StringFormatter(slots=["{{content}}"]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    stop_words=["<|endoftext|>"]
-)
-
-register_template(
     name="ve_v7",
     format_system=StringFormatter(slots=["<|im_start|>user\n{{content}}"]),
     format_user=StringFormatter(slots=["{{content}}<|im_end|>"]),

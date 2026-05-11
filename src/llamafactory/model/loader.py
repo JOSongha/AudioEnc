@@ -149,7 +149,7 @@ def load_model(
         config,
         model_args,
         is_trainable,
-        require_logits=(finetuning_args.stage not in ["pt", "sft", "speechx", "omni"]),
+        require_logits=(finetuning_args.stage not in ["pt", "sft", "omni"]),
     )
 
     model = None

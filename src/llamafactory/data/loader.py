@@ -45,18 +45,11 @@ from .data_utils import (
 from .parser import get_dataset_list
 from .processor import (
     FeedbackDatasetProcessor,
-    PackedSpeechXDatasetProcessor,
     PackedSupervisedDatasetProcessor,
     PairwiseDatasetProcessor,
     PretrainDatasetProcessor,
-    SpeechXDatasetProcessor,
     SupervisedDatasetProcessor,
     UnsupervisedDatasetProcessor,
-)
-from .speechx_utils import (
-    RatioSplitDataset,
-    WrapperMTIterableDataset,
-    optimized_typed_sequence_init,
 )
 
 
@@ -224,15 +217,6 @@ def _get_dataset_processor(
     r"""Return the corresponding dataset processor."""
     if stage == "pt":
         dataset_processor_class = PretrainDatasetProcessor
-    elif stage == "speechx":
-        from datasets.arrow_writer import OptimizedTypedSequence
-
-        OptimizedTypedSequence.__init__ = optimized_typed_sequence_init
-        if data_args.packing:
-            dataset_processor_class = PackedSpeechXDatasetProcessor
-        else:
-            dataset_processor_class = SpeechXDatasetProcessor
-
     elif stage == "sft" and not do_generate:
         if data_args.packing:
             if data_args.neat_packing:  # hack datasets to have int32 attention mask
@@ -266,7 +250,7 @@ def _get_preprocessed_dataset(
     dataset: Optional[Union["Dataset", "IterableDataset", "DatasetDict"]],
     data_args: "DataArguments",
     training_args: "Seq2SeqTrainingArguments",
-    stage: Literal["pt", "sft", "rm", "ppo", "kto", "speechx"],
+    stage: Literal["pt", "sft", "rm", "ppo", "kto"],
     template: "Template",
     tokenizer: "PreTrainedTokenizer",
     processor: Optional["ProcessorMixin"] = None,
@@ -472,130 +456,6 @@ def sample_datasets_by_ratio(dataset_list, ratios) -> "Dataset":
     logger.info_rank0("Successfully sampled datasets by ratio")
 
     return concatenate_datasets(dataset_list)
-
-
-def get_speechx_dataset(
-    template: "Template",
-    model_args: "ModelArguments",
-    data_args: "DataArguments",
-    training_args: "Seq2SeqTrainingArguments",
-    stage: Literal["pt", "sft", "rm", "ppo", "kto", "speechx"],
-    tokenizer: "PreTrainedTokenizer",
-    processor: Optional["ProcessorMixin"] = None,
-) -> "DatasetModule":
-    r"""Gets the train dataset and optionally gets the evaluation dataset."""
-    assert not data_args.streaming, "Currently not support streaming speechx dataset"
-
-    # Load tokenized dataset
-    if data_args.speechx_tokenized_path is not None and has_tokenized_data(data_args.speechx_tokenized_path):
-        speechx_datasets = []
-        if isinstance(data_args.speechx_tokenized_path, (list, tuple)):
-            assert (
-                len(data_args.speechx_tokenized_path) == len(data_args.speechx_dataset_ratios)
-                or not data_args.speechx_dataset_ratios
-            )
-            for d in data_args.speechx_tokenized_path:
-                speechx_datasets.append(load_from_disk(d))
-        else:
-            speechx_datasets.append(load_from_disk(data_args.speechx_tokenized_path))
-        logger.info_rank0(f"Loaded tokenized dataset from {data_args.speechx_tokenized_path}.")
-
-        dataset_module: dict[str, Dataset] = {
-            "train_dataset": RatioSplitDataset(datasets=speechx_datasets, ratios=data_args.speechx_dataset_ratios)
-            if len(speechx_datasets) > 1
-            else speechx_datasets[0]
-        }
-
-        if data_args.eval_tokenized_path and has_tokenized_data(data_args.eval_tokenized_path):
-            dataset_module["eval_dataset"] = load_from_disk(data_args.eval_tokenized_path)
-        else:
-            logger.warning_rank0("validation dataset not exist.")
-
-        return dataset_module
-
-    # Load dataset
-    with training_args.main_process_first(desc="load dataset"):
-        # Load SpeechX train set
-        if isinstance(data_args.speechx_dataset, str):
-            data_args.speechx_dataset = [data_args.speechx_dataset]
-            data_args.speechx_tokenized_path = [data_args.speechx_tokenized_path]
-
-        spx_datasets = {"train": [], "validation": []}
-        if not data_args.speechx_tokenized_path:
-            data_args.speechx_tokenized_path = [None] * len(data_args.speechx_dataset)
-
-        for d, tok_path in zip(data_args.speechx_dataset, data_args.speechx_tokenized_path):
-            spx_dataset = merge_datasets_in_directory(d)
-
-            spx_dataset = spx_dataset.select_columns("input_ids")
-            if spx_dataset.features["input_ids"] != datasets.Sequence(feature=Value(dtype="int32")):
-                spx_dataset = spx_dataset.cast_column(
-                    "input_ids",
-                    datasets.Sequence(feature=Value(dtype="int32", id=None), length=-1, id=None),
-                )
-
-            spx_datasets["train"].append((spx_dataset, tok_path))
-
-        # Load valid dataset
-        if data_args.eval_dataset and isinstance(data_args.eval_dataset, dict):
-            spx_datasets["validation"].append(
-                (
-                    DatasetDict(
-                        {
-                            data_name: load_from_disk(data_path)
-                            for data_name, data_path in data_args.eval_dataset.items()
-                        }
-                    ),
-                    data_args.eval_tokenized_path,
-                )
-            )
-        elif data_args.eval_dataset and isinstance(data_args.eval_dataset, str):
-            spx_datasets["validation"].append((load_from_disk(data_args.eval_dataset), data_args.eval_tokenized_path))
-        else:
-            logger.warning_rank0("eval_dataset not provided.")
-            if data_args.val_size:
-                raise ValueError("Splitting training set into validation set is not supported!")
-
-    # Preprocess dataset
-    with training_args.main_process_first(desc="pre-process dataset"):
-        # Packing
-        do_packing = data_args.packing
-        for split, dataset in spx_datasets.items():
-            if not training_args.do_train and split == "train":
-                continue
-            if split == "validation":
-                data_args.packing = False
-            for d, tok_path in dataset:
-                preprocessed = _get_preprocessed_dataset(
-                    d,
-                    data_args,
-                    training_args,
-                    stage,
-                    template,
-                    tokenizer,
-                    processor,
-                    is_eval=split != "train",
-                    remove_columns=False,
-                    split=split,
-                )
-                if tok_path is not None and training_args.should_save:
-                    preprocessed.save_to_disk(
-                        tok_path,
-                        max_shard_size="2048MB",
-                        num_proc=data_args.preprocessing_num_workers,
-                    )
-                    preprocessed.cleanup_cache_files()
-                    logger.info_rank0(f"Packed dataset saved as {tok_path}.")
-
-            data_args.packing = do_packing
-
-        if data_args.speechx_tokenized_path is not None and training_args.should_save:
-            logger.info_rank0("Save Completed! Terminate.")
-            sys.exit(0)
-
-        raise NotImplementedError
-
-        return dataset_module
 
 
 def get_omni_dataset(

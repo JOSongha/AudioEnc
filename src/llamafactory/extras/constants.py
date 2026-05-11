@@ -95,7 +95,6 @@ TRAINING_STAGES = {
     "DPO": "dpo",
     "KTO": "kto",
     "Pre-Training": "pt",
-    "Speechx CPT": "speechx",
     "Omni": "omni"
 }
 

@@ -36,18 +36,6 @@ class DataArguments:
             "help": "The name of dataset(s) to use for training. Use commas to separate multiple datasets."
         },
     )
-    speechx_dataset: Optional[Union[List[Union[List, str]], str]] = field(
-        default=None,
-        metadata={"help": "Path to the folder containing the speechx datasets."},
-    )
-    speechx_dataset_ratios: Optional[List[int]] = field(
-        default=None,
-        metadata={"help": "dataset ratios"},
-    )
-    speechx_tokenized_path: Optional[Union[List[str], str]] = field(
-        default=None,
-        metadata={"help": "tokenized path for speechx dataset"},
-    )
     omni_manifest: Optional[str] = field(
         default=None,
         metadata={
