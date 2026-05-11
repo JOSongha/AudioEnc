@@ -20,6 +20,12 @@ export TMPDIR=/mnt/tmp/cache/tmp
 mkdir -p "$TRITON_CACHE_DIR" "$CUDA_CACHE_PATH" "$HF_HOME" "$WANDB_DIR" "$TMPDIR"
 
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=1800
+# Fail-fast on collective hang: surface the bug instead of waiting full 1h watchdog.
+export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+# Print which rank is the straggler when a collective hangs. (Doesn't change
+# timeout — just makes the next crash diagnose which dataloader/worker stalled.)
+export TORCH_NCCL_DESYNC_DEBUG=1
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # whisper-tiny.en/processor_config.json doesn't exist on HF Hub. Anonymous
@@ -47,7 +53,22 @@ export WANDB_API_KEY=wandb_v1_0o7FNJJ5qcP6S7oJiIIS3rwnayS_NsghLGrPhjTZZrSHbPksJ2
 
 cd "$REPO"
 NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-echo "[s1-whisper-tiny-v6] launching on $NGPU GPUs"
+echo "[s1-whisper-tiny-v6] launching on $NGPU GPUs (RESUME_FROM=${RESUME_FROM:-} WANDB_RUN_ID=${WANDB_RUN_ID:-})"
+
+# Optional resume: pass RESUME_FROM=/path/to/checkpoint-NNNN before invoking.
+# Same-run wandb continuation: also export WANDB_RUN_ID + WANDB_RESUME=allow.
+RESUME_ARGS=()
+if [ -n "${RESUME_FROM:-}" ]; then
+    # llamafactory-cli with .yaml uses OmegaConf — overrides are key=value, not --key value.
+    RESUME_ARGS=("resume_from_checkpoint=$RESUME_FROM")
+fi
+
+# Persist stdout/stderr so a dropped tmux pane no longer loses the traceback.
+LOG_DIR=/mnt/tmp/Qwen3.5_whisper_tiny_v6_Stage1_jos/launch_logs
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
+echo "[s1-whisper-tiny-v6] tee → $LOG_FILE"
 
 FORCE_TORCHRUN=1 NPROC_PER_NODE=$NGPU \
-    $ENV_PREFIX/bin/llamafactory-cli train configs/ASR/stage1_whisper_tiny_v6.yaml
+    $ENV_PREFIX/bin/llamafactory-cli train configs/ASR/stage1_whisper_tiny_v6.yaml \
+        "${RESUME_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
