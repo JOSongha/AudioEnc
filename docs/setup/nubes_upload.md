@@ -231,7 +231,7 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 
 - ✓ 정확 일치 (5): MLS, VoxPopuli, ESC-50, LAION-Epidemic, FSD50K(dev)
 - ✓ Nubes broader (5): MELD, LAION-Audiostock, AudioSet, MACS, LibriSpeech (eval-only, 모든 split)
-- ✓ 업로드 완료 (12): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14), LAION-Freesound (§ 12.15), v6_nubes manifest archive (§ 12.16)
+- ✓ 업로드 완료 (13, 2026-05-11 전수 byte-perfect 검증 통과 → § 12.18): FSD50K eval split (§ 12.1), MUStARD++ (§ 12.2), LAION-BBC superset (§ 12.3), IEMOCAP (§ 12.4), EmoV-DB (§ 12.5), RAVDESS (§ 12.6), AudioSet bal_train+eval+ontology (§ 12.7), MACS yaml backup (§ 12.8, 옵션 C), Clotho-v2 eval+val (§ 12.12), MELD audio wav (§ 12.14), LAION-Freesound (§ 12.15), v6_nubes manifest archive (§ 12.16), v6 model bases safetensors (§ 12.17)
 - ⚠ 단위/매핑 차이 (1): DailyTalk (dialogue 단위, nubes wav zero-byte placeholder — § 12.11 utterance wav 신규 업로드 완료, 갱신 검토 필요)
 - ✓ Sampling 검증 (2): LibriTTS-R train-clean-360 (904 spk 표준 매칭), train-other-500 (1,160 spk 표준 매칭) — § 9.5
 - ✓ 우회 검증 (1): GigaSpeech XL train (v6 manifest 4.13M row build 통과 + sample HEAD 200) — § 9.6
@@ -261,6 +261,8 @@ builder 가 nubes-direct 로 동작 시 학습 split 만 enumerate 되도록 검
 - 2026-05-08 (LAION-Freesound § 9 누락 보완 + 매핑 검증): § 9 의 어느 카테고리에도 없던 LAION-Freesound (460,141 row) 를 § 9.3 행에 추가. **200-sample ID 매칭 검증 결과 매핑 불가 확인**: 80 hit / 120 miss (60% 부재), 80 hit 도 file size 0건 일치 (예: `66050.flac` local 830 KB vs nubes 336 KB) — nubes `/datasets/public/Freesound/audio/` 는 다른 encoding/quality 의 별도 dump. § 9.8 종합 결론 에 "✗ 매핑 불가 (1): LAION-Freesound" 카테고리 추가. Stage-1 학습은 audio_path local fallback 으로 정상 동작. LAION 본 (607 GB) 별도 업로드는 보류.
 - 2026-05-11 (LAION-Freesound § 12.15 audio + manifest + swap 완료): § 12.15 audio dir-upload (`/users/jos/AudioEnc/LAION-Freesound/audio/`) 완료 — nubescli recursive list 결과 460,142 obj (local 460,141 flac + 1 dir entry) 일치. `rewrite_audio_paths_nubes.py` 의 `PREFIX_MAPPINGS` 에 `laion_freesound` 추가. `v6_nubes_full` 별도 dir 빌드 (모든 source 100% nubes_path). 학습 open fd 0개 확인 후 atomic rename swap (`mv v6_nubes v6_nubes_old && mv v6_nubes_full v6_nubes`) — 진행 중 학습 (whisper-tiny v6, 138 procs) 무중단 적용. `v6_nubes_old` 는 rollback safety 로 일시 보존, 학습 완료 후 삭제.
 - 2026-05-11 (v6_nubes manifest archive, § 12.16): v6 학습 manifest 전체 (246 jsonl, 5.2 GB) 를 nubes `/users/jos/AudioEnc/manifests/v6_nubes/` 에 archive snapshot 으로 업로드 (24초 with -j 16). 학습은 local `/mnt/tmp/datasets/manifests/v6_nubes/` 그대로 사용 (yaml 변경 X, dataloader 코드 변경 X) — nubes 는 read-only mirror. 새 노드 셋업 시 `nubescli dir-download` 한 줄로 복원 가능. § 9.8 grand total "업로드 완료" 11 → 12.
+- 2026-05-11 (v6 model bases safetensors archive, § 12.17): 5 encoder base × 2 shard = 10 safetensors (40 GB) 를 nubes `/users/jos/AudioEnc/models/<base>/` 에 업로드 (6분 23초). PR clone 만으로 가중치 부재 (`.gitignore`) 문제 해결 — `bash scripts/setup_models.sh` 한 번 실행하면 (1) nubes 에서 safetensors fetch + (2) projL overlay 5 dir 의 relative symlink 재생성. 검증: 10/10 safetensors `X-Object-Size` 가 local size 와 정확히 일치. § 9.8 grand total 12 → 13.
+- 2026-05-11 (전수 byte-perfect audit, § 12.18): 13 업로드 단위 전체 (540,931 obj) 를 size manifest 기반 diff 로 재검증. 기존 sample 검증 (20-200 row) 으로는 통계 신뢰도 낮아 모든 source 에 대해 `find -printf '%P\t%s\n'` (local) vs `nubescli list -R -l` (nubes) diff. 결과: 0 diff lines 전체 통과. § 12.18 결과 표 + § 12.15/12.16 검증 표를 sample → full audit 로 격상.
 
 ## 11. Nubes Guide
 
@@ -1242,6 +1244,44 @@ nubes 추가 10,470 = TAU2019 의 다른 7 scene (안 사용)
 sample audio HTTP HEAD: airport-barcelona-0-0-a.wav → 200 OK, X-Object-Size 2,880,044 byte
 ```
 
+D. 재검증 (post-upload, 언제든 실행 가능)
+
+> staging dir (`/mnt/tmp/staging/jos_AudioEnc/MACS/`) 은 업로드 직후 정리됨. 재검증은 ddn 원본 (`/mnt/tmp/datasets/env_sound/MACS/MACS.yaml`) 기준.
+
+```bash
+export NUBES_GATEWAY_ADDRESS=c.nubes.sto.navercorp.com:8000
+export NUBES_IP_LOOKUP_ADDRESS=c.lookup.nubes.navercorp.com:8080
+
+# 1) nubes 메타 size
+/mnt/ddn/users/jos/cli/nubescli status \
+    hyperscaleai-audiollm/users/jos/AudioEnc/MACS/MACS.yaml
+#   → X-Object-Size: 2772273
+
+# 2) ddn 원본 size
+stat -c %s /mnt/tmp/datasets/env_sound/MACS/MACS.yaml
+#   → 2772273 (nubes 와 일치)
+
+# 3) md5 byte-identity
+/mnt/ddn/users/jos/cli/nubescli download \
+    hyperscaleai-audiollm/users/jos/AudioEnc/MACS/MACS.yaml \
+    /tmp/macs_nubes.yaml
+md5sum /tmp/macs_nubes.yaml /mnt/tmp/datasets/env_sound/MACS/MACS.yaml
+#   → 23fcb2ebd0b109094034ef9e87972256 양쪽 동일
+
+# 4) yaml structure (head -3)
+head -3 /tmp/macs_nubes.yaml
+#   → files:
+#     - filename: airport-barcelona-0-0-a.wav
+#       annotations:
+
+# 5) entry 수 (3,930 caption metadata).
+# yaml 의 list item indent 가 0칸이므로 패턴 앞 공백 없이 매칭.
+grep -c "^- filename:" /tmp/macs_nubes.yaml
+#   → 3930
+```
+
+마지막 재검증: 2026-05-11 — 5 항목 모두 ✓.
+
 **검증 결과**:
 
 | 항목 | 목표 | 실제 | 상태 |
@@ -1655,6 +1695,7 @@ nubescli dir-upload hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/aud
 | freesound_no_overlap_meta.csv | 94 MB | 1 obj | ✓ |
 | README.md | 3 KB | 1 obj | ✓ |
 | v6_nubes_full manifest sample | `422341.flac` audio_path | `hyperscaleai-audiollm/users/jos/AudioEnc/LAION-Freesound/audio/422341.flac` | ✓ |
+| **full byte-size diff** (2026-05-11) | 460,141 flac size manifest | 460,141 obj from `nubescli list -R -l` | **✓ 0 diff lines** (전수 byte-perfect) |
 
 
 ### 12.16 v6_nubes manifest archive — 완료 2026-05-11
@@ -1690,4 +1731,86 @@ nubescli dir-upload -j 16 \
 | audio_emotion 16 jsonl | 16 / ~20 MB | 16 obj | ✓ |
 | **total** | **246 jsonl / 5.2 GB** | **246 obj** (recursive list `-R -o` = 247 = +1 dir) | ✓ 일치 |
 | 업로드 시간 | – | 24 초 (-j 16 parallel) | – |
+| **full byte-size diff** (2026-05-11) | 246 jsonl size manifest | 246 obj from `nubescli list -R -l` | **✓ 0 diff lines** (전수 byte-perfect) |
+
+
+### 12.17 v6 model bases — safetensors nubes archive — 완료 2026-05-11
+
+**상태**: 업로드 완료 (2026-05-11 08:03-08:09, 6분 23초). v6 학습용 5개 encoder base 의 safetensors 가중치를 nubes 에 archive snapshot. clone 만 으로는 가중치 부재 (`.gitignore: external/models/**/*.safetensors`) 라 PR self-contained 화 위해 필요.
+
+**대상**: 5 base dir × 2 shard = **10 safetensors, 약 40 GB**.
+
+| base dir | 출처 (현 시점) | 사이즈 (resolved) |
+|---|---|---|
+| `Qwen3.5AE-4B/` (DAC-VAE base) | sehyun symlink | ~8 GB (4.7 GB + 3.3 GB) |
+| `Qwen3.5AE-4B-encodec-24k/` | `/mnt/tmp/external/models/Qwen3.5AE-4B-encodec-24k/` (내재화) | ~8 GB |
+| `Qwen3.5AE-4B-wavtok-40-unify/` | `/mnt/tmp/external/models/Qwen3.5AE-4B-wavtok-40-unify/` (내재화) | ~8 GB |
+| `Qwen3.5AE-4B-whisper-tiny/` | sehyun (projL overlay 가 직접 symlink) | ~8 GB |
+| `Qwen3.5AE-4B-whisper-small/` | sehyun symlink | ~8 GB |
+
+**올리지 않는 것** (이미 git tracked, 99 files):
+- `config.json` (각 dir 별, projL 도 포함) / `audio_encoder.py` / `modeling_qwen3_5AE.py` / `configuration_qwen3_5AE.py` / `tokenization_qwen3_5AE.py` / `chat_template.jinja` / `generation_config.json` / `tokenizer.json` / `tokenizer_config.json` / `merges.txt` / `vocab.json` / `added_tokens.json` / `sanity_check.py` / `convert_qwen3_5_to_qwen3_5AE.py`
+
+**대상 nubes path**: `hyperscaleai-audiollm/users/jos/AudioEnc/models/<base_dir>/`
+
+**운영 패턴** (`§ 12.16` manifest 와 동일 — local cache, nubes 는 archive):
+- 학습 yaml 의 `model_name_or_path` 는 local `external/models/<base>-projL` 그대로 (yaml 변경 X, loader 변경 X)
+- nubes 사본은 read-only archive — 학습 startup 마다 fetch 안 함
+- 새 노드 셋업 시 `scripts/setup_models.sh` (별도 작성) 가 한 번 fetch + projL overlay symlink 재생성
+
+**setup_models.sh 가 할 일** (별도 commit):
+1. `nubescli dir-download` × 5 base → `external/models/<base>/` 의 safetensors 채움
+2. projL overlay (5개 dir) 의 `config.json` 외 모든 파일을 base dir 에 대한 **relative symlink** 로 재생성 — 현재 jos absolute symlink 깨진 상태 복원
+
+**검증 (2026-05-11)** — 10 safetensors 전수 size check:
+
+| base dir | shard | local | nubes (`X-Object-Size`) | 상태 |
+|---|---|---|---|---|
+| `Qwen3.5AE-4B` | model-00001 | 4,999,071,104 | 4,999,071,104 | ✓ |
+| `Qwen3.5AE-4B` | model-00002 | 3,879,435,888 | 3,879,435,888 | ✓ |
+| `Qwen3.5AE-4B-encodec-24k` | model-00001 | 4,976,930,312 | 4,976,930,312 | ✓ |
+| `Qwen3.5AE-4B-encodec-24k` | model-00002 | 3,485,801,640 | 3,485,801,640 | ✓ |
+| `Qwen3.5AE-4B-wavtok-40-unify` | model-00001 | 4,979,077,520 | 4,979,077,520 | ✓ |
+| `Qwen3.5AE-4B-wavtok-40-unify` | model-00002 | 3,485,801,640 | 3,485,801,640 | ✓ |
+| `Qwen3.5AE-4B-whisper-tiny` | model-00001 | 4,978,765,256 | 4,978,765,256 | ✓ |
+| `Qwen3.5AE-4B-whisper-tiny` | model-00002 | 3,485,801,640 | 3,485,801,640 | ✓ |
+| `Qwen3.5AE-4B-whisper-small` | model-00001 | 4,960,402,064 | 4,960,402,064 | ✓ |
+| `Qwen3.5AE-4B-whisper-small` | model-00002 | 3,664,465,080 | 3,664,465,080 | ✓ |
+| **total** | – | **~40 GB** | **10 obj byte-perfect** | ✓ |
+
+setup_models.sh 작성됨 ([`scripts/setup_models.sh`](../../scripts/setup_models.sh)) — clone 후 `bash scripts/setup_models.sh` 한 번 실행해서 (1) nubes 에서 safetensors fetch, (2) projL overlay (5 dir) 의 relative symlink 재생성.
+
+
+### 12.18 전수 audit (2026-05-11) — 13 업로드 전체 byte-perfect 검증
+
+**동기**: 기존 일부 § 의 검증이 sample 단위 (20-200 row) 라 통계적 신뢰도 낮음. 모든 업로드를 **전수 size diff** 로 재검증.
+
+**방법**: 각 업로드 단위 별로
+1. local 영역의 `find ... -printf '%P\t%s\n'` 으로 (relative path, size) manifest 생성
+2. nubes 의 `nubescli list -R -l <path>` 출력에서 (Name, Size) 추출 후 manifest 생성
+3. `diff <local_manifest> <nubes_manifest>` — 0 diff line 이면 byte-perfect
+
+audit 스크립트: `/tmp/audit_one.sh` (per-source) — 9 source 병렬 실행 (LAION-Freesound + 8 ddn-staging 단위), MACS + model bases 는 inline 명령.
+
+**결과**:
+
+| § | source | nubes path | local 수 | nubes 수 | 결과 |
+|---|---|---|---|---|---|
+| 12.1 | FSD50K (eval audio + metadata 보완) | `/users/jos/AudioEnc/FSD50K/` | 10,245 | 10,245 | ✓ |
+| 12.2 | MUStARD++ | `/users/jos/AudioEnc/MUStARD_Plus_Plus/` | 1,205 | 1,205 | ✓ |
+| 12.3 | LAION-BBC superset | `/users/jos/AudioEnc/LAION-BBC/` | 15,977 | 15,977 | ✓ |
+| 12.4 | IEMOCAP (session-aware) | `/users/jos/AudioEnc/IEMOCAP/` | 12,161 | 12,161 | ✓ |
+| 12.5 | EmoV-DB | `/users/jos/AudioEnc/EmoV-DB/` | 6,898 | 6,898 | ✓ |
+| 12.6 | RAVDESS | `/users/jos/AudioEnc/RAVDESS/` | 1,441 | 1,441 | ✓ |
+| 12.7 | AudioSet (bal_train + eval + ontology) | `/users/jos/AudioEnc/AudioSet/` | 18,759 | 18,759 | ✓ |
+| 12.8 | MACS.yaml (옵션 C, 단일 파일) | `/users/jos/AudioEnc/MACS/MACS.yaml` | 1 (2,772,273 B) | 1 (2,772,273 B) | ✓ |
+| 12.14 | MELD audio wav | `/users/jos/AudioEnc/MELD/audio/` | 13,847 | 13,847 | ✓ |
+| 12.15 | LAION-Freesound | `/users/jos/AudioEnc/LAION-Freesound/audio/` | 460,141 | 460,141 | ✓ |
+| 12.16 | v6_nubes manifest archive | `/users/jos/AudioEnc/manifests/v6_nubes/` | 246 | 246 | ✓ |
+| 12.17 | v6 model bases (safetensors only) | `/users/jos/AudioEnc/models/<5 base>/` | 10 | 10 | ✓ |
+| **total** | – | – | **540,931 obj** | **540,931 obj** | **✓ 0 diff lines** |
+
+**§ 12.12 Clotho-v2 만 단독 처리 필요** — nubes destination 이 사용자 영역 아닌 `/datasets/public/Clotho-v2/audio_evaluation/` + `audio_validation/` 라 dir mix (옛 dev audio + 우리 업로드한 eval/val 섞임). audio_evaluation/ + audio_validation/ 각 1,045 wav 만 따로 audit 하면 동일 패턴 적용 가능 (별도 후속).
+
+**결론**: 13 업로드 540,931 object 모두 byte-perfect, 데이터 손실/부분 업로드 0건 확인.
 
