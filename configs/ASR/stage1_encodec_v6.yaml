@@ -11,7 +11,7 @@
 # (sehyun .../external/models/Qwen3.5AE-4B-encodec-24k/config.json), keep
 # adapter_hidden_size=1024 / intermediate_size=4096 / num_attention_heads=16
 # from projL, then symlink weights/code from a working encodec base.
-model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-encodec-projL
+model_name_or_path: external/models/Qwen3.5AE-4B-encodec-projL
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: true

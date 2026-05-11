@@ -1,7 +1,7 @@
 ### model
 # Whisper-small v6: same projL projector as v5 (H=1024 I=4096 heads=16).
 # v6 swaps manifest path v5 → v6 (adds IEMOCAP S1-4 + GigaSpeech XL 50%).
-model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-whisper-small-projL
+model_name_or_path: external/models/Qwen3.5AE-4B-whisper-small-projL
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: false

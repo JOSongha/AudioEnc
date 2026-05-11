@@ -7,7 +7,7 @@
 # TODO: external/models/Qwen3.5AE-4B-wavtok-projL must be created first.
 # Same recipe as encodec-projL (steal audio_config block from a working
 # wavtok base, override projector dims with projL values).
-model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-wavtok-projL
+model_name_or_path: external/models/Qwen3.5AE-4B-wavtok-projL
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: true

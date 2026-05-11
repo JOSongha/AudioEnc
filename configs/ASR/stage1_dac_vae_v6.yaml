@@ -4,7 +4,7 @@
 # IEMOCAP Sessions 1-4 (audio_emotion 41,172 → 47,054) and GigaSpeech XL 50%
 # random subsample (audio_asr 11,345,224 → 15,478,224, +5,000 h). Mixing
 # weights and trainer hyperparams unchanged from v5.
-model_name_or_path: /mnt/ddn/users/jos/audiollm-trainer/external/models/Qwen3.5AE-4B-projL
+model_name_or_path: external/models/Qwen3.5AE-4B-projL
 flash_attn: fa2
 enable_liger_kernel: true
 disable_gradient_checkpointing: false

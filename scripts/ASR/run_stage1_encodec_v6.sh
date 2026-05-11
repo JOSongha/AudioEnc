@@ -6,8 +6,8 @@
 set -u
 set -o pipefail
 
-REPO=/mnt/ddn/users/jos/audiollm-trainer
-ENV_PREFIX=/mnt/ddn/users/jos/miniforge3/envs/audio_lmf
+REPO=$(cd "$(dirname "$0")/../.." && pwd)
+ENV_PREFIX="${AUDIO_LMF_ENV:-/mnt/ddn/users/jos/miniforge3/envs/audio_lmf}"
 PY=$ENV_PREFIX/bin/python
 
 export PATH=$ENV_PREFIX/bin:$PATH
