@@ -33,7 +33,7 @@ USE_NUBES = os.environ.get("EVAL_USE_NUBES", "0") == "1"
 
 # 로컬 캐시 디렉터리 (download 후 재사용)
 NUBES_CACHE_ROOT = Path(os.environ.get(
-    "EVAL_NUBES_CACHE", "/tmp/nubes_eval_cache"))
+    "EVAL_NUBES_CACHE", "/mnt/tmp/nubes_eval_cache"))
 
 # Source-별 nubes prefix (audio + metadata).
 # 형식: source -> {"audio": <prefix>, "metadata": <prefix or None>, ...}

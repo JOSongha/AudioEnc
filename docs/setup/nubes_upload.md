@@ -1543,7 +1543,7 @@ nubescli dir-upload hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_valida
 
 #### 2. Stage-2 eval helper
 
-[`evaluation/audio/_nubes_loader.py`](../../evaluation/audio/_nubes_loader.py) 신규 — `EVAL_USE_NUBES=1` env 활성 시 nubes gateway 에서 audio / metadata 직접 fetch + 로컬 cache (`/tmp/nubes_eval_cache/`). 같은 nubes API 를 공유하는 sibling: `scripts/manifest_builders/_nubes_helper.py` (manifest builder 용).
+[`evaluation/audio/_nubes_loader.py`](../../evaluation/audio/_nubes_loader.py) 신규 — `EVAL_USE_NUBES=1` env 활성 시 nubes gateway 에서 audio / metadata 직접 fetch + 로컬 cache (`/mnt/tmp/nubes_eval_cache/`). 같은 nubes API 를 공유하는 sibling: `scripts/manifest_builders/_nubes_helper.py` (manifest builder 용).
 
 NUBES_BASES dict 에 source 별 prefix 정의: fsd50k_eval / audioset_eval / iemocap / ravdess / emovdb / meld / librispeech / clotho.
 
