@@ -123,20 +123,43 @@
 
 ---
 
-## 신뢰성 평가
+## 비판적 재평가 — 어떤 발견이 실제로 robust 한가
 
-🟢 **Stage 2 에서도 검증될 가능성 높음 (LLM 학습 무관)**
-- Encoder 단 family 본질적 분리 (H2.1, H2.4)
-- CNN family 간 후반 수렴
-- Projector input_proj 가 alignment 단계
-- DACVAE VAE 무손실
-- Mean vs Last divergence
-- whisper-small L8 anomaly
+각 finding 을 frozen LLM / causal attribution / variance artifact / overclaim 관점에서 재검토:
 
-🟡 **Stage 1 (LLM frozen) 특수효과일 수 있음 — Stage 2 비교 필수**
-- LLM 후반 family 차이 추가 감소 없다는 결론 (H2.3 반증 부분)
-- LLM 첫 layer = residual identity 라는 결론
-- wavtok 의 다른 동작 메커니즘
+| Finding | 진짜 의미 있는가? | 이유 |
+|---|---|---|
+| 1. LLM 후반 family 차이 감소 반증 (H2.3) | ❌ 의미 약함 | LLM frozen → audio 학습 안 했으니 통합 못 하는 게 당연. 가설 자체가 frozen 에 적용 불가능했음. Stage 2 비교 전까진 결론 불가 |
+| 2. `input_proj` 가 unification 의 main | ⚠️ 인과 귀속 추측 | `proj_0` hook = Linear + 첫 LlamaDecoderLayer **둘 다** 통과한 결과. Linear 단독 vs Linear+Layer 분리 측정 안 됨 |
+| 3. LLM 첫 layer = residual identity | ⚠️ 부정확 | (a) wavtok=0.984 ≠ 1.000 — 모든 family 동일 아님. (b) "audio→텍스트 변환 안 함" 도 frozen 효과 |
+| 4. Mean vs Last divergence | ⚠️ Variance artifact 가능 | last 는 단일 frame (N=1), mean 은 ~수백 frame 평균. CKA 차이가 family signature 인지 통계적 noise 인지 구분 안 됨. **random frame baseline 필요** |
+| 5. DACVAE VAE 무손실 | ✅ Robust | block_3 (1024-d) ↔ post-VAE z (128-d) CKA=0.998 명확. 단 "intrinsic dim ≤ 128" 은 IEMOCAP 도메인 한정 해석 |
+| 6. CNN encoder universal convergence | ⚠️ N=2 overclaim | dacvae↔wavtok enc_4=0.97 이지만 N=2. 후반 layer 에서만 수렴 (enc_2 까지는 ~0.4). "두 모델 후반 수렴" 이 정확 |
+| 7. Whisper-small L8 anomaly | ✅ 패턴 진짜, 해석 추측 | L8↔L5=0.26, L8↔L11=0.20, L5↔L11=0.91. 패턴은 명확. "specialist layer" 메커니즘은 미검증 — 12 layer 전부 추출 + probing 필요 |
+
+### 진짜 robust 한 결과 (2 개)
+
+- ✅ **#5 DACVAE VAE 무손실**: 실험 결과 명확, 해석은 도메인-specific 한정
+- ✅ **#7 Whisper-small L8 outlier**: 패턴 통계적으로 명확, 메커니즘 해석은 후속
+
+### 추가 실험으로 검증 필요 (3 개)
+
+- 🟡 **#2 input_proj 단독 효과**: `input_proj` 출력만 별도 추출하면 측정 가능
+- 🟡 **#4 last vs mean**: random single frame 을 baseline 으로 두면 측정 가능
+- 🟡 **#6 CNN convergence**: 더 많은 acoustic codec family 추가 필요
+
+### Stage 2 비교 없이는 결론 불가 (2 개)
+
+- 🔴 **#1 H2.3 반증**: frozen LLM 효과인지 진짜 LLM 특성인지 결정 불가
+- 🔴 **#3 LLM residual identity**: 같은 이유
+
+### 신뢰성 sumary
+
+| Tier | 발견 |
+|---|---|
+| 🟢 Robust (Stage 2 와 무관) | VAE 무손실, L8 anomaly |
+| 🟡 Methodologically improvable | input_proj 분리, last frame baseline, CNN N 늘리기 |
+| 🔴 Frozen LLM 제약 | LLM 관련 모든 결론 |
 
 ---
 
