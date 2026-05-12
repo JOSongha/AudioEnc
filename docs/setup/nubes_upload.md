@@ -1285,7 +1285,7 @@ grep -c "^- filename:" /tmp/macs_nubes.yaml
 
 > **옵션 C 의의**: MACS 의 audio (3,930) 를 별도 업로드 안 함 (nubes /datasets/public/MACS/audio/ 의 14,400 중 3,930 사용 — audio 중복 0). yaml 만 ~2.7 MB 추가로 builder 가 nubes-only 동작 가능. ddn extract dir 의존 폐기 + nubes 표준 영역 audio 활용 일관성.
 
-### 12.9 AudioCaps (audio + parquets, train+val+test 표준 dist) — 진행 중
+### 12.9 AudioCaps (audio + parquets, train+val+test 표준 dist) — 완료 2026-05-08
 
 **Source**: 로컬 audio (`/mnt/tmp/datasets/laion_extracted/audiocaps/`) + 로컬 parquet (`/mnt/tmp/datasets/audiocaps/data/`). v6 학습 풀 = train+val 의 45,623 unique audio. **옵션 C2** 결정: audio (test 추가 추출 포함) + parquets (test 신규 다운로드 포함) 모두 nubes 보존 → FSD50K 패턴 동일.
 
@@ -1343,20 +1343,53 @@ hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/
 └── README_upload.md
 ```
 
-**검증 명령 + 실제 출력**: (업로드 후 채움)
+**검증 명령**:
 
-**검증 결과**: (업로드 후 채움)
+```bash
+# count audio + per-split parquet (continuation-token paginated)
+python3 - <<'EOF'
+import urllib.request, urllib.parse, json
+GW="http://c.nubes.sto.navercorp.com:8000/v1"; B="hyperscaleai-audiollm"
+def lst(prefix):
+    out, tok = [], None
+    while True:
+        p = {"dir": prefix, "max-contents": "1000"}
+        if tok: p["continuation-token"] = tok
+        r = urllib.request.urlopen(f"{GW}/{B}?{urllib.parse.urlencode(p)}", timeout=60)
+        body, hdr = r.read(), r.headers
+        es = json.loads(body) if body else []
+        if not es: break
+        out += es; tok = hdr.get("X-Continuation-Token")
+        if not tok: break
+    return out
+print("audio/*.flac:", sum(1 for e in lst("/users/jos/AudioEnc/AudioCaps/audio/") if not e.get("IsDir") and e["Name"].endswith(".flac")))
+from collections import Counter
+c = Counter()
+for e in lst("/users/jos/AudioEnc/AudioCaps/data/"):
+    if e.get("IsDir"): continue
+    n = e["Name"]
+    if n.startswith("train-"): c["train"] += 1
+    elif n.startswith("validation-"): c["validation"] += 1
+    elif n.startswith("test-"): c["test"] += 1
+print("parquet:", dict(c))
+EOF
+# Sample HEAD
+curl -sS -I "http://c.nubes.sto.navercorp.com:8000/v1/hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/audio/---1_cCGK4M_0.flac" | grep -E "X-Object-Size|Last-Modified"
+curl -sS -I "http://c.nubes.sto.navercorp.com:8000/v1/hyperscaleai-audiollm/users/jos/AudioEnc/AudioCaps/data/test-00000-of-00041.parquet" | grep -E "X-Object-Size|Last-Modified"
+```
+
+**검증 결과** (2026-05-12 재점검):
 
 | 항목 | 목표 | 실제 | 상태 |
 |---|---:|---:|---|
-| audio/*.flac | 46,506 | (TBD) | ⏳ |
-| data/train-*.parquet | 412 | (TBD) | ⏳ |
-| data/validation-*.parquet | 20 | (TBD) | ⏳ |
-| data/test-*.parquet | 41 | (TBD) | ⏳ |
-| Sample wav HEAD (X-Object-Size) | (TBD) | (TBD) | ⏳ |
-| Sample parquet HEAD | (TBD) | (TBD) | ⏳ |
+| audio/*.flac | 46,506 | 46,506 | ✓ |
+| data/train-*.parquet | 412 | 412 | ✓ |
+| data/validation-*.parquet | 20 | 20 | ✓ |
+| data/test-*.parquet | 41 | 41 | ✓ |
+| Sample wav HEAD (`---1_cCGK4M_0.flac`) | 존재 + size > 0 | 960,044 byte (ModTime 2026-05-08 14:48:28 KST) | ✓ |
+| Sample parquet HEAD (`test-00000-of-00041.parquet`) | 존재 + size > 0 | 90,834,051 byte (~90 MB, ModTime 2026-05-08 15:20:17 KST) | ✓ |
 
-업로드 시작 시각: (TBD), 완료 시각: (TBD).
+업로드 시작 시각: 2026-05-08 14:48 KST (가장 이른 audio ModTime), 완료 시각: 2026-05-08 15:20 KST (README 최종 ModTime). 총 ~32 분 (audio 40 GB + parquet 41 GB).
 
 ### 12.10 MELD CSV (Stage-1 emotion 학습 + Stage-2 평가 라벨) — 완료 2026-05-08
 
@@ -1543,7 +1576,7 @@ nubescli dir-upload hyperscaleai-audiollm/datasets/public/Clotho-v2/audio_valida
 
 #### 2. Stage-2 eval helper
 
-[`evaluation/audio/_nubes_loader.py`](../../evaluation/audio/_nubes_loader.py) 신규 — `EVAL_USE_NUBES=1` env 활성 시 nubes gateway 에서 audio / metadata 직접 fetch + 로컬 cache (`/mnt/tmp/nubes_eval_cache/`). 같은 nubes API 를 공유하는 sibling: `scripts/manifest_builders/_nubes_helper.py` (manifest builder 용).
+[`evaluation/audio/_nubes_loader.py`](../../evaluation/audio/_nubes_loader.py) 신규 — nubes gateway 에서 audio / metadata 직접 fetch + 로컬 cache (`/mnt/tmp/nubes_eval_cache/`, `EVAL_NUBES_CACHE` env 로 override 가능). 같은 nubes API 를 공유하는 sibling: `scripts/manifest_builders/_nubes_helper.py` (manifest builder 용). 초기 도입 시점 (2026-05-07) 엔 `EVAL_USE_NUBES=1` 게이트로 local fallback 과 토글했으나 2026-05-12 부로 nubes-only 가 되며 게이트 제거.
 
 NUBES_BASES dict 에 source 별 prefix 정의: fsd50k_eval / audioset_eval / iemocap / ravdess / emovdb / meld / librispeech / clotho.
 
@@ -1572,12 +1605,12 @@ python -m llamafactory.cli train configs/ASR/stage1_dac_vae_v6.yaml
 
 Stage-2 eval:
 ```bash
-EVAL_USE_NUBES=1 python -m evaluation.audio.eval_fsd50k_map ...
-EVAL_USE_NUBES=1 python -m evaluation.audio.eval_audioset_map ...
+python -m evaluation.audio.eval_fsd50k_map ...
+python -m evaluation.audio.eval_audioset_map ...
 # ... etc
 ```
 
-`EVAL_USE_NUBES` 미설정 시 기존 동작 (local path) 유지.
+(2026-05-12 부로 nubes-only — 별도 env var 불필요.)
 
 #### 6. mp3 디코드 (MELD) — 환경 setup + fallback chain
 
@@ -1913,3 +1946,60 @@ nubescli dir-upload --skip --retry 3 -j 16 \
 **제거 작업**: DAC-projL 의 `__pycache__/{audio_encoder.cpython-310.pyc, audio_encoder.cpython-38.pyc, configuration_qwen3_5AE.cpython-310.pyc}` 3개 잔존 (두 번째 시도의 partial cp 잔여) — `nubescli delete` 로 정리 후 16/16 byte-perfect 확정.
 
 > § 9.8 grand total 13 → 14 (이번 entry 추가). 모든 14 unit byte-perfect.
+
+### 12.21 LibriSpeech test transcripts (사용자 영역 jsonl) — 완료 2026-05-12
+
+**상태**: 업로드 + byte-perfect 검증 완료.
+
+**대상**: nubes public `/datasets/public/librispeech_asr/{clean,other}/test/` 에는 flat wav 만 있고 transcript 파일 (`.trans.txt`) 부재. eval 측 (`evaluation/audio/eval_librispeech_wer.py`) 이 transcript 없이는 WER 측정 불가 — HF `openslr/librispeech_asr` 의 parquet 에서 `(id, text)` 만 추출, 사용자 영역에 jsonl 로 보관.
+
+| 파일 | size | rows | nubes path |
+|---|---:|---:|---|
+| `test_clean.jsonl` | 381,154 B | 2,620 | `users/jos/AudioEnc/LibriSpeech/test_clean.jsonl` |
+| `test_other.jsonl` | 385,684 B | 2,939 | `users/jos/AudioEnc/LibriSpeech/test_other.jsonl` |
+
+각 row: `{"id": "1089-134686-0000", "text": "..."}`. id 는 nubes public wav 파일명 (`<id>.wav`) 과 1:1 매칭.
+
+**Staging** (`/tmp/libri_staging/`):
+
+```bash
+python3 - <<'EOF'
+import json
+from huggingface_hub import hf_hub_download
+import pyarrow.parquet as pq
+for cfg, sib in [("clean","clean/test/0000.parquet"),
+                 ("other","other/test/0000.parquet")]:
+    p = hf_hub_download("openslr/librispeech_asr", sib,
+                        repo_type="dataset",
+                        cache_dir="/mnt/tmp/cache/hf")
+    tbl = pq.read_table(p, columns=["id","text"])
+    out = f"/tmp/libri_staging/test_{cfg}.jsonl"
+    ids = tbl.column("id").to_pylist()
+    txts = tbl.column("text").to_pylist()
+    with open(out,"w") as f:
+        for i,t in zip(ids,txts):
+            f.write(json.dumps({"id":i,"text":t},ensure_ascii=False)+"\n")
+EOF
+```
+
+**업로드 명령**:
+```bash
+export NUBES_GATEWAY_ADDRESS=c.nubes.sto.navercorp.com:8000
+export NUBES_IP_LOOKUP_ADDRESS=c.lookup.nubes.navercorp.com:8080
+nubescli upload hyperscaleai-audiollm/users/jos/AudioEnc/LibriSpeech/test_clean.jsonl /tmp/libri_staging/test_clean.jsonl
+nubescli upload hyperscaleai-audiollm/users/jos/AudioEnc/LibriSpeech/test_other.jsonl /tmp/libri_staging/test_other.jsonl
+```
+
+**검증**:
+
+| 대상 | local | nubes (`X-Object-Size`) | 상태 |
+|---|---|---|---|
+| test_clean.jsonl | 381,154 B | 381,154 B | ✓ byte-perfect |
+| test_other.jsonl | 385,684 B | 385,684 B | ✓ byte-perfect |
+| id ↔ nubes wav spot-check | `6930-75918-0000` / `1089-134686-0000` / `1188-133604-0000` (clean), `7902-96591-0000` (other) | HEAD 200 OK | ✓ |
+
+**관련 코드 변경**:
+- [`evaluation/audio/_nubes_loader.py`](../../evaluation/audio/_nubes_loader.py): `NUBES_BASES["librispeech"]` 에 `transcript_clean` / `transcript_other` 추가 (기존 `test_clean` / `test_other` 키를 `audio_clean` / `audio_other` 로 명확화).
+- [`evaluation/audio/eval_librispeech_wer.py`](../../evaluation/audio/eval_librispeech_wer.py): `load_split()` 를 nubes-only 로 갈아엎음 — transcript jsonl + nubes wav fetch. HF datasets fallback 제거.
+
+> § 9.8 grand total 14 → 15.

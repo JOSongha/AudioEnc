@@ -55,31 +55,33 @@ MAX_NEW_TOKENS = 256
 
 
 def load_split(split: str, max_samples: int | None) -> list[dict]:
-    """Load LibriSpeech test-clean or test-other via HF datasets.
+    """Load LibriSpeech test-clean or test-other from nubes.
+
+    transcripts: `users/jos/AudioEnc/LibriSpeech/test_{clean,other}.jsonl`
+    audio:       nubes public `/datasets/public/librispeech_asr/{clean,other}/test/<id>.wav`
 
     Returns rows with `_wav` at the *native* sample rate of the dataset and the
     accompanying `_sr` field. Per-checkpoint resampling to the encoder's
     target SR happens in `eval_checkpoint` so the same `rows` list serves both
     DAC (48 kHz) and Whisper (16 kHz) encoders without duplicate decode passes.
     """
-    from datasets import load_dataset
-    # split in {"test.clean", "test.other"}. HF config = "clean"/"other",
-    # split_name = "test".
     config = "clean" if "clean" in split else "other"
-    ds = load_dataset(
-        "openslr/librispeech_asr", config, split="test",
-        cache_dir="/mnt/tmp/cache",
-    )
+
+    import json as _json
+    from evaluation.audio._nubes_loader import (
+        NUBES_BASES, fetch_nubes_text, fetch_nubes_audio_tensor)
+    meta = NUBES_BASES["librispeech"]
+    transcripts_jsonl = fetch_nubes_text(meta[f"transcript_{config}"])
+    audio_prefix = meta[f"audio_{config}"]
+    pairs = [_json.loads(l) for l in transcripts_jsonl.splitlines() if l]
+    if max_samples is not None:
+        pairs = pairs[:max_samples]
     rows = []
-    n = len(ds) if max_samples is None else min(max_samples, len(ds))
-    for i in range(n):
-        r = ds[i]
-        # `audio` is {array, sampling_rate, path}; use array directly.
-        audio = r["audio"]
-        wav = torch.tensor(audio["array"], dtype=torch.float32)
+    for r in pairs:
+        wav, sr = fetch_nubes_audio_tensor(f"{audio_prefix}{r['id']}.wav")
         rows.append({
             "id": r["id"], "text": r["text"],
-            "_wav": wav, "_sr": int(audio["sampling_rate"]),
+            "_wav": wav.squeeze(0).to(torch.float32), "_sr": int(sr),
         })
     return rows
 

@@ -60,6 +60,8 @@ overwrite_output_dir: true
 ignore_data_skip: true  # streaming dataset에서 24k batch skip은 매우 느려서 우회
 
 ### train
+seed: 1234        # diverge from HF default 42 to reshuffle dataloader after deterministic step+700 (epoch 1.00879) hang at NCCL SeqNum=95647
+data_seed: 1234
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 2
 learning_rate: 2.0e-4

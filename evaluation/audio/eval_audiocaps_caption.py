@@ -1,31 +1,38 @@
-"""Clotho evaluation-split captioning eval for Qwen3.5AE Stage-2 checkpoints.
+"""AudioCaps test caption eval for Qwen3.5AE Stage-2 checkpoints.
 
-Prompt mirrors training: the canonical sound-caption stem from TASK_PROMPTS.
-Generates one caption per clip via greedy decode; scores against the 5 Clotho
-reference captions with corpus BLEU-1..4 (implemented inline) and — if
-pycocoevalcap is importable — CIDEr / METEOR / SPICE. Skipped metrics are
-reported as None in summary.json.
+Mirrors [`eval_clotho_caption.py`](eval_clotho_caption.py) but reads HuggingFace
+AudioCaps test parquet (`OpenSound/AudioCaps`, distributed by jos to nubes
+`/users/jos/AudioEnc/AudioCaps/data/test-*.parquet`, § 12.9). Each parquet row
+= 1 caption + embedded audio bytes; 5 captions per (youtube_id, start_time)
+unique audio. We group rows by audio key → list of 5 captions → caption eval.
+
+Held-out integrity:
+- v6 training pool only uses train (412 parquet) + validation (20 parquet),
+  see `scripts/manifest_builders/build_audiocaps.py:SPLIT_PARQUET_COUNT`. The
+  test 41 parquet (883 unique audio, 4,411 row) is **not enumerated by builder**
+  (calling `list_split_parquets("test")` raises `ValueError`). So this eval is
+  leak-free against any v6 Stage-1 ckpt.
+- Stage-2 LISTEN-mix contamination caveat does NOT apply here (LISTEN doesn't
+  pull AudioCaps test rows — only MELD-test and MOSEI-test, see
+  `eval_source_emotion.py:11-18` docstring).
 
 Usage:
-    python -m evaluation.audio.eval_clotho_caption \
-        --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
-        --out-root  .../eval_clotho \
-        --base-model /mnt/tmp/s2_init_42k \
-        --split evaluation \
-        --ckpts 2000 --batch-size 4
+    python -m evaluation.audio.eval_audiocaps_caption \\
+        --ckpt-root .../results/Qwen3.5AE-Stage2-... \\
+        --out-root  .../eval_audiocaps \\
+        --base-model /mnt/tmp/s2_init_42k \\
+        --ckpts 12000 --batch-size 4
 """
-
 from __future__ import annotations
 
 import argparse
-import csv
 import io
 import json
 import math
 import re
 import sys
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import torch
@@ -43,16 +50,13 @@ from evaluation.audio._loader import (  # noqa: E402
     t_audio_for,
 )
 
-# Canonical stem — TASK_PROMPTS["sound_caption"][0]. Pinned here to avoid
-# cross-module imports.
 EVAL_CAPTION_STEM = "Describe what you hear in the audio."
 MAX_NEW_TOKENS = 96
 
 
 # ---------------------------------------------------------------------------
-# BLEU-N corpus score (simple inline, matches NLTK/COCO corpus-BLEU behavior)
+# BLEU-N (mirrors eval_clotho_caption.corpus_bleu — identical implementation)
 # ---------------------------------------------------------------------------
-
 
 _TOK_RE = re.compile(r"[A-Za-z0-9']+")
 
@@ -69,23 +73,16 @@ def _ngrams(tokens: list[str], n: int) -> Counter:
 
 def corpus_bleu(list_of_refs: list[list[list[str]]], hyps: list[list[str]],
                 max_n: int = 4) -> tuple[float, list[float]]:
-    """Sacre-style corpus BLEU. Returns (BLEU-N, per-order precisions).
-
-    list_of_refs[i] is a list of reference token-lists for hyp i.
-    """
     assert len(list_of_refs) == len(hyps)
     clipped = [0] * max_n
     totals = [0] * max_n
     ref_len = 0
     hyp_len = 0
-
     for refs, hyp in zip(list_of_refs, hyps):
         hyp_len += len(hyp)
-        # Closest ref length for BP.
         ref_len += min(
             (abs(len(r) - len(hyp)), len(r)) for r in refs
         )[1] if refs else len(hyp)
-
         for n in range(1, max_n + 1):
             hyp_ng = _ngrams(hyp, n)
             max_ref_ng: Counter = Counter()
@@ -97,66 +94,71 @@ def corpus_bleu(list_of_refs: list[list[list[str]]], hyps: list[list[str]],
             for ng, c in hyp_ng.items():
                 clipped[n - 1] += min(c, max_ref_ng[ng])
             totals[n - 1] += sum(hyp_ng.values())
-
-    precisions = []
-    for n in range(max_n):
-        if totals[n] == 0:
-            precisions.append(0.0)
-        else:
-            precisions.append(clipped[n] / totals[n])
-
-    if min(precisions) == 0:
-        geo = 0.0
-    else:
-        geo = math.exp(sum(math.log(p) for p in precisions) / max_n)
-
+    precisions = [(clipped[n] / totals[n]) if totals[n] else 0.0 for n in range(max_n)]
+    geo = 0.0 if min(precisions) == 0 else math.exp(
+        sum(math.log(p) for p in precisions) / max_n)
     if hyp_len == 0:
         bp = 0.0
     elif hyp_len > ref_len:
         bp = 1.0
     else:
         bp = math.exp(1 - ref_len / hyp_len)
-
     return bp * geo, precisions
 
 
 # ---------------------------------------------------------------------------
-# data loading
+# data loading — stream test parquets from nubes
 # ---------------------------------------------------------------------------
 
-
-_NUBES_SPLIT_KEYS = {
-    # split → (csv key in NUBES_BASES["clotho"], audio prefix key)
-    "development": ("captions_dev",  "audio"),
-    "evaluation":  ("captions_eval", "audio_eval"),
-    "validation":  ("captions_val",  "audio_val"),
-}
+NUBES_TEST_PARQUET_DIR = "users/jos/AudioEnc/AudioCaps/data/"
 
 
-def load_clotho_split(split: str) -> list[dict]:
-    """Return list of {file_path, captions[5]} for a Clotho split.
+def load_audiocaps_test() -> list[dict]:
+    """Return list of {file_key, audio_bytes, captions[5]}.
 
-    Split keys: development / evaluation / validation. nubes-only (2026-05-08
-    § 12.12 업로드 본). split 별 audio subdir + captions csv 분리.
+    Streams all `test-*.parquet` (41 file, ~4,411 row, 883 unique audio) from
+    nubes, decodes parquet bytes in-memory, groups rows by (youtube_id,
+    start_time) so each entry has all 5 captions. Audio bytes are taken from
+    the FIRST row per group (identical across the 5 caption rows).
     """
-    from evaluation.audio._nubes_loader import NUBES_BASES, fetch_nubes_text
-    if split not in _NUBES_SPLIT_KEYS:
-        raise ValueError(f"unknown clotho split: {split!r}")
-    cap_key, audio_key = _NUBES_SPLIT_KEYS[split]
-    csv_text = fetch_nubes_text(NUBES_BASES["clotho"][cap_key])
-    audio_base = NUBES_BASES["clotho"][audio_key]
-    rows = []
-    for r in csv.DictReader(io.StringIO(csv_text)):
-        fn = r["file_name"]
-        ap = audio_base + fn
-        caps = [r[f"caption_{i}"] for i in range(1, 6) if r.get(f"caption_{i}")]
-        rows.append({"file": fn, "path": ap, "captions": caps})
-    return rows
+    from evaluation.audio._nubes_loader import (
+        list_nubes_dir, fetch_nubes_bytes)
+    import pyarrow.parquet as pq
+
+    grouped: dict[str, dict] = {}
+    n_parquet = 0
+    for pf in list_nubes_dir(NUBES_TEST_PARQUET_DIR, suffix=".parquet"):
+        if not pf.rsplit("/", 1)[-1].startswith("test-"):
+            continue
+        n_parquet += 1
+        body = fetch_nubes_bytes(pf)
+        table = pq.read_table(io.BytesIO(body))
+        df = table.to_pandas()
+        for _, r in df.iterrows():
+            key = f"{r['youtube_id']}_{int(r['start_time'])}"
+            cap = str(r["caption"]).strip()
+            if not cap:
+                continue
+            if key not in grouped:
+                audio = r["audio"]
+                wav_bytes = audio["bytes"] if isinstance(audio, dict) else audio
+                grouped[key] = {
+                    "file": key,
+                    "audio_bytes": wav_bytes,
+                    "captions": [cap],
+                }
+            else:
+                grouped[key]["captions"].append(cap)
+    print(f"[audiocaps] streamed {n_parquet} test parquets → "
+          f"{len(grouped)} unique audio (avg "
+          f"{sum(len(v['captions']) for v in grouped.values()) / max(len(grouped), 1):.1f} "
+          f"caps/audio)", flush=True)
+    return list(grouped.values())
 
 
-def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    from evaluation.audio._nubes_loader import fetch_nubes_audio_tensor
-    wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
+def preprocess_audio_bytes(wav_bytes: bytes, target_sr: int,
+                           max_samples: int) -> torch.Tensor:
+    wav, sr = torchaudio.load(io.BytesIO(wav_bytes))
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
@@ -194,9 +196,9 @@ def eval_checkpoint(
     rows: list[dict],
     batch_size: int,
     out_dir: Path,
-    max_audio_samples: int,
+    max_audio_samples: int | None,
     max_new_tokens: int,
-    try_pycoco: bool,
+    try_pycoco: bool = True,
     use_cache: bool = True,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -208,20 +210,19 @@ def eval_checkpoint(
     if max_audio_samples is None:
         max_audio_samples = default_max_audio_samples(cfg)
 
-    # Pre-decode audio and sort for batch stability.
-    print(f"[clotho] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
+    print(f"[audiocaps] decoding {len(rows)} audios at {target_sr} Hz...", flush=True)
     prepared = []
     for r in rows:
         try:
-            wav = preprocess_audio(r["path"], target_sr, max_audio_samples)
+            wav = preprocess_audio_bytes(r["audio_bytes"], target_sr, max_audio_samples)
         except Exception as e:
-            print(f"[clotho] load fail {r['file']}: {e}", flush=True)
+            print(f"[audiocaps] decode fail {r['file']}: {e}", flush=True)
             continue
         prepared.append({**r, "_wav": wav})
     prepared.sort(key=lambda x: x["_wav"].shape[-1])
 
     all_preds: list[str] = []
-    all_refs: list[list[list[str]]] = []  # per-sample list of tokenized refs
+    all_refs: list[list[list[str]]] = []
 
     t0 = time.time()
     with open(pred_path, "w", encoding="utf-8") as fp:
@@ -249,46 +250,38 @@ def eval_checkpoint(
                 dt = time.time() - t0
                 rate = done / max(dt, 1e-6)
                 eta = (len(prepared) - done) / max(rate, 1e-6)
-                print(f"[clotho] {ckpt_path.name} {done}/{len(prepared)}  "
+                print(f"[audiocaps] {ckpt_path.name} {done}/{len(prepared)}  "
                       f"{rate:.2f} sps  eta {eta/60:.1f}m", flush=True)
 
-    # Corpus BLEU (inline).
     hyp_toks = [tokenize(h) for h in all_preds]
     bleu4, precisions = corpus_bleu(all_refs, hyp_toks, max_n=4)
     bleu1 = precisions[0] if precisions else 0.0
 
-    # Optional COCO-style CIDEr/METEOR/ROUGE/SPICE via pycocoevalcap.
-    # Each metric attempted separately so Java-only ones (METEOR, SPICE) can
-    # fail without dropping CIDEr/ROUGE.
     coco_scores: dict[str, float | None] = {"CIDEr": None, "METEOR": None,
                                              "ROUGE_L": None, "SPICE": None}
     if try_pycoco:
         gts = {str(i): r["captions"] for i, r in enumerate(prepared)}
         res = {str(i): [all_preds[i]] for i in range(len(all_preds))}
-
         try:
             from pycocoevalcap.cider.cider import Cider
             coco_scores["CIDEr"] = float(Cider().compute_score(gts, res)[0])
         except Exception as e:
-            print(f"[clotho] CIDEr unavailable: {e}", flush=True)
-
+            print(f"[audiocaps] CIDEr unavailable: {e}", flush=True)
         try:
             from pycocoevalcap.rouge.rouge import Rouge
             coco_scores["ROUGE_L"] = float(Rouge().compute_score(gts, res)[0])
         except Exception as e:
-            print(f"[clotho] ROUGE_L unavailable: {e}", flush=True)
-
+            print(f"[audiocaps] ROUGE_L unavailable: {e}", flush=True)
         try:
             from pycocoevalcap.meteor.meteor import Meteor
             coco_scores["METEOR"] = float(Meteor().compute_score(gts, res)[0])
         except Exception as e:
-            print(f"[clotho] METEOR unavailable (needs Java): {e}", flush=True)
-
+            print(f"[audiocaps] METEOR unavailable (needs Java): {e}", flush=True)
         try:
             from pycocoevalcap.spice.spice import Spice
             coco_scores["SPICE"] = float(Spice().compute_score(gts, res)[0])
         except Exception as e:
-            print(f"[clotho] SPICE unavailable (needs Java + CoreNLP): {e}", flush=True)
+            print(f"[audiocaps] SPICE unavailable (needs Java + CoreNLP): {e}", flush=True)
 
     summary = {
         "checkpoint": str(ckpt_path),
@@ -304,8 +297,7 @@ def eval_checkpoint(
     }
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
-
-    print(f"[clotho] {ckpt_path.name} BLEU-1={bleu1:.4f} BLEU-4={bleu4:.4f} "
+    print(f"[audiocaps] {ckpt_path.name} BLEU-1={bleu1:.4f} BLEU-4={bleu4:.4f} "
           f"CIDEr={coco_scores['CIDEr']}", flush=True)
     del model
     torch.cuda.empty_cache()
@@ -318,7 +310,6 @@ def parse_args():
     p.add_argument("--out-root", required=True)
     p.add_argument("--base-model", default=None)
     p.add_argument("--ckpts", default=None)
-    p.add_argument("--split", default="evaluation", choices=["evaluation", "validation"])
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--max-audio-samples", type=int, default=None,
@@ -327,7 +318,7 @@ def parse_args():
     p.add_argument("--no-pycoco", action="store_true",
                    help="Skip the CIDEr/METEOR/ROUGE block even if pycocoevalcap is installed.")
     p.add_argument("--no-cache", action="store_true",
-                   help="Disable KV/conv cache during generation (shim-free ground truth).")
+                   help="Disable KV/conv cache during generation.")
     p.add_argument("--include-partial", action="store_true")
     return p.parse_args()
 
@@ -344,12 +335,12 @@ def main():
     ckpts = find_checkpoints(ckpt_root, steps_filter,
                              min_age_sec=0 if args.include_partial else 60)
     if not ckpts:
-        raise SystemExit(f"[clotho] no checkpoints under {ckpt_root}")
+        raise SystemExit(f"[audiocaps] no checkpoints under {ckpt_root}")
 
-    rows = load_clotho_split(args.split)
+    rows = load_audiocaps_test()
     if args.max_samples:
         rows = rows[: args.max_samples]
-    print(f"[clotho] split={args.split} rows={len(rows)}", flush=True)
+    print(f"[audiocaps] rows={len(rows)}", flush=True)
 
     all_summaries = []
     for p in ckpts:

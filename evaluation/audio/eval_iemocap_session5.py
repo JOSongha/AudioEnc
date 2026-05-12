@@ -46,7 +46,6 @@ from evaluation.audio._loader import (  # noqa: E402
     t_audio_for,
 )
 
-ROOT = Path("/mnt/tmp/datasets/emotion_raw/IEMOCAP/IEMOCAP_full_release")
 SESSION = "Session5"
 
 # Standard 4-class IEMOCAP eval label set, with excitement (exc) merged into happiness (hap).
@@ -63,31 +62,18 @@ LABEL_BY_LETTER = {"A": "angry", "B": "happy", "C": "neutral", "D": "sad"}
 QUESTION = "What is the emotion expressed?"
 
 
-def parse_emoeval_dir(eval_dir: Path) -> list[dict]:
-    """Parse */EmoEvaluation/*.txt files for Session 5 (categorical eval lines).
-
-    USE_NUBES=1 일 때 eval_dir 내용을 nubes 에서 fetch (label .txt 들 + 각
-    utterance wav 의 nubes_path 생성).
-    """
+def parse_emoeval_dir() -> list[dict]:
+    """Parse Session 5 EmoEvaluation/*.txt categorical lines from nubes."""
     from evaluation.audio._nubes_loader import (
-        USE_NUBES, NUBES_BASES, list_nubes_dir, fetch_nubes_text)
+        NUBES_BASES, list_nubes_dir, fetch_nubes_text)
     pat = re.compile(r"\[(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\]\s+(\S+)\s+(\w+)")
+    nubes_root = NUBES_BASES["iemocap"]["root"]
+    emoeval_prefix = f"{nubes_root}{SESSION}/dialog/EmoEvaluation/"
+    txt_paths = list(list_nubes_dir(emoeval_prefix, suffix=".txt"))
     rows = []
-    if USE_NUBES:
-        nubes_root = NUBES_BASES["iemocap"]["root"]
-        emoeval_prefix = f"{nubes_root}{SESSION}/dialog/EmoEvaluation/"
-        txt_paths = [p for p in list_nubes_dir(emoeval_prefix, suffix=".txt")]
-    else:
-        txt_paths = [str(p) for p in sorted(eval_dir.glob("*.txt"))]
-
     for txt_path in sorted(txt_paths):
-        if USE_NUBES:
-            content = fetch_nubes_text(txt_path)
-            dialog = txt_path.split("/")[-1].rsplit(".", 1)[0]
-        else:
-            with open(txt_path) as f:
-                content = f.read()
-            dialog = Path(txt_path).stem
+        content = fetch_nubes_text(txt_path)
+        dialog = txt_path.split("/")[-1].rsplit(".", 1)[0]
         for line in content.splitlines():
             m = pat.match(line.rstrip())
             if not m:
@@ -96,14 +82,8 @@ def parse_emoeval_dir(eval_dir: Path) -> list[dict]:
             if emo_short not in LABEL_MAP:
                 continue
             label = LABEL_MAP[emo_short]
-            if USE_NUBES:
-                wav_path = (f"{NUBES_BASES['iemocap']['root']}{SESSION}"
-                            f"/sentences/wav/{dialog}/{utt_id}.wav")
-            else:
-                wav = ROOT / SESSION / "sentences" / "wav" / dialog / f"{utt_id}.wav"
-                if not wav.exists():
-                    continue
-                wav_path = str(wav)
+            wav_path = (f"{nubes_root}{SESSION}"
+                        f"/sentences/wav/{dialog}/{utt_id}.wav")
             rows.append({
                 "id": utt_id,
                 "path": wav_path,
@@ -115,11 +95,8 @@ def parse_emoeval_dir(eval_dir: Path) -> list[dict]:
 
 
 def preprocess_audio(path: str, target_sr: int) -> torch.Tensor:
-    from evaluation.audio._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
-    if USE_NUBES and not str(path).startswith("/"):
-        wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
-    else:
-        wav, sr = torchaudio.load(path)
+    from evaluation.audio._nubes_loader import fetch_nubes_audio_tensor
+    wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
@@ -238,8 +215,7 @@ def main():
                    help="sdpa | eager | flash_attention_2")
     args = p.parse_args()
 
-    eval_dir = ROOT / SESSION / "dialog" / "EmoEvaluation"
-    rows = parse_emoeval_dir(eval_dir)
+    rows = parse_emoeval_dir()
     print(f"[iemocap-S5] parsed {len(rows)} rows  label dist: {dict(Counter(r['gold_label'] for r in rows))}", flush=True)
 
     out_root = Path(args.out_root)

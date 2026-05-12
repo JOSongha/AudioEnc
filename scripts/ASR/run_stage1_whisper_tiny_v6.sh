@@ -72,6 +72,15 @@ if [ -n "${RESUME_FROM:-}" ]; then
     # llamafactory-cli with .yaml uses OmegaConf — overrides are key=value, not --key value.
     RESUME_ARGS=("resume_from_checkpoint=$RESUME_FROM")
 fi
+# Optional: extra OmegaConf overrides as a space-separated list, e.g.
+# EXTRA_OVERRIDES="model_name_or_path=/abs/path foo=bar". Useful for resuming a
+# wandb run whose stored model_args differs from the current yaml (wandb
+# refuses config changes unless allow_val_change=True).
+if [ -n "${EXTRA_OVERRIDES:-}" ]; then
+    # shellcheck disable=SC2206  # intentional word-split for OmegaConf key=value list
+    EXTRA_ARR=($EXTRA_OVERRIDES)
+    RESUME_ARGS+=("${EXTRA_ARR[@]}")
+fi
 
 # Persist stdout/stderr so a dropped tmux pane no longer loses the traceback.
 LOG_DIR=/mnt/tmp/Qwen3.5_whisper_tiny_v6_Stage1/launch_logs

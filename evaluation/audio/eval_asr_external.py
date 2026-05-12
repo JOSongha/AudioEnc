@@ -104,6 +104,93 @@ DATASETS = {
 }
 
 
+# Tag → nubes loader spec. Bypasses HF; uses nubes gateway via _nubes_loader.
+# librispeech_*: transcripts as jsonl + flat wav dir (same layout as eval_librispeech_wer.py).
+# gigaspeech: paired `<id>.flac` + `<id>.txt` under one dir (2024-01-04 외부 팀 본).
+_NUBES_LOADERS: dict[str, dict] = {
+    "librispeech_clean": {
+        "type": "jsonl_transcript",
+        "transcript": "users/jos/AudioEnc/LibriSpeech/test_clean.jsonl",
+        "audio_prefix": "datasets/public/librispeech_asr/clean/test/",
+        "audio_ext": ".wav",
+    },
+    "librispeech_other": {
+        "type": "jsonl_transcript",
+        "transcript": "users/jos/AudioEnc/LibriSpeech/test_other.jsonl",
+        "audio_prefix": "datasets/public/librispeech_asr/other/test/",
+        "audio_ext": ".wav",
+    },
+    "gigaspeech": {
+        "type": "paired_files",
+        "audio_prefix": "datasets/public/16kHz/gigaspeech/test/",
+        "audio_ext": ".flac",
+        "text_ext": ".txt",
+    },
+}
+
+
+def _load_nubes_jsonl_transcript(spec: dict, tag: str, max_samples: int | None) -> list[dict]:
+    """jsonl 라인-별 `{id,text}` + `<audio_prefix>/<id><ext>` audio. LibriSpeech 패턴."""
+    from evaluation.audio._nubes_loader import fetch_nubes_text, fetch_nubes_audio_tensor
+    transcript = fetch_nubes_text(spec["transcript"])
+    pairs = [json.loads(l) for l in transcript.splitlines() if l.strip()]
+    if max_samples is not None:
+        pairs = pairs[:max_samples]
+    rows = []
+    for r in pairs:
+        try:
+            wav, sr = fetch_nubes_audio_tensor(
+                f"{spec['audio_prefix']}{r['id']}{spec['audio_ext']}")
+        except Exception as e:
+            print(f"[asr-ext] {tag} audio fetch fail {r['id']}: {e}", flush=True)
+            continue
+        if wav.dim() > 1 and wav.shape[0] > 1:
+            wav = wav.mean(dim=0, keepdim=True)
+        rows.append({"id": r["id"], "text": r["text"],
+                     "_wav": wav.squeeze(0).to(torch.float32), "_sr": int(sr)})
+    return rows
+
+
+def _load_nubes_paired_files(spec: dict, tag: str, max_samples: int | None) -> list[dict]:
+    """`<prefix>/<id>.{audio,text}` 페어. GigaSpeech 패턴."""
+    from evaluation.audio._nubes_loader import (
+        list_nubes_dir, fetch_nubes_text, fetch_nubes_audio_tensor)
+    rows = []
+    audio_ext = spec["audio_ext"]
+    text_ext = spec["text_ext"]
+    for audio_path in list_nubes_dir(spec["audio_prefix"], suffix=audio_ext):
+        if max_samples is not None and len(rows) >= max_samples:
+            break
+        stem = audio_path.rsplit("/", 1)[-1].removesuffix(audio_ext)
+        text_path = f"{spec['audio_prefix']}{stem}{text_ext}"
+        try:
+            text = fetch_nubes_text(text_path).strip()
+            wav, sr = fetch_nubes_audio_tensor(audio_path)
+        except Exception as e:
+            print(f"[asr-ext] {tag} pair fetch fail {stem}: {e}", flush=True)
+            continue
+        if not text:
+            continue
+        if wav.dim() > 1 and wav.shape[0] > 1:
+            wav = wav.mean(dim=0, keepdim=True)
+        rows.append({"id": stem, "text": text,
+                     "_wav": wav.squeeze(0).to(torch.float32), "_sr": int(sr)})
+    return rows
+
+
+def _load_nubes(tag: str, max_samples: int | None) -> list[dict]:
+    spec = _NUBES_LOADERS[tag]
+    print(f"[asr-ext] loading {tag} <- nubes ({spec['type']})", flush=True)
+    if spec["type"] == "jsonl_transcript":
+        rows = _load_nubes_jsonl_transcript(spec, tag, max_samples)
+    elif spec["type"] == "paired_files":
+        rows = _load_nubes_paired_files(spec, tag, max_samples)
+    else:
+        raise ValueError(f"unknown nubes loader type: {spec['type']!r}")
+    print(f"[asr-ext] {tag} loaded n={len(rows)}", flush=True)
+    return rows
+
+
 def _load_local_jsonl(path: str, max_samples: int | None) -> list[dict]:
     """Load a {text, audio} jsonl with absolute audio paths."""
     import torchaudio
@@ -137,6 +224,9 @@ def _load_local_jsonl(path: str, max_samples: int | None) -> list[dict]:
 
 
 def load_split(tag: str, max_samples: int | None) -> list[dict]:
+    # nubes-direct route: librispeech_{clean,other} + gigaspeech
+    if tag in _NUBES_LOADERS:
+        return _load_nubes(tag, max_samples)
     repo, config, split, audio_key, text_key, _ = DATASETS[tag]
     # Local jsonl path (e.g. commonvoice_local)
     if repo.startswith("/") and Path(repo).is_file():
@@ -211,30 +301,16 @@ def run_dataset(model, tokenizer, cfg, rows, *, batch_size, max_new_tokens, use_
     }
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--ckpt-root", required=True)
-    p.add_argument("--base-model", default=None)
-    p.add_argument("--out-root", default=None,
-                   help="default = <ckpt-root>/eval_asr_external")
-    p.add_argument("--datasets", nargs="+", default=["mls", "voxpopuli", "gigaspeech"],
-                   choices=list(DATASETS.keys()))
-    p.add_argument("--max-samples", type=int, default=500)
-    p.add_argument("--batch-size", type=int, default=8)
-    p.add_argument("--max-new-tokens", type=int, default=128)
-    p.add_argument("--no-cache", action="store_true")
-    args = p.parse_args()
-
-    ckpt_root = Path(args.ckpt_root)
-    out_root = Path(args.out_root) if args.out_root else ckpt_root / "eval_asr_external"
-    out_root.mkdir(parents=True, exist_ok=True)
-
-    model, tokenizer, cfg = load_checkpoint(ckpt_root, base_model_dir=args.base_model)
-
-    summary = {"checkpoint": str(ckpt_root), "max_samples": args.max_samples, "datasets": {}}
-    for tag in args.datasets:
+def _eval_one_ckpt(ckpt_path: Path, base_model: str | None,
+                   datasets_list: list[str], max_samples: int,
+                   batch_size: int, max_new_tokens: int, use_cache: bool,
+                   out_dir: Path) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model, tokenizer, cfg = load_checkpoint(ckpt_path, base_model_dir=base_model)
+    summary = {"checkpoint": str(ckpt_path), "max_samples": max_samples, "datasets": {}}
+    for tag in datasets_list:
         try:
-            rows = load_split(tag, args.max_samples)
+            rows = load_split(tag, max_samples)
         except Exception as e:
             print(f"[asr-ext] {tag} FAILED to load: {e}", flush=True)
             summary["datasets"][tag] = {"status": "load_failed", "error": str(e)}
@@ -244,9 +320,9 @@ def main():
             continue
         try:
             r = run_dataset(model, tokenizer, cfg, rows,
-                            batch_size=args.batch_size,
-                            max_new_tokens=args.max_new_tokens,
-                            use_cache=not args.no_cache)
+                            batch_size=batch_size,
+                            max_new_tokens=max_new_tokens,
+                            use_cache=use_cache)
             r["status"] = "ok"
             r["license_note"] = DATASETS[tag][5]
             summary["datasets"][tag] = r
@@ -257,18 +333,67 @@ def main():
             import traceback
             traceback.print_exc()
             summary["datasets"][tag] = {"status": "eval_failed", "error": str(e)}
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
+    del model
+    torch.cuda.empty_cache()
+    return summary
 
-    out_file = out_root / "summary.json"
-    out_file.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"\n[asr-ext] wrote {out_file}", flush=True)
-    print("\n=== SUMMARY ===")
-    print(f"{'dataset':<20} {'n':>6} {'WER%':>7} {'CER%':>7} {'note'}")
-    for tag, r in summary["datasets"].items():
-        if r.get("status") == "ok":
-            print(f"{tag:<20} {r['n']:>6} {r['wer_normalized']*100:>7.2f} "
-                  f"{r['cer_normalized']*100:>7.2f}  {r.get('license_note','')}")
-        else:
-            print(f"{tag:<20} {'-':>6} {'-':>7} {'-':>7}  {r.get('status', '?')}")
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--ckpt-root", required=True,
+                   help="Parent dir containing checkpoint-* subdirs, OR a single "
+                        "checkpoint dir (legacy). With --ckpts, --ckpt-root is parent.")
+    p.add_argument("--ckpts", default=None,
+                   help="Comma-separated step filter. Loops over matching ckpts.")
+    p.add_argument("--base-model", default=None)
+    p.add_argument("--out-root", default=None,
+                   help="default = <ckpt-root>/eval_asr_external")
+    p.add_argument("--datasets", nargs="+", default=["mls", "voxpopuli", "gigaspeech"],
+                   choices=list(DATASETS.keys()))
+    p.add_argument("--max-samples", type=int, default=500)
+    p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--max-new-tokens", type=int, default=128)
+    p.add_argument("--no-cache", action="store_true")
+    p.add_argument("--include-partial", action="store_true")
+    args = p.parse_args()
+
+    ckpt_root = Path(args.ckpt_root)
+    out_root = Path(args.out_root) if args.out_root else ckpt_root / "eval_asr_external"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    # Two modes:
+    # 1) --ckpts given: ckpt_root is parent, find_checkpoints filters by step.
+    # 2) --ckpts absent: ckpt_root is a single ckpt path (legacy single-ckpt mode).
+    if args.ckpts is not None:
+        steps_filter = {int(s) for s in args.ckpts.split(",") if s.strip()}
+        ckpts = find_checkpoints(ckpt_root, steps_filter,
+                                 min_age_sec=0 if args.include_partial else 60)
+        if not ckpts:
+            raise SystemExit(f"[asr-ext] no checkpoints under {ckpt_root} matching {steps_filter}")
+    else:
+        ckpts = [ckpt_root]
+
+    all_summaries = []
+    for p_ckpt in ckpts:
+        ckpt_out = out_root / p_ckpt.name if args.ckpts is not None else out_root
+        summary = _eval_one_ckpt(
+            p_ckpt, args.base_model, args.datasets, args.max_samples,
+            args.batch_size, args.max_new_tokens, not args.no_cache, ckpt_out,
+        )
+        all_summaries.append(summary)
+        print(f"\n[asr-ext] wrote {ckpt_out / 'summary.json'}", flush=True)
+        print(f"\n=== SUMMARY ({p_ckpt.name}) ===")
+        print(f"{'dataset':<20} {'n':>6} {'WER%':>7} {'CER%':>7} {'note'}")
+        for tag, r in summary["datasets"].items():
+            if r.get("status") == "ok":
+                print(f"{tag:<20} {r['n']:>6} {r['wer_normalized']*100:>7.2f} "
+                      f"{r['cer_normalized']*100:>7.2f}  {r.get('license_note','')}")
+            else:
+                print(f"{tag:<20} {'-':>6} {'-':>7} {'-':>7}  {r.get('status', '?')}")
+    if len(all_summaries) > 1:
+        (out_root / "summary_all.json").write_text(
+            json.dumps(all_summaries, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

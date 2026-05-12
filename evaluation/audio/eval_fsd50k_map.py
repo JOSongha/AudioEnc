@@ -38,6 +38,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import re
 import sys
 import time
@@ -60,17 +61,6 @@ from evaluation.audio._loader import (  # noqa: E402
     score_labels_teacher_forced,
 )
 
-FSD50K_ROOT = Path("/mnt/tmp/datasets/env_sound/FSD50K")
-EVAL_CSV = FSD50K_ROOT / "FSD50K.ground_truth/eval.csv"
-VOCAB_CSV = FSD50K_ROOT / "FSD50K.ground_truth/vocabulary.csv"
-# Override with FSD50K_EVAL_AUDIO_DIR env var (e.g. /dev/shm/FSD50K_eval_audio)
-# to bypass disk-seek contention when running many parallel evals.
-import os as _os
-EVAL_AUDIO_DIR = Path(_os.environ.get(
-    "FSD50K_EVAL_AUDIO_DIR",
-    str(FSD50K_ROOT / "FSD50K.eval_audio"),
-))
-
 EVAL_STEM = "List the sound events in this audio, separated by commas."
 SENTENCE_STEM = "Describe what you hear in this audio. Mention every distinct sound event."
 MAX_NEW_TOKENS = 96
@@ -84,47 +74,29 @@ SENTENCE_MAX_NEW_TOKENS = 256
 
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """Return (label_list, name -> index)."""
-    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    from evaluation.audio._nubes_loader import NUBES_BASES, fetch_nubes_text
+    csv_text = fetch_nubes_text(
+        f"{NUBES_BASES['fsd50k_eval']['ground_truth']}vocabulary.csv")
     labels = []
-    if USE_NUBES:
-        csv_text = fetch_nubes_text(
-            f"{NUBES_BASES['fsd50k_eval']['ground_truth']}vocabulary.csv")
-        f = io.StringIO(csv_text)
-    else:
-        f = open(VOCAB_CSV)
-    if True:
-        for row in csv.reader(f):
-            # vocabulary.csv has no header: idx,label_name,mid
-            if len(row) < 2:
-                continue
-            labels.append(row[1])
+    for row in csv.reader(io.StringIO(csv_text)):
+        # vocabulary.csv has no header: idx,label_name,mid
+        if len(row) < 2:
+            continue
+        labels.append(row[1])
     name_to_idx = {n.lower(): i for i, n in enumerate(labels)}
     return labels, name_to_idx
 
 
 def load_eval(max_samples: int | None) -> list[dict]:
-    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES
+    from evaluation.audio._nubes_loader import NUBES_BASES, fetch_nubes_text
+    csv_text = fetch_nubes_text(
+        f"{NUBES_BASES['fsd50k_eval']['ground_truth']}eval.csv")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    audio_base = NUBES_BASES["fsd50k_eval"]["audio"]
     rows = []
-    if USE_NUBES:
-        # nubes 모드: eval.csv 도 nubes 에서 fetch
-        from evaluation.audio._nubes_loader import fetch_nubes_text
-        csv_text = fetch_nubes_text(
-            f"{NUBES_BASES['fsd50k_eval']['ground_truth']}eval.csv")
-        reader = csv.DictReader(io.StringIO(csv_text))
-    else:
-        f = open(EVAL_CSV)
-        reader = csv.DictReader(f)
-
-    audio_base = NUBES_BASES["fsd50k_eval"]["audio"] if USE_NUBES else None
     for r in reader:
         fname = r["fname"]
-        if USE_NUBES:
-            ap = audio_base + f"{fname}.wav"  # nubes path
-        else:
-            ap = EVAL_AUDIO_DIR / f"{fname}.wav"
-            if not ap.exists():
-                continue
-            ap = str(ap)
+        ap = audio_base + f"{fname}.wav"
         labels = [l for l in r["labels"].split(",") if l]
         rows.append({"fname": fname, "path": ap, "labels": labels})
     if max_samples:
@@ -133,12 +105,8 @@ def load_eval(max_samples: int | None) -> list[dict]:
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    from evaluation.audio._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
-    if USE_NUBES and not path.startswith("/"):
-        # nubes path (no leading slash)
-        wav, sr = fetch_nubes_audio_tensor(path, target_sr=target_sr)
-    else:
-        wav, sr = torchaudio.load(path)
+    from evaluation.audio._nubes_loader import fetch_nubes_audio_tensor
+    wav, sr = fetch_nubes_audio_tensor(path, target_sr=target_sr)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:
@@ -368,7 +336,7 @@ def eval_checkpoint(
     # FSD50K_DECODED_CACHE env). Speeds up dense parallel sweeps by
     # eliminating per-process redundant resample work. Cache is
     # encoder-specific (DAC 48 kHz vs Whisper 16 kHz) — caller's responsibility.
-    cache_path = _os.environ.get("FSD50K_DECODED_CACHE")
+    cache_path = os.environ.get("FSD50K_DECODED_CACHE")
     cache: dict[str, torch.Tensor] | None = None
     if cache_path and Path(cache_path).exists():
         print(f"[fsd50k] loading pre-decoded cache <- {cache_path}", flush=True)

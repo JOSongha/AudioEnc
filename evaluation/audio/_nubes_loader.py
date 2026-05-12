@@ -1,8 +1,7 @@
 """Nubes-aware audio / metadata loader for Stage-2 eval scripts.
 
-각 eval_*.py 가 hardcoded local path 대신 nubes 게이트웨이에서 직접 fetch 할 수
-있도록 공통 helper 제공. 환경변수 `EVAL_USE_NUBES=1` 설정 시 nubes 모드 활성.
-nubes 모드에서도 fetch 실패 시 local fallback (있는 경우).
+각 eval_*.py 가 nubes 게이트웨이에서 audio / metadata 를 직접 fetch 할 때 쓰는
+공통 helper. 모든 소비자가 nubes-only 라 toggle 없이 항상 활성.
 
 같은 nubes API 를 공유하는 sibling helper:
 - `scripts/manifest_builders/_nubes_helper.py` — Stage-1 manifest builder 용
@@ -13,8 +12,7 @@ Nubes URL 매핑 (2026-05-07 시점):
 - gateway: http://c.nubes.sto.navercorp.com:8000/v1/
 - bucket : hyperscaleai-audiollm
 
-각 source 의 nubes prefix 는 `NUBES_BASES` dict 참고. 미업로드 source 는 미정의
-(eval 시 local fallback 강제).
+각 source 의 nubes prefix 는 `NUBES_BASES` dict 참고.
 """
 from __future__ import annotations
 
@@ -27,9 +25,6 @@ from typing import Optional
 
 NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
 NUBES_BUCKET = "hyperscaleai-audiollm"
-
-# 환경변수로 nubes 모드 on/off
-USE_NUBES = os.environ.get("EVAL_USE_NUBES", "0") == "1"
 
 # 로컬 캐시 디렉터리 (download 후 재사용)
 NUBES_CACHE_ROOT = Path(os.environ.get(
@@ -52,22 +47,24 @@ NUBES_BASES: dict[str, dict[str, str]] = {
         # Session5 eval 용. Sessions 1-5 모두 사용자 영역에 있음.
         "root": "users/jos/AudioEnc/IEMOCAP/IEMOCAP_full_release/",
     },
-    "ravdess": {
-        "root": "users/jos/AudioEnc/RAVDESS/",
-    },
-    "emovdb": {
-        "root": "users/jos/AudioEnc/EmoV-DB/",
-    },
+    # ravdess / emovdb: v6 룰 Test=F → eval 폐기. 호출자 없어 제거 (2026-05-12).
     "meld": {
-        # nubes 기존 public 영역 (test split)
-        "test_audio": "datasets/public/MELD.Raw/output_repeated_splits_test/",
-        "train_audio": "datasets/public/MELD.Raw/train_splits/",
-        "dev_audio": "datasets/public/MELD.Raw/dev_splits_complete/",
+        # 사용자 영역 wav (§ 12.14, 2026-05-08). nubes public 의 mp3
+        # (`datasets/public/MELD.Raw/...`) 는 libsndfile 디코드 실패로 폐기.
+        "test_audio":  "users/jos/AudioEnc/MELD/audio/test/",
+        "train_audio": "users/jos/AudioEnc/MELD/audio/train/",
+        "dev_audio":   "users/jos/AudioEnc/MELD/audio/dev/",
+        "csv":         "users/jos/AudioEnc/MELD/CSV/",
     },
     "librispeech": {
-        # nubes 기존 public — eval test split 만 사용
-        "test_clean": "datasets/public/librispeech_asr/clean/test/",
-        "test_other": "datasets/public/librispeech_asr/other/test/",
+        # audio: nubes public (flat wav, transcript 부재).
+        # transcripts: 사용자 영역 jsonl ({"id","text"} per line). HF
+        # `openslr/librispeech_asr` 의 clean/test + other/test parquet 에서
+        # 추출, 2026-05-12 업로드.
+        "audio_clean":      "datasets/public/librispeech_asr/clean/test/",
+        "audio_other":      "datasets/public/librispeech_asr/other/test/",
+        "transcript_clean": "users/jos/AudioEnc/LibriSpeech/test_clean.jsonl",
+        "transcript_other": "users/jos/AudioEnc/LibriSpeech/test_other.jsonl",
     },
     "clotho": {
         # nubes public — dev (학습), val (학습), eval (Stage-2). 2026-05-08 § 12.12

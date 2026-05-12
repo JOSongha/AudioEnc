@@ -56,8 +56,6 @@ from evaluation.audio._loader import (  # noqa: E402
     load_checkpoint,
 )
 
-RAW = Path("/mnt/tmp/datasets/emotion_raw")
-
 # Same canonical stem as TASK_PROMPTS["emotion_classify"][0] and omni_dataset
 # training. Pinned here to avoid cross-module import dep.
 QUESTION = "What emotion does the speaker convey?"
@@ -79,37 +77,10 @@ def load_meld_test() -> list[dict]:
 
     csv: nubes /users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv
     audio: nubes /users/jos/AudioEnc/MELD/audio/test/dia<N>_utt<M>.wav
-
-    Returns rows with `path` set to the nubes_path (not a local file path).
-    The eval harness should be nubes-aware (download via gateway) when running
-    on this loader. Set env `MELD_LOCAL_FALLBACK=1` to use the legacy ddn paths
-    for backward compat (if `/mnt/tmp/datasets/emotion_raw/MELD/` is still on
-    disk).
     """
     import io
-    import os as _os
     import urllib.request
 
-    if _os.environ.get("MELD_LOCAL_FALLBACK"):
-        # Legacy ddn path (v5 까지 동작) — `/mnt/tmp/datasets/emotion_raw/MELD/...`.
-        csvp = RAW / "MELD" / "MELD.Raw" / "test_sent_emo.csv"
-        audio_dir = RAW / "MELD" / "audio" / "test"
-        df = pd.read_csv(csvp)
-        rows = []
-        for _, r in df.iterrows():
-            stem = f"dia{int(r['Dialogue_ID'])}_utt{int(r['Utterance_ID'])}"
-            ap = audio_dir / f"{stem}.wav"
-            if not ap.exists():
-                continue
-            rows.append({
-                "id": stem,
-                "path": str(ap),
-                "label": str(r["Emotion"]).strip().lower(),
-                "utterance": str(r["Utterance"]),
-            })
-        return rows
-
-    # nubes-direct (v6).
     NUBES_GATEWAY = "http://c.nubes.sto.navercorp.com:8000/v1"
     BUCKET = "hyperscaleai-audiollm"
     CSV_PATH = "users/jos/AudioEnc/MELD/CSV/test_sent_emo.csv"
@@ -237,20 +208,14 @@ def _torchaudio_load(path_or_buf, file_ext: str | None = None):
 
 
 def decode_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    """Decode audio. Path may be a local file or a nubes_path
-    (`<bucket>/<key>`) — auto-routed via gateway HTTP fetch when prefix
-    matches `hyperscaleai-audiollm/`. mp3 detection by extension.
-    """
+    """Decode audio via nubes gateway (path = `hyperscaleai-audiollm/<key>`)."""
+    import io
+    import urllib.request
     file_ext = path.rsplit(".", 1)[-1].lower() if "." in path else None
-    if path.startswith("hyperscaleai-audiollm/"):
-        import io
-        import urllib.request
-        url = f"{_NUBES_GATEWAY}/{path}"
-        with urllib.request.urlopen(url, timeout=30) as r:
-            buf = io.BytesIO(r.read())
-        wav, sr = _torchaudio_load(buf, file_ext=file_ext)
-    else:
-        wav, sr = _torchaudio_load(path, file_ext=file_ext)
+    url = f"{_NUBES_GATEWAY}/{path}"
+    with urllib.request.urlopen(url, timeout=30) as r:
+        buf = io.BytesIO(r.read())
+    wav, sr = _torchaudio_load(buf, file_ext=file_ext)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
     if wav.shape[0] > 1:

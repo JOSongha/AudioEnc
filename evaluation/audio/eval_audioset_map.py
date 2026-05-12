@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import os as _os
+import os
 import re
 import sys
 import time
@@ -51,13 +51,6 @@ from evaluation.audio._loader import (  # noqa: E402
     t_audio_for,
 )
 
-AUDIOSET_ROOT = Path("/mnt/tmp/datasets/env_sound/AudioSet")
-EVAL_PARQUET_DIR = Path(_os.environ.get(
-    "AUDIOSET_EVAL_PARQUET_DIR",
-    str(AUDIOSET_ROOT / "data/eval"),
-))
-ONTOLOGY_JSON = AUDIOSET_ROOT / "ontology.json"
-
 EVAL_STEM = "List the sound events in this audio, separated by commas."
 SENTENCE_STEM = "Describe what you hear in this audio. Mention every distinct sound event."
 MAX_NEW_TOKENS = 96
@@ -76,14 +69,8 @@ def _norm(s: str) -> str:
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """AudioSet vocab = label names from ontology.json (~632 entries; ~527
     appear in eval). Return (label_list, normalized_name -> index)."""
-    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
-    if USE_NUBES:
-        ont = json.loads(fetch_nubes_text(NUBES_BASES["audioset_eval"]["ontology"]))
-    else:
-        with open(ONTOLOGY_JSON) as f:
-            ont = json.load(f)
-    if False:
-        ont = json.load(f)
+    from evaluation.audio._nubes_loader import NUBES_BASES, fetch_nubes_text
+    ont = json.loads(fetch_nubes_text(NUBES_BASES["audioset_eval"]["ontology"]))
     labels = [e["name"] for e in ont]
     name_to_idx = {_norm(n): i for i, n in enumerate(labels)}
     return labels, name_to_idx
@@ -96,26 +83,15 @@ def load_eval(max_samples: int | None) -> list[dict]:
     Pre-decoded waveform may be loaded later via _DECODED_CACHE env var.
     """
     from evaluation.audio._nubes_loader import (
-        USE_NUBES, NUBES_BASES, list_nubes_dir, fetch_nubes_bytes)
+        NUBES_BASES, list_nubes_dir, fetch_nubes_bytes)
     import pyarrow.parquet as pq
     rows: list[dict] = []
-    if USE_NUBES:
-        # nubes 의 parquet 들을 list + fetch
-        nubes_prefix = NUBES_BASES["audioset_eval"]["parquet"]
-        files = list(list_nubes_dir(nubes_prefix, suffix=".parquet"))
-        files = [(f, "nubes") for f in files]
-    else:
-        files = [(p, "local") for p in sorted(EVAL_PARQUET_DIR.glob("*.parquet"))]
-    for pf, src in files:
+    nubes_prefix = NUBES_BASES["audioset_eval"]["parquet"]
+    files = list(list_nubes_dir(nubes_prefix, suffix=".parquet"))
+    for pf in files:
         try:
-            if src == "nubes":
-                # fetch parquet bytes from nubes, read with pyarrow from BytesIO
-                pf_bytes = fetch_nubes_bytes(pf)
-                table = pq.read_table(io.BytesIO(pf_bytes))
-                pf_name = pf.split("/")[-1]
-            else:
-                table = pq.read_table(pf)
-                pf_name = pf.name
+            pf_bytes = fetch_nubes_bytes(pf)
+            table = pq.read_table(io.BytesIO(pf_bytes))
         except Exception as e:
             print(f"[audioset] read fail {pf}: {e}", flush=True)
             continue
@@ -222,7 +198,7 @@ def evaluate_one(
 
     # Optional: pre-decoded waveform cache (set AUDIOSET_DECODED_CACHE env var).
     # Cache is encoder-specific (DAC 48 kHz vs Whisper 16 kHz).
-    cache_path = _os.environ.get("AUDIOSET_DECODED_CACHE")
+    cache_path = os.environ.get("AUDIOSET_DECODED_CACHE")
     cache: dict[str, torch.Tensor] | None = None
     if cache_path and Path(cache_path).exists():
         print(f"[audioset] loading pre-decoded cache <- {cache_path}", flush=True)
