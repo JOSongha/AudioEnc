@@ -1,0 +1,76 @@
+### model
+# WavTok Stage1 v6: same interleave design as v4 (ASR 65% / env_sound 25% / emotion 10%).
+# v6 manifests: expanded ASR (libri_mls_vox), same emotion (8 shards), expanded env_sound.
+model_name_or_path: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/models/Qwen3.5AE-4B-wavtok-40-unify
+flash_attn: fa2
+enable_liger_kernel: true
+disable_gradient_checkpointing: false
+trust_remote_code: true
+
+### method
+stage: omni
+do_train: true
+do_eval: false
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z2_config.json
+compute_accuracy: false
+report_to: [tensorboard, wandb]
+
+### dataset
+dataset: speechx_v9  # unused when omni_per_modality_manifests is set
+omni_per_modality_manifests:
+  audio_asr:        /mnt/ddn/users/sehyun/datasets/manifests/v6_local/audio_asr
+  audio_env_sound:  /mnt/ddn/users/sehyun/datasets/manifests/v6_local/audio_env_sound
+  audio_emotion:    /mnt/ddn/users/sehyun/datasets/manifests/v6_local/audio_emotion
+omni_per_modality_probs:
+  audio_asr:        0.65
+  audio_env_sound:  0.25
+  audio_emotion:    0.10
+omni_per_modality_stopping: all_exhausted
+load_from_nubes: true
+omni_shuffle_buffer_size: 10000
+omni_packing_bucket_size: 128
+omni_sample_rate: 24000
+omni_hop_length: 600
+omni_max_audio_samples: 720000   # 30s @ 24kHz
+template: omni
+cutoff_len: 3584
+overwrite_cache: false
+preprocessing_num_workers: 16
+streaming: true
+packing: true
+neat_packing: true
+preprocessing_batch_size: 2
+predict_with_generate: false
+dataloader_pin_memory: true
+dataloader_num_workers: 16
+dataloader_prefetch_factor: 8
+dataloader_persistent_workers: false
+accelerator_config:
+  split_batches: false
+  dispatch_batches: false
+  non_blocking: true
+
+### output
+run_name: Qwen3.5_wavtok_40_unify_Stage1_v6_local
+output_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1_v6_local
+logging_dir: /mnt/ddn/users/sehyun/AudioEncoder/audiollm-trainer/external/ckpts/Qwen3.5_wavtok_40_unify_Stage1_v6_local
+logging_steps: 50
+save_steps: 1000
+save_total_limit: 8
+plot_loss: false
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 2
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_steps: 100000
+lr_scheduler_type: warmup_stable_decay
+warmup_steps: 1000
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+eval_dataset: speechx_v9  # unused

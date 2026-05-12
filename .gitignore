@@ -197,6 +197,24 @@ external/models/**/__pycache__/
 
 # large analysis artifacts (>100 MB GitHub limit)
 docs/**/*.npz
+experiments/**/*.npz
+experiments/audio_encoder_probe/_results/phase_b/trajectories/
+experiments/audio_encoder_probe/_results/predictions/nsynth_audio_root
+
+# experiment embedding/feature caches (GBs of .npy/.pt files)
+experiments/audio_encoder_probe/embeds/
+experiments/audio_encoder_probe/embeds_frames/
+experiments/audio_encoder_probe/embeds_layers/
+experiments/audio_encoder_probe/embeds_layers_smoke/
+experiments/representation_richness/
+
+# large model weights not covered by wildcard rules above
+external/models/Qwen3.5AE-4B-wavtok-75-speech/*.safetensors
+external/models/Qwen3.5AE-4B-wavtok-75-speech/model.safetensors.index.json
+
+# local backup / temp downloads
+_local_backup/
+data/_downloads_tmp/
 
 # Crash dumps from training failures
 core.*

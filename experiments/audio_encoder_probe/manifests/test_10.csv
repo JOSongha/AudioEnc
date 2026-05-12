@@ -1,0 +1,11 @@
+utt_id,audio_path,emotion,session,gender,duration_s
+Ses05M_script01_1b_M036,/mnt/ddn/kyudan/IEMOCAP/data/Ses05M_script01_1b_M036.wav,angry,Ses05,M,10.62
+Ses04M_script03_2_M021,/mnt/ddn/kyudan/IEMOCAP/data/Ses04M_script03_2_M021.wav,angry,Ses04,M,2.235
+Ses03F_impro01_M011,/mnt/ddn/kyudan/IEMOCAP/data/Ses03F_impro01_M011.wav,angry,Ses03,M,2.955
+Ses05F_script02_2_M025,/mnt/ddn/kyudan/IEMOCAP/data/Ses05F_script02_2_M025.wav,angry,Ses05,M,2.506
+Ses04F_script02_2_F031,/mnt/ddn/kyudan/IEMOCAP/data/Ses04F_script02_2_F031.wav,angry,Ses04,F,1.35
+Ses04F_script01_1_F015,/mnt/ddn/kyudan/IEMOCAP/data/Ses04F_script01_1_F015.wav,angry,Ses04,F,6.48
+Ses01F_impro05_F019,/mnt/ddn/kyudan/IEMOCAP/data/Ses01F_impro05_F019.wav,angry,Ses01,F,5.375
+Ses02M_script03_2_M003,/mnt/ddn/kyudan/IEMOCAP/data/Ses02M_script03_2_M003.wav,angry,Ses02,M,4.125
+Ses01F_script01_1_F038,/mnt/ddn/kyudan/IEMOCAP/data/Ses01F_script01_1_F038.wav,angry,Ses01,F,2.8
+Ses03M_impro05b_M013,/mnt/ddn/kyudan/IEMOCAP/data/Ses03M_impro05b_M013.wav,angry,Ses03,M,6.82
