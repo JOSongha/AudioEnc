@@ -11,7 +11,7 @@ the representative metric(s) per (eval, ckpt), and emits:
 Also feeds plot_trajectories.py.
 
 Usage:
-    python -m evaluation.stage2.aggregate_results \
+    python -m evaluation.audio.aggregate_results \
         --root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out  .../analysis
 """
@@ -36,13 +36,6 @@ EVAL_METRICS: dict[str, list[tuple[str, callable, bool]]] = {
         ("EmoV_F1",        lambda s: s["per_corpus"]["emov"]["macro_f1"], False),
         ("RAVDESS_acc",    lambda s: s["per_corpus"]["ravdess"]["accuracy"], False),
         ("RAVDESS_F1",     lambda s: s["per_corpus"]["ravdess"]["macro_f1"], False),
-    ],
-    "eval_esc50": [
-        ("ESC50_acc", lambda s: s["accuracy_pooled"], False),
-    ],
-    "eval_esc50_acc": [
-        ("ESC50_acc", lambda s: s["accuracy_pooled"], False),
-        ("ESC50_acc_per_fold_mean", lambda s: s.get("accuracy_mean_per_fold"), False),
     ],
     "eval_clotho": [
         ("Clotho_BLEU1", lambda s: s["bleu1"], False),

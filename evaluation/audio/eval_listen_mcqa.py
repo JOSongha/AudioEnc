@@ -9,7 +9,7 @@ The model generates `<letter>. <rationale>` (training-time target). We parse the
 first A-I letter in the response and map it back to the choice index.
 
 Usage:
-    python -m evaluation.stage2.eval_listen_mcqa \
+    python -m evaluation.audio.eval_listen_mcqa \
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17/eval_listen \
         --base-model /mnt/tmp/s2_init_42k \
@@ -34,7 +34,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,

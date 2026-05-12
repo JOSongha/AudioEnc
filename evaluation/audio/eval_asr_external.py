@@ -24,7 +24,7 @@ external mix), so it remains Stage-1 OOD. See docs/setup/datasets.md §2.
 Subsamples to MAX_SAMPLES (default 500) for tractable cross-dataset comparison.
 
 Usage:
-    python -m evaluation.stage2.eval_asr_external \\
+    python -m evaluation.audio.eval_asr_external \\
         --ckpt-root /mnt/tmp/results/.../checkpoint-15000 \\
         --base-model /mnt/tmp/s2_init_42k \\
         --datasets mls voxpopuli gigaspeech \\
@@ -43,7 +43,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,
@@ -52,7 +52,7 @@ from evaluation.stage2._loader import (  # noqa: E402
     generate_greedy,
     load_checkpoint,
 )
-from evaluation.stage2.eval_librispeech_wer import ASR_STEM  # noqa: E402
+from evaluation.audio.eval_librispeech_wer import ASR_STEM  # noqa: E402
 
 import jiwer  # noqa: E402
 from transformers.models.whisper.english_normalizer import EnglishTextNormalizer  # noqa: E402

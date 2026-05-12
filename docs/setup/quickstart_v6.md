@@ -91,16 +91,16 @@ The launcher appends `resume_from_checkpoint=$RESUME_FROM` as an OmegaConf overr
 
 ## 7. Stage-2 evaluation (optional)
 
-Once Stage-1 produces a checkpoint, evaluate with the shared loader under [`evaluation/stage2/`](../../evaluation/stage2/):
+Once Stage-1 produces a checkpoint, evaluate with the shared loader under [`evaluation/audio/`](../../evaluation/audio/):
 
 ```bash
-python -m evaluation.stage2.eval_librispeech_wer \
+python -m evaluation.audio.eval_librispeech_wer \
     --ckpt-root /mnt/tmp/Qwen3.5_<encoder>_v6_Stage1_jos/Qwen3.5AE-ASR-Stage1-<encoder>-v6 \
     --out-root  ./eval_libri \
     --split test.clean --ckpts <step1>,<step2> --batch-size 4
 ```
 
-The loader (`_loader.py`) auto-detects the encoder from `cfg.audio_config` (Whisper / DAC / EnCodec / WavTok) and packs audio features accordingly. The same script works on every v6 base. Other eval drivers in the same dir cover ESC-50 / FSD50K / AudioSet / Clotho / emotion classification — see [eval_prompts.md](../reference/eval_prompts.md) for the exact prompt + metric per task.
+The loader (`_loader.py`) auto-detects the encoder from `cfg.audio_config` (Whisper / DAC / EnCodec / WavTok) and packs audio features accordingly. The same script works on every v6 base. Other eval drivers in the same dir cover FSD50K / AudioSet / Clotho / emotion classification — see [eval_prompts.md](../reference/eval_prompts.md) for the exact prompt + metric per task.
 
 ## 8. Common gotchas
 

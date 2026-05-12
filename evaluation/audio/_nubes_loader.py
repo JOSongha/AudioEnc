@@ -64,10 +64,6 @@ NUBES_BASES: dict[str, dict[str, str]] = {
         "train_audio": "datasets/public/MELD.Raw/train_splits/",
         "dev_audio": "datasets/public/MELD.Raw/dev_splits_complete/",
     },
-    "esc50": {
-        "audio": "datasets/public/ESC-50/audio/",
-        "csv": "datasets/public/ESC-50/esc50.csv",
-    },
     "librispeech": {
         # nubes 기존 public — eval test split 만 사용
         "test_clean": "datasets/public/librispeech_asr/clean/test/",

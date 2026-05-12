@@ -5,7 +5,7 @@ panel per task with the metric on the y-axis and ckpt step on the x-axis.
 Best ckpt per panel is annotated.
 
 Usage:
-    python -m evaluation.stage2.plot_trajectories \
+    python -m evaluation.audio.plot_trajectories \
         --csv /mnt/tmp/.../analysis/results.csv \
         --out /mnt/tmp/.../analysis/trajectories.pdf
 """
@@ -37,9 +37,6 @@ PANELS = [
         ("DailyTalk_acc", "DailyTalk", False, "#ff7f0e"),
         ("EmoV_acc",      "EmoV-DB",   False, "#2ca02c"),
         ("RAVDESS_acc",   "RAVDESS",   False, "#d62728"),
-    ]),
-    ("ESC-50 accuracy", [
-        ("ESC50_acc", "ESC-50", False, "#1f77b4"),
     ]),
     ("FSD50K (greedy F1)", [
         ("FSD50K_F1mi", "F1-micro", False, "#1f77b4"),
@@ -94,7 +91,7 @@ def main():
                    help="custom suptitle (line 1). Default: derived from data span.")
     p.add_argument("--exclude", default="",
                    help="comma-separated panel-title substrings to skip "
-                        "(case-insensitive, e.g. 'ESC-50,Text retention').")
+                        "(case-insensitive, e.g. 'FSD50K,Text retention').")
     args = p.parse_args()
 
     data = load_csv(Path(args.csv))

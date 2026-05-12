@@ -131,7 +131,7 @@ def create_omni_processor_whisper(
         if modality == "audio_env_sound":
             # v3 sources (clotho, audiocaps, macs, laion_*, audioset, fsd50k)
             # all carry a `captions` list. Legacy `labels` path kept for
-            # esc50 / pre-v3 fsd50k shards.
+            # pre-v3 fsd50k shards.
             caps = row.get("captions") or []
             if caps:
                 return (rng.choice(TASK_PROMPTS["sound_caption"]), rng.choice(caps))
@@ -144,11 +144,6 @@ def create_omni_processor_whisper(
                     return (rng.choice(TASK_PROMPTS["sound_describe_multi"]),
                             format_labels_as_sentence(labels, rng, multi=True))
                 return (rng.choice(TASK_PROMPTS["sound_classify_multi"]), ", ".join(labels))
-            if src == "esc50":
-                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
-                    return (rng.choice(TASK_PROMPTS["sound_describe_single"]),
-                            format_labels_as_sentence([labels[0]], rng, multi=False))
-                return (rng.choice(TASK_PROMPTS["sound_classify_single"]), str(labels[0]))
             return None
 
         if modality == "text":

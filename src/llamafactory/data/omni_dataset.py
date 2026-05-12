@@ -258,8 +258,8 @@ def create_omni_processor(
     Modality drives the user-side text and assistant target:
       audio_asr        Transcribe the audio.                → assistant: transcript
       audio_emotion    MCQA: question + lettered choices.   → assistant: letter (+rationale if present)
-      audio_env_sound  Clotho caption / FSD50K or ESC-50
-                       classification.                       → assistant: caption | label list | class
+      audio_env_sound  Clotho caption / FSD50K
+                       classification.                       → assistant: caption | label list
       text             MCQA: question + lettered choices
                        (no audio).                           → assistant: letter
 
@@ -317,8 +317,7 @@ def create_omni_processor(
             caps = row.get("captions") or []
             if caps:
                 return (rng.choice(TASK_PROMPTS["sound_caption"]), rng.choice(caps))
-            # Legacy `labels`-based shards (esc50 and pre-v3 fsd50k) still
-            # supported. Keep until those shards are deprecated.
+            # Legacy `labels`-based shards (pre-v3 fsd50k) still supported.
             src = row.get("source", "")
             labels = row.get("labels") or []
             if not labels:
@@ -329,12 +328,6 @@ def create_omni_processor(
                             format_labels_as_sentence(labels, rng, multi=True))
                 return (rng.choice(TASK_PROMPTS["sound_classify_multi"]),
                         ", ".join(labels))
-            if src == "esc50":
-                if sentence_form_sound_p > 0 and rng.random() < sentence_form_sound_p:
-                    return (rng.choice(TASK_PROMPTS["sound_describe_single"]),
-                            format_labels_as_sentence([labels[0]], rng, multi=False))
-                return (rng.choice(TASK_PROMPTS["sound_classify_single"]),
-                        str(labels[0]))
             return None
 
         if modality == "text":

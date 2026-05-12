@@ -10,7 +10,7 @@ pinned to TASK_PROMPTS["asr"][0] and identical to eval_testclean_wer.py's
 CHATML_MID. WER via Whisper's EnglishTextNormalizer (industry standard).
 
 Usage:
-    python -m evaluation.stage2.eval_librispeech_wer \
+    python -m evaluation.audio.eval_librispeech_wer \
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_libri \
         --base-model /mnt/tmp/s2_init_42k \
@@ -33,7 +33,7 @@ from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,

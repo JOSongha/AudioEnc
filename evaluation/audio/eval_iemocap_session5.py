@@ -5,7 +5,7 @@ Labels: ang / hap / neu / sad (exc merged into hap, common practice).
 Same prompt + greedy decode as eval_source_emotion.py.
 
 Usage:
-    python -m evaluation.stage2.eval_iemocap_session5 \
+    python -m evaluation.audio.eval_iemocap_session5 \
         --ckpt-root /path/to/stage1_run \
         --out-root  /path/to/eval_iemocap_session5 \
         --ckpts 100000
@@ -36,7 +36,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,
@@ -69,7 +69,7 @@ def parse_emoeval_dir(eval_dir: Path) -> list[dict]:
     USE_NUBES=1 일 때 eval_dir 내용을 nubes 에서 fetch (label .txt 들 + 각
     utterance wav 의 nubes_path 생성).
     """
-    from evaluation.stage2._nubes_loader import (
+    from evaluation.audio._nubes_loader import (
         USE_NUBES, NUBES_BASES, list_nubes_dir, fetch_nubes_text)
     pat = re.compile(r"\[(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\]\s+(\S+)\s+(\w+)")
     rows = []
@@ -115,7 +115,7 @@ def parse_emoeval_dir(eval_dir: Path) -> list[dict]:
 
 
 def preprocess_audio(path: str, target_sr: int) -> torch.Tensor:
-    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    from evaluation.audio._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
     if USE_NUBES and not str(path).startswith("/"):
         wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
     else:

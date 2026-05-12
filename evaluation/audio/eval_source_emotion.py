@@ -3,9 +3,8 @@
 Evaluates on the official MELD test split. v6 룰 ("canonical split 없는 source
 는 통째로 학습") 적용 후 DailyTalk / EmoV-DB / RAVDESS 의 self-held-out
 (v5 leak-fix) 가 폐기됐고, 이 corpus 들은 학습 풀에 통째로 들어감 — eval 도
-함께 폐기. 외부 cross-corpus eval (LISTEN / SAVEE / JL-Corpus / MSP-Podcast)
-는 별도 스크립트 (`eval_listen_*`, `eval_savee.py`, `eval_jl_corpus.py`,
-`eval_msp_podcast.py`) 사용.
+함께 폐기. 외부 cross-corpus eval (LISTEN) 은 별도 스크립트
+(`eval_listen_*`) 사용.
 
     MELD        : official test split          (2 747 wavs, 7-class)
 
@@ -24,7 +23,7 @@ eval phrasing. Per-corpus metrics: accuracy, macro-F1, balanced-accuracy,
 per-class accuracy.
 
 Usage:
-    python -m evaluation.stage2.eval_source_emotion \
+    python -m evaluation.audio.eval_source_emotion \
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_source_emotion \
         --base-model /mnt/tmp/s2_init_42k \
@@ -47,7 +46,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,

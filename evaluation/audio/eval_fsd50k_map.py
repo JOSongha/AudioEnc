@@ -20,13 +20,13 @@ normalizer, so their label-name matching is consistent.
 
 Usage:
     # F1/Jaccard (fast):
-    python -m evaluation.stage2.eval_fsd50k_map \
+    python -m evaluation.audio.eval_fsd50k_map \
         --ckpt-root .../results/... --out-root .../eval_fsd50k \
         --base-model /mnt/tmp/s2_init_42k \
         --ckpts 2000 --batch-size 4 --score-mode greedy
 
     # mAP (slow, leaderboard-comparable):
-    python -m evaluation.stage2.eval_fsd50k_map \
+    python -m evaluation.audio.eval_fsd50k_map \
         --ckpt-root .../results/... --out-root .../eval_fsd50k_map \
         --base-model /mnt/tmp/s2_init_42k \
         --ckpts 2000 --score-mode sequence --label-batch-size 50
@@ -49,7 +49,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,
@@ -84,7 +84,7 @@ SENTENCE_MAX_NEW_TOKENS = 256
 
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """Return (label_list, name -> index)."""
-    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
     labels = []
     if USE_NUBES:
         csv_text = fetch_nubes_text(
@@ -103,11 +103,11 @@ def load_vocab() -> tuple[list[str], dict[str, int]]:
 
 
 def load_eval(max_samples: int | None) -> list[dict]:
-    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES
+    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES
     rows = []
     if USE_NUBES:
         # nubes 모드: eval.csv 도 nubes 에서 fetch
-        from evaluation.stage2._nubes_loader import fetch_nubes_text
+        from evaluation.audio._nubes_loader import fetch_nubes_text
         csv_text = fetch_nubes_text(
             f"{NUBES_BASES['fsd50k_eval']['ground_truth']}eval.csv")
         reader = csv.DictReader(io.StringIO(csv_text))
@@ -133,7 +133,7 @@ def load_eval(max_samples: int | None) -> list[dict]:
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    from evaluation.audio._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
     if USE_NUBES and not path.startswith("/"):
         # nubes path (no leading slash)
         wav, sr = fetch_nubes_audio_tensor(path, target_sr=target_sr)

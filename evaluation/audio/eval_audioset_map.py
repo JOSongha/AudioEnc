@@ -13,7 +13,7 @@ Two scoring modes (same semantics as FSD50K):
                 ~N_labels / label_batch_size forwards/sample.
 
 Usage:
-    python -m evaluation.stage2.eval_audioset_map \\
+    python -m evaluation.audio.eval_audioset_map \\
         --ckpt-root .../results/Qwen3.5AE-Stage2v2-... \\
         --out-root  .../eval_audioset \\
         --base-model /mnt/tmp/s2_init_42k \\
@@ -40,7 +40,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,
@@ -76,7 +76,7 @@ def _norm(s: str) -> str:
 def load_vocab() -> tuple[list[str], dict[str, int]]:
     """AudioSet vocab = label names from ontology.json (~632 entries; ~527
     appear in eval). Return (label_list, normalized_name -> index)."""
-    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
     if USE_NUBES:
         ont = json.loads(fetch_nubes_text(NUBES_BASES["audioset_eval"]["ontology"]))
     else:
@@ -95,7 +95,7 @@ def load_eval(max_samples: int | None) -> list[dict]:
     Each row: {video_id, audio_bytes (FLAC), labels (mid IDs), human_labels (text)}.
     Pre-decoded waveform may be loaded later via _DECODED_CACHE env var.
     """
-    from evaluation.stage2._nubes_loader import (
+    from evaluation.audio._nubes_loader import (
         USE_NUBES, NUBES_BASES, list_nubes_dir, fetch_nubes_bytes)
     import pyarrow.parquet as pq
     rows: list[dict] = []

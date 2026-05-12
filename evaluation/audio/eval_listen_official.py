@@ -29,7 +29,7 @@ reference harness loads from HF `VibeCheck1/LISTEN_full` train split — our
 parquet is a subset of that, excluding type 4.
 
 Usage:
-    python -m evaluation.stage2.eval_listen_official \
+    python -m evaluation.audio.eval_listen_official \
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_listen_official \
         --base-model /mnt/tmp/s2_init_42k \
@@ -56,7 +56,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,

@@ -7,7 +7,7 @@ pycocoevalcap is importable — CIDEr / METEOR / SPICE. Skipped metrics are
 reported as None in summary.json.
 
 Usage:
-    python -m evaluation.stage2.eval_clotho_caption \
+    python -m evaluation.audio.eval_clotho_caption \
         --ckpt-root /mnt/tmp/results/Qwen3.5AE-Stage2-lora-asr14-emo34-env35-txt17 \
         --out-root  .../eval_clotho \
         --base-model /mnt/tmp/s2_init_42k \
@@ -32,7 +32,7 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evaluation.stage2._loader import (  # noqa: E402
+from evaluation.audio._loader import (  # noqa: E402
     audio_sample_rate,
     build_prompt_ids,
     default_max_audio_samples,
@@ -140,7 +140,7 @@ def load_clotho_split(split: str) -> list[dict]:
     (2026-05-08 § 12.12 업로드 후). split 별 audio subdir 분리됐고 각 captions
     csv 도 따로 있음 — `_NUBES_SPLIT_KEYS` 매핑 참고.
     """
-    from evaluation.stage2._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
+    from evaluation.audio._nubes_loader import USE_NUBES, NUBES_BASES, fetch_nubes_text
     import io as _io
     rows = []
     if USE_NUBES and split in _NUBES_SPLIT_KEYS:
@@ -173,7 +173,7 @@ def load_clotho_split(split: str) -> list[dict]:
 
 
 def preprocess_audio(path: str, target_sr: int, max_samples: int) -> torch.Tensor:
-    from evaluation.stage2._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
+    from evaluation.audio._nubes_loader import USE_NUBES, fetch_nubes_audio_tensor
     if USE_NUBES and not str(path).startswith("/"):
         wav, sr = fetch_nubes_audio_tensor(str(path), target_sr=target_sr)
     else:
