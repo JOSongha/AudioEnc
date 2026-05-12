@@ -83,7 +83,7 @@ ${PIP} install \
     trl==0.24.0 \
     datasets==4.0.0 \
     deepspeed==0.16.9 \
-    wandb==0.19.11 \
+    wandb==0.26.1 \
     huggingface_hub==0.36.2 \
     sentencepiece==0.2.1 \
     tiktoken==0.12.0 \
@@ -205,15 +205,7 @@ fi
 # ── 13. wandb netrc 설정 안내 ─────────────────────────────────────────────────
 echo ""
 info "=== wandb 설정 안내 ==="
-warn "wandb 0.19.11은 'wandb login' 명령이 netrc를 86자 key로 덮어쓰는 버그가 있음."
-warn "대신 아래처럼 직접 netrc에 씁니다:"
-cat <<'EOF'
-  # ~/.netrc 에 직접 추가:
-  echo "machine api.wandb.ai" >> ~/.netrc
-  echo "  login user"         >> ~/.netrc
-  echo "  password <YOUR_WANDB_API_KEY>" >> ~/.netrc
-  chmod 600 ~/.netrc
-EOF
+info "wandb 설정: wandb login 명령으로 로그인하세요."
 
 # ── 14. 검증 ─────────────────────────────────────────────────────────────────
 echo ""
